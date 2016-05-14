@@ -1,0 +1,456 @@
+# Copyright 2006-2008,2011,2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+TZ="GMT"
+export TZ
+
+# (generated with gnuism %s) TZ=GMT date -d "05/20/97 18:48:11" +%s
+T11=864154091
+T12=864154096
+DTZ11="97/05/20 18:48:11+00:00"
+DTZ12="97/05/20 18:48:16+00:00"
+
+# (generated with gnuism %s) TZ=GMT date -d "09/22/98 16:23:31" +%s
+T21=906481411
+T22=906481414
+DTZ21="98/09/22 16:23:31+00:00"
+DTZ22="98/09/22 16:23:34+00:00"
+
+# Future (generated with gnuism %s) TZ=GMT date -d "02/08/22 09:42:21" +%s
+T31=1644313341
+T32=1644313347
+DTZ31="22/02/08 09:42:21+00:00"
+DTZ32="22/02/08 09:42:27+00:00"
+
+# Situations to test - hard linked clone don't roll forward
+
+# use D_TIME limited to now
+
+echo $N Create a repo for timestamp investigation ...................$NL
+fresh_commercial --compat project
+bk _touch now
+# Make 3 files: keyword, nokeyword, deltatime
+echo %'K'% > keyword
+echo foo > nokeyword
+echo foo > deltatime
+printf "binary\0data\0" > binary
+printf "binary\0time\0" > binary_deltatime
+if [ $WINDOWS = YES ]
+then	echo windows symlink > symlink.resolve
+	echo windows symlink > symlink.noresolve
+else	echo symlink > "$HERE"/the-symlink
+	ln -s "$HERE/the-symlink" symlink.resolve
+	ln -s "$HERE/no-such-symlink" symlink.noresolve
+fi
+bk _touch -t $T11 keyword nokeyword deltatime binary binary_deltatime
+BK_DATE_TIME_ZONE="$DTZ12" bk new $Q keyword nokeyword binary \
+    symlink.resolve symlink.noresolve
+bk delta $Q -i -T deltatime binary_deltatime
+test -f keyword -o -f nokeyword -o -f deltatime -o -f binary \
+    -o -f binary_deltatime && {
+	echo failed
+	ls
+	exit 1
+}
+# setStime puts things 2 seconds behind tip delta
+test $T12 -ge `_mtime SCCS/s.keyword`	|| { echo failed; exit 1; }
+test $T12 -ge `_mtime SCCS/s.nokeyword`	|| { echo failed; exit 1; }
+test $T12 -ge `_mtime SCCS/s.binary`	|| { echo failed; exit 1; }
+test $T11 -ge `_mtime SCCS/s.deltatime`	|| { echo failed; exit 1; }
+test $T11 -ge `_mtime SCCS/s.binary_deltatime` || { echo failed; exit 1; }
+echo OK
+
+echo $N Test admin ..................................................$NL
+bk clean
+bk _cp SCCS/s.keyword backup
+# see that sfile age is known after admin -z
+bk admin -z keyword
+test $T12 -ge `_mtime SCCS/s.keyword` || { echo failed; exit 1; }
+# make it older, test that it will bring it forward
+bk _touch -t $T11 SCCS/s.keyword
+bk admin -z keyword
+test $T12 -ge `_mtime SCCS/s.keyword` || { echo failed; exit 1; }
+# see that a new flag doesn't alter sfile
+BK_DATE_TIME_ZONE="$DTZ22" bk admin $Q -fRCS keyword
+test $T12 -ge `_mtime SCCS/s.keyword` || { echo failed; exit 1; }
+# however, flag will affect -T time
+bk get $Q -T keyword
+test $T22 -eq `_mtime keyword` || { echo failed; exit 1; }
+# Test that having the gfile older will push the sfile back
+bk _touch -t $T11 keyword
+bk admin $Q -FRCS keyword
+test $T11 -eq `_mtime keyword`		|| { echo failed; exit 1; }
+test $T11 -ge `_mtime SCCS/s.keyword`	|| { echo failed; exit 1; }
+# and admin -z will leave everything alone
+test $T11 -eq `_mtime keyword`		|| { echo failed; exit 1; }
+test $T11 -ge `_mtime SCCS/s.keyword`	|| { echo failed; exit 1; }
+bk admin -z keyword
+# restore
+bk _rm SCCS/s.keyword keyword
+bk _mv backup SCCS/s.keyword
+echo OK
+
+echo $N Test check will fix things that are off .....................$NL
+# check - should fix things when amiss, and gack if _BK_DEVELOPER
+bk get $Q -T keyword
+bk _touch -t $T22 SCCS/s.keyword
+test -n "$_BK_DEVELOPER" && OLDEV="$_BK_DEVELOPER"
+_BK_DEVELOPER=1
+export _BK_DEVELOPER
+bk check keyword 2> ERR && { echo expected check to fail; exit 1; }
+grep -q "timestamp keyword" ERR || { echo bad error message; cat ERR; exit 1; }
+unset _BK_DEVELOPER
+bk check keyword || fail
+test -n "$OLDEV" && {
+	_BK_DEVELOPER="$OLDEV"
+	export _BK_DEVELOPER
+}
+test $T12 -ge `_mtime SCCS/s.keyword` || { echo failed; exit 1; }
+bk clean keyword
+echo OK
+
+# checksum - calls admin - no new deltas, but breaks hardlinks
+# XXX not tested
+
+echo $N Test chmod will move things forward .........................$NL
+# chmod - touchs gfile to now.  this adds delta, which ups sfile time.
+bk _cp SCCS/s.keyword backup
+bk edit $Q keyword
+bk _touch -t $T11 keyword
+BK_CONFIG='checkout:edit!' BK_DATE_TIME_ZONE="$DTZ22" bk chmod +x keyword
+test $T22 -ge `_mtime SCCS/s.keyword`	|| { echo failed 1; exit 1; }
+test `_mtime keyword` -ge `_mtime now`	|| {
+	echo failed 2
+	echo $T11
+	_mtime keyword
+	_mtime now
+	ls -l keyword now
+	bk log keyword
+	exit 1
+}
+bk unedit keyword
+bk _rm SCCS/s.keyword
+bk _mv backup SCCS/s.keyword
+echo OK
+
+echo $N Test ci / delta with -u, -l, nothing, -T, etc. ..............$NL
+# ci/delta - with -u/-l, other wise, no gfile
+bk _cp SCCS/s.keyword backup
+bk _cp SCCS/s.nokeyword nobackup
+# nothing
+bk edit $Q keyword
+echo foo >> keyword
+bk _touch -t $T21 keyword
+BK_DATE_TIME_ZONE="$DTZ22" bk delta $Q -yfoo keyword
+test -f keyword && fail
+test $T22 -ge `_mtime SCCS/s.keyword`	|| { echo failed; exit 1; }
+# -u - with keyword expansion
+bk edit $Q keyword
+echo foo >> keyword
+bk _touch -t $T21 keyword
+BK_DATE_TIME_ZONE="$DTZ22" bk delta $Q -u -yfoo keyword
+test -f keyword || fail
+test $T22 -ge `_mtime SCCS/s.keyword`	|| { echo failed; exit 1; }
+test `_mtime keyword` -ge `_mtime now`	|| { echo failed; exit 1; }
+# -u - w/o keyword expansion -- like above, but could be just -l w/ a chmod
+bk edit $Q nokeyword
+echo foo >> nokeyword
+bk _touch -t $T21 nokeyword
+BK_DATE_TIME_ZONE="$DTZ22" bk delta $Q -u -yfoo nokeyword
+test -f nokeyword || fail
+test $T22 -ge `_mtime SCCS/s.nokeyword`		|| { echo failed; exit 1; }
+test `_mtime nokeyword` -ge `_mtime now`	|| { echo failed; exit 1; }
+# checkout:get - w/o keyword expansion -- like above
+bk edit $Q nokeyword
+echo foo >> nokeyword
+bk _touch -t $T21 nokeyword
+BK_CONFIG='checkout:get!' BK_DATE_TIME_ZONE="$DTZ22" \
+    bk delta $Q -yfoo nokeyword
+test -f nokeyword || fail
+test $T22 -ge `_mtime SCCS/s.nokeyword`		|| { echo failed; exit 1; }
+test `_mtime nokeyword` -ge `_mtime now`	|| { echo failed; exit 1; }
+# -l - leaves gfile timestamp alone, so will move sfile back
+bk edit $Q keyword
+echo foo >> keyword
+bk _touch -t $T21 keyword
+BK_DATE_TIME_ZONE="$DTZ22" bk delta $Q -l -yfoo keyword
+test -f keyword || fail
+test $T21 -ge `_mtime SCCS/s.keyword`	|| { echo failed; exit 1; }
+test $T21 -eq `_mtime keyword`		|| { echo failed; exit 1; }
+# -G
+echo foo >> keyword
+bk _touch -t $T12 keyword
+bk delta $Q -T -yfoo keyword
+test $T12 -ge `_mtime SCCS/s.keyword`	|| { echo failed; exit 1; }
+bk get $Q -T keyword
+test $T12 -eq `_mtime keyword`		|| { echo failed; exit 1; }
+# -G on a future delta clamps to now
+bk edit $Q keyword
+echo foo >> keyword
+bk _touch -t $T31 keyword
+bk delta $Q -l -T -yfoobar keyword 2> ERR
+bk _touch newnow
+grep -q "BK limiting the delta time" ERR || {
+	echo wrong output; cat ERR; exit 1;
+}
+test $T31 -eq `_mtime keyword`		|| { echo failed; exit 1; }
+test `_mtime newnow` -ge `_mtime SCCS/s.keyword` || { echo failed; exit 1; }
+bk unedit keyword
+bk get $Q -T keyword
+test `_mtime newnow` -ge `_mtime keyword`	|| { echo failed; exit 1; }
+rm -f newnow
+bk _mv backup SCCS/s.keyword
+bk _mv nobackup SCCS/s.nokeyword
+echo OK
+
+echo $N Test clean - should never move sfiles forward ...............$NL
+# clean - no file, leave sfile alone (could be hard linked)
+bk edit $Q keyword
+bk _touch -t $T21 keyword
+bk _touch -t $T11 SCCS/s.keyword
+bk clean
+test $T11 -eq `_mtime SCCS/s.keyword`	|| { echo failed; exit 1; }
+echo OK
+
+# clone (-l) (rlclone) - with and without -r -- should work
+# here is a start..
+
+echo $N Test clone checking out files according to delta time .......$NL
+bk clean
+bk commit $Q -y'get some files to clone'
+cd "$HERE"
+BK_CONFIG='checkout:get!' bk clone $Q -l project clone
+# See that gfile has right delta time and sfile has not moved
+cd clone
+test -f keyword || { echo failed 5; exit 1; }
+test $T12 -ge `_mtime SCCS/s.keyword`	|| { echo failed; exit 1; }
+test $T12 -eq `_mtime keyword`		|| { echo failed; exit 1; }
+cd ../project
+echo OK
+
+echo $N Test clone -l should not move sfile times forward ...........$NL
+# if sfile moved forward, it could be newer than gfile in other repo
+bk _touch SCCS/s.keyword
+bk get $Q -T keyword
+# verify setup - gfile and sfile are newer than $T11
+test $T11 -lt `_mtime SCCS/s.keyword`	|| { echo failed 1; exit 1; }
+test $T11 -lt `_mtime keyword`		|| { echo failed 2; exit 1; }
+bk _touch -t $T11 keyword SCCS/s.keyword
+test $T11 -eq `_mtime SCCS/s.keyword`	|| { echo failed 3; exit 1; }
+test $T11 -eq `_mtime keyword`		|| { echo failed 4; exit 1; }
+cd "$HERE"
+BK_CONFIG='checkout:get!' bk clone $Q -l project hardclone
+# See that gfile has right delta time and sfile has not moved
+cd hardclone
+test -f keyword || { echo failed 5; exit 1; }
+test $T11 -eq `_mtime SCCS/s.keyword`	|| { echo failed 6; exit 1; }
+test $T12 -eq `_mtime keyword`		|| { echo failed 7; exit 1; }
+cd ../project
+# See that the time was not altered
+test $T11 -eq `_mtime SCCS/s.keyword`	|| { echo failed 8; exit 1; }
+test $T11 -eq `_mtime keyword`		|| { echo failed 9; exit 1; }
+echo OK
+
+echo $N Test co /get -T .............................................$NL
+# co/get - -T or not.
+bk clean
+bk get $Q -T
+# The gfiles should be predicable
+test $T12 -eq `_mtime keyword`		|| { echo failed 1; exit 1; }
+test $T12 -eq `_mtime nokeyword`	|| { echo failed 2; exit 1; }
+test $T11 -eq `_mtime deltatime`	|| { echo failed 3; exit 1; }
+# The sfiles should be older (get does not change time forward)
+test `_mtime keyword` -ge `_mtime SCCS/s.keyword` || { echo failed 4; exit 1; }
+test `_mtime nokeyword` -ge `_mtime SCCS/s.nokeyword` \
+    || { echo failed 5; exit 1; }
+test `_mtime deltatime` -ge `_mtime SCCS/s.deltatime` \
+    || { echo failed 6; exit 1; }
+# XXX: note that -TG (as well as export / gnupatch)
+# no longer moves the s time back
+bk clean keyword
+bk _touch -r now SCCS/s.keyword
+bk get $Q -TG keyword.copy keyword
+test $T12 -eq `_mtime keyword.copy`	|| { echo failed 7; exit 1; }
+# Using -G doesn't mess with sfile time
+test $T12 -lt `_mtime SCCS/s.keyword`	|| { echo failed 8; exit 1; }
+rm -f keyword.copy
+# Same test with BAM (different code path)
+bk clean binary
+bk _touch -r now SCCS/s.binary
+bk get $Q -TG binary.copy binary
+test $T12 -eq `_mtime binary.copy`	|| { echo failed 7; exit 1; }
+test $T12 -lt `_mtime SCCS/s.binary`	|| { echo failed 8; exit 1; }
+rm -f binary.copy
+# make a future delta and see that we get the clamping we expect
+# this is different than the -G test in co, because this uses env
+# variable to actually make future delta.
+# This simulates a clone from a machine/repo that is the future,
+# and running 'checkout: get or edit' and getting current time files.
+bk _cp SCCS/s.keyword backup
+bk edit $Q keyword
+echo foo >> keyword
+BK_DATE_TIME_ZONE="$DTZ32" bk delta $Q -ylater keyword
+bk get $Q -T keyword
+bk _touch newnow
+test `_mtime keyword` -ge `_mtime now`		|| { echo failed 9; exit 1; }
+test `_mtime newnow` -ge `_mtime keyword`	|| { echo failed 10; exit 1; }
+bk get $Q -TG keyword.copy keyword
+bk _touch newnow
+test `_mtime keyword.copy` -ge `_mtime now`	|| { echo failed 11; exit 1; }
+test `_mtime newnow` -ge `_mtime keyword.copy`	|| { echo failed 12; exit 1; }
+bk _rm newnow keyword.copy keyword SCCS/s.keyword
+bk _mv backup SCCS/s.keyword
+echo OK
+
+test $WINDOWS = NO && {
+echo $N Test co /get -T on symlinks does not alter time .............$NL
+test `_mtime ../the-symlink` -ge `_mtime now`	|| fail
+test -f symlink.resolve || fail
+test -f symlink.noresolve && fail
+bk clean symlink*
+echo OK
+}
+
+# comments - uses admin to re-write?
+# commit - uses admin?
+# cp - take a look
+# cset - what might go wrong here?
+# csetprune - uses admin to re-write?
+# diffs (does a get of sorts) - leaves things alone (tests GET_DTIME)
+# edit (get -e) - done
+# export (should set times?  Not sfiles, but if -T, it does)
+# grep (shouldn't touch things)
+# import (patch does -G, others do straight up)
+# makepatch (should leave things alone)
+# pull/push - look here - mainly resolve
+
+echo $N Test relink keeps the older time ............................$NL
+cd "$HERE"
+cp -rp project link1
+cp -rp project link2
+cd link1
+bk _touch -t $T11 SCCS/s.keyword
+cd ../link2
+bk _touch -t $T21 SCCS/s.keyword
+cd ..
+bk relink $Q link1 link2
+cd link1
+test $T11 -ge `_mtime SCCS/s.keyword` || { echo failed; exit 1; }
+echo OK
+
+# resolve -- what does pass 4 do?
+
+echo $N Test admin -z modifies sfile only ...........................$NL
+bk _touch -r now SCCS/s.keyword
+bk admin -z keyword
+test $T12 -ge `_mtime SCCS/s.keyword` || { echo failed; exit 1; }
+echo OK
+
+# stripdel - rewrite sfiles, should clean or policy on gfile
+# takepatch
+# undo
+# unedit
+
+echo $N Test collapse with renames ..................................$NL
+# collapse - leaves thing in an edited state - what about time?
+echo hi > foo
+bk new $Q -u foo || fail
+bk commit $Q -y1 || fail
+bk mv foo bar || fail
+bk commit $Q -y2 || fail
+bk edit $Q bar || fail
+bk _touch -t $T11 bar || fail
+bk collapse $Q -e || fail
+test $T11 -ge `_mtime SCCS/s.bar` || fail
+echo OK
+
+if [ $WINDOWS = YES ]; then
+echo $N Test that we can notify when making changes .................$NL
+# skip this and it won't notify...
+BK_CONFIG='checkout:edit!'
+export BK_CONFIG
+
+rm -f BitKeeper/log/changed
+FILES="file_1 file_2 file_3"
+for i in $FILES
+do	echo foo > $i
+done
+BK_NOTIFIER="$HERE/log-notifier"
+export BK_NOTIFIER
+bk new $Q $FILES
+test -f "$BK_NOTIFIER" || {
+	echo failed on new
+	exit 1
+}
+rm -f "$BK_NOTIFIER"
+bk edit $Q $FILES
+for i in $FILES
+do	echo bar >> $i
+done
+bk delta $Q -ywhatever $FILES
+test -f "$BK_NOTIFIER" || {
+	echo failed on delta
+	exit 1
+}
+for i in $FILES
+do	echo `bk pwd`/$i >> WANT
+done
+cmpfiles WANT "$BK_NOTIFIER"
+grep -q '~' "$BK_NOTIFIER" && {
+	echo failed
+	echo used short path on windows
+	cat "$BK_NOTIFIER"
+	exit 1
+}
+rm -f "$BK_NOTIFIER"
+bk commit $Q -ywhatever
+test -f "$BK_NOTIFIER" || {
+	echo failed on commit
+	exit 1
+}
+bk clean file_1
+# no keywords causes bk edit -S to just chmod
+bk admin -FSCCS file_1
+bk get $Q file_1
+rm -f "$BK_NOTIFIER"
+bk edit $Q -S file_1
+test -f "$BK_NOTIFIER" || {
+	echo failed on bk edit -S
+	exit 1
+}
+echo OK
+echo $N Testing BAM files............................................$NL
+cd "$HERE"
+commercial bam_project
+perl -e 'printf "a\000b\n"' > bam
+bk ci $Q -i bam
+bk edit $Q
+perl -e 'printf "b\000b\n"' > bam
+rm -f "$BK_NOTIFIER"
+BK_CONFIG='BAM_checkout:edit!;checkout:none!' bk delta $Q -y. bam
+test -f "$BK_NOTIFIER" || {
+	echo failed on bk delta BAM
+	exit 1
+}
+echo OK
+
+echo $N Testing files outside of proj do not dump core...............$NL
+cd "$HERE"
+touch foo
+bk new $Q foo
+bk edit $Q foo
+echo hi > foo
+bk delta $Q -y. foo
+echo OK
+fi

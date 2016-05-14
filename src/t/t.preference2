@@ -1,0 +1,68 @@
+# Copyright 2006,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N checkout:EDIT w aborted simple content conflict on pull .....$NL
+#echo checkout:edit >> `bk dotbk`/config
+commercial testparent
+cd BitKeeper/etc
+bk edit $Q config
+echo 'checkout:edit!' >> config
+bk ci $Q -yco:edit config || fail
+bk commit $Q -yco:edit || fail
+cd "$HERE"
+bk clone $Q testparent testc1 || fail
+bk clone $Q testparent testc2 || fail
+cd testc1
+echo hi > testfile.cpp
+bk new $Q testfile.cpp || fail
+bk commit $Q -ynewfile || fail
+bk push $Q || fail
+cd ../testc2
+bk pull $Q || fail
+echo a conflict > testfile.cpp
+bk ci -yconflict $Q testfile.cpp || fail
+bk commit $Q -yconflict || fail
+cd ../testc1
+echo another conflict >> testfile.cpp
+bk ci -yconflict2 $Q testfile.cpp || fail
+bk commit $Q -yconflict2 || fail
+bk push $Q || fail
+cd ../testc2
+echo q | bk pull $Q 2> ERR && {
+	echo should error
+	exit 1
+}
+test -w testfile.cpp || {
+	echo failed to preserve file
+	exit 1
+}
+echo OK
+
+echo $N checkout:EDIT w resolved simple content conflict on pull ....$NL
+cd "$HERE"
+bk clone $Q -r1.3 testparent testc3 || fail
+cd testc3
+echo 'different conflict' > testfile.cpp
+bk ci $Q -yconflict3 testfile.cpp || fail
+bk commit $Q -yconflict3
+(echo ul; echo comment; echo .) | bk pull $Q 2> ERR || {
+	echo should pass
+	cat ERR
+	exit 1
+}
+test -w testfile.cpp || {
+	echo failed to preserve file
+	exit 1
+}
+echo OK

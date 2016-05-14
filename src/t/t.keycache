@@ -1,0 +1,65 @@
+# Copyright 2003-2006,2010-2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test "X$BK_TMP" = X && {
+	echo skipping this test, \$BK_TMP is not set
+	exit 0
+}
+
+echo $N Create initial repository ...................................$NL
+kill_uniq "$HERE/.bk/bk-keys-db"
+rm_uniq
+fresh_commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+kill_uniq "$HERE/.bk/bk-keys-db"
+echo 'get .*' | bk info_shell --uniqdb | grep '^@.' >KEYS
+[ `cat KEYS | wc -l` -gt 1 ] || fail failed to add keys
+echo OK
+
+echo $N Add a delta to be sure there are keys .......................$NL
+bk edit $Q BitKeeper/etc/config
+bk delta $Q -ywhatever BitKeeper/etc/config
+bk commit $Q -ywhatever
+kill_uniq "$HERE/.bk/bk-keys-db"
+echo 'get .*' | bk info_shell --uniqdb | grep '^@.' >KEYS
+[ `cat KEYS | wc -l` -gt 1 ] || fail failed to add keys
+echo OK
+
+echo $N Make sure we generated the right keys in single user mode ...$NL
+# It's possible that the uniqdb can have more keys than those in
+# the repos, because UDP transmit timeouts cause the uniqdb to
+# see the same key multiple times. So just verify that the
+# expected keys are there -- more are OK.
+echo 'get .*' | bk info_shell --uniqdb | grep '^@.' >KEYS
+bk sort <KEYS | grep -v METADATA |
+    sed -e 's/\(.*\)|ChangeSet|\(.*\)|.*$/\1|ChangeSet|\2/' >GOT
+bk -r prs -c90.. -hnd@:SHORTKEY: | bk sort > WANT
+test `comm -13 GOT WANT | wc -l` -eq 0 || {
+	echo failed to regenerate the same keycache
+	diff WANT GOT
+	bk prs -nd:KEY: BitKeeper/etc/config
+}
+echo OK
+
+echo $N Show parallel commits don\'t use fudge .......................$NL
+nested nest
+for f in f1 f2 f3 f4
+do  bk setup -C -f $f
+    bk log -r+ -nd'$if(:FUDGE: -gt 2){bad fudge(:FUDGE:) in :GFILE:@:REV:}' \
+       $f/ChangeSet
+done
+echo OK

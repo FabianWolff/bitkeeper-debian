@@ -1,0 +1,126 @@
+# Copyright 2005-2006,2010-2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Simple pull -r test .........................................$NL
+commercial project
+cd ..
+bk clone $Q project copy
+cd project
+bk tag $Q T1
+bk changes -kr+ > ../BASELINE
+touch foo
+bk new $Q foo
+bk commit $Q -yfoo foo
+cd ../copy
+bk pull $Q -rT1 || {
+	echo failed
+	exit 1
+}
+bk changes -kr+ > KEY
+checkfiles ../BASELINE KEY
+echo OK
+
+echo $N Simple tag graph pull -r test ....,..........................$NL
+cd "$HERE/project"
+bk tag $Q -rT1 T1_PULL_THIS_TO_TEST_LEAF_MARKED
+bk changes -krT1 > ../KEY
+bk tag $Q T2
+bk tag $Q -rT1 NOT_THIS
+cd ../copy
+bk pull $Q -rT1 || {
+	echo failed
+	exit 1
+}
+bk changes -kr+ > KEY
+checkfiles ../KEY KEY
+bk changes -rNOT_THIS -ndx 2> ERR && {
+	echo failed: NOT_THIS tag sent
+	exit 1
+}
+grep -q "no such delta.*NOT_THIS" ERR || {
+	echo wrong error message
+	cat ERR
+	exit 1
+}
+# XXX: How to test if top tag is marked as a leaf node?
+echo OK
+
+echo $N Pull -r to create tag graph with merged tips ................$NL
+cd "$HERE/project"
+bk tag $Q FOO
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q -yfoo
+bk tag $Q FOO
+cd ../copy
+bk tag $Q -rT1 BAR
+bk pull $Q -rT2 || {
+	echo failed
+	exit 1
+}
+# XXX: How to test tips merged?
+echo OK
+
+echo $N Pull -r to see that it propagates with no problems ..........$NL
+cd "$HERE"
+bk clone $Q -r1.2 copy copykid || fail
+cd copykid
+bk pull $Q -rBAR || {
+	echo failed
+	exit 1
+}
+# XXX: BAR new tip and should be tagged.  How to test?
+echo OK
+
+echo $N Pull without -r to see that it brings rest ..................$NL
+bk pull $Q || {
+	echo failed
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet > A
+bk _scat ../copy/SCCS/s.ChangeSet > B
+checkfiles A B
+rm A B
+echo OK
+
+echo $N Pull -r such that the name has been changed .................$NL
+cd "$HERE/project"
+bk mv foo goo
+touch good
+bk new $Q good
+bk commit $Q --tag=OLDNAME -ypre-name
+bk mv goo bar
+bk mv good bad
+bk commit $Q -ybar
+cd ../copy
+bk mv foo bar
+bk commit $Q -ybar-conflict
+echo l | bk pull $Q -rOLDNAME 2> ERR || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Test pull -r\$TAGKEY..........................................$NL
+cd "$HERE"
+commercial proj2
+bk clone $Q . ../copy2 || fail
+bk tag $Q atag || fail
+cd ../copy2
+KEY=`bk changes -R -qand:MD5KEY:`
+bk pull $Q -r$KEY || fail
+bk changes -R -qa > OUT || fail
+touch EMPTY
+cmpfiles EMPTY OUT || fail should be empty
+echo OK

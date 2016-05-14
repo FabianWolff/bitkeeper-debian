@@ -1,0 +1,926 @@
+# Copyright 2002-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+echo foo > f
+BK_USER=adam bk delta $Q -i -y'Initial checkin' f
+BK_USER=adam bk commit $Q -y'Initial checkin' || fail
+bk edit $Q f
+BK_USER=second bk delta $Q -fy'Second checkin' f
+BK_USER=second bk commit $Q --tag=second -y'Second checkin' || fail
+bk edit $Q f
+BK_USER=third bk delta $Q -fy'Third checkin' f
+BK_USER=third bk commit $Q --tag=third -y'Third checkin' || fail
+echo OK
+
+echo $N Check that -/search/ works ..................................$NL
+bk changes -/Second/ > XXX
+grep -q ChangeSet@1.3 XXX || fail -f XXX failed to match the 1.3 changeset
+for r in 1.1 1.2 1.4
+do
+	grep -q ChangeSet@$r XXX && {
+		fail -f XXX matched the $r changeset
+	}
+done
+bk changes -/second/i > YYY
+checkfiles XXX YYY
+echo OK
+
+echo $N Check that -/regex/ works ...................................$NL
+bk changes -'/^S.* checkin$/' > XXX
+grep -q ChangeSet@1.3 XXX || fail -f XXX failed to match the 1.3 changeset
+for r in 1.1 1.2 1.4
+do	
+	grep -q ChangeSet@$r XXX && {
+		fail -f XXX matched the $r changeset
+	}
+done
+echo OK
+
+echo $N Check that -/regex/i works ..................................$NL
+bk changes -'/^s.* CHECKIN$/i' > XXX
+grep -q ChangeSet@1.3 XXX || fail -f XXX failed to match the 1.3 changeset
+for r in 1.1 1.2 1.4
+do	
+	grep -q ChangeSet@$r XXX && {
+		fail -f XXX matched the $r changeset
+	}
+done
+echo OK
+
+echo $N Check that filtering on included users works ................$NL
+bk changes -usecond > XXX
+grep -q ChangeSet@1.3 XXX || fail -f XXX failed to match the 1.3 changeset
+for r in 1.1 1.2 1.4
+do	grep -q ChangeSet@$r XXX && {
+		fail -f XXX matched the $r changeset
+	}
+done
+bk changes -uadam -usecond > XXX
+for r in 1.2 1.3
+do	grep -q ChangeSet@$r XXX || {
+		fail -f XXX failed to match the $r changeset
+	}
+done
+for r in 1.1 1.4
+do	grep -q ChangeSet@$r XXX && {
+		fail -f XXX matched the $r changeset
+	}
+done
+echo OK
+
+echo $N Check that filtering on excluded users works ................$NL
+bk changes -Usecond > XXX
+grep -q ChangeSet@1.3 XXX && {
+	fail -f XXX matched the 1.3 changeset
+}
+for r in 1.1 1.2 1.4
+do	grep -q ChangeSet@$r XXX || {
+		fail -f XXX did not match the $r changeset
+	}
+done
+echo OK
+
+echo $N Check that dspecs work ......................................$NL
+cat > WANT <<EOF
+1.4
+1.3
+1.2
+1.1
+1.0
+EOF
+bk changes -nd:I: > XXX
+checkfiles XXX WANT
+
+cat > WANT <<EOF
+1.0
+1.1
+1.2
+1.3
+1.4
+EOF
+bk changes -fnd:I: > XXX
+checkfiles XXX WANT
+echo OK
+
+echo $N Check that keys work . ......................................$NL
+bk prs -r.. -hnd:KEY: ChangeSet | bk sort > WANT
+bk changes -k | bk sort > GOT
+checkfiles WANT GOT
+echo OK
+
+echo $N Check that user restrictions work ...........................$NL
+bk changes -usecond > GOT
+bk changes -rsecond > WANT
+checkfiles WANT GOT
+bk changes -Usecond > GOT
+bk changes -r1.4,1.2,1.1,1.0 > WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N Check tag listing ...........................................$NL
+bk changes -t > GOT
+bk changes -rthird > WANT
+bk changes -rsecond >> WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N Check remote/local listings .................................$NL
+cd "$HERE"
+bk clone $Q project clone
+cd project
+touch LS
+ls | grep -v SCCS > LS
+bk new $Q LS
+BK_USER=jane bk commit $Q -y'project with spaces'
+cd "$HERE/clone"
+echo hi mom > mommy
+bk new $Q mommy
+BK_USER=joe bk commit $Q -yclone
+bk changes -L -qnd':I: :P: :C:' > GOT
+echo 1.5 joe clone > WANT
+checkfiles WANT GOT
+bk changes -R -qnd':I: :P: :C:' > GOT
+echo 1.5 jane project with spaces > WANT
+checkfiles WANT GOT
+# cut out the newline
+bk changes -L -qd':I: :P: :C:' > GOT
+echon 1.5 joe clone > WANT
+checkfiles WANT GOT
+bk changes -R -qd':I: :P: :C:' > GOT
+echo 1.5 jane project with spaces > WANT
+checkfiles WANT GOT
+bk changes -R '-/project with spaces/' -qd':I: :P: :C:' > GOT
+checkfiles WANT GOT
+cat <<EOF >WANT
+1.5
+jane
+project with spaces
+EOF
+bk changes -R '-/project with spaces/' -qd':I:\n:P:\n:C:' "$HERE/project" > GOT
+checkfiles WANT GOT
+echo OK
+
+echo $N Check changes -LR ...........................................$NL
+bk changes -LR -qnd':I: :P: :C:' > GOT || fail
+echo 1.5 joe clone > WANT
+echo 1.5 jane project with spaces >> WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N Check remote dspec listing ..................................$NL
+cd "$HERE/clone"
+bk changes -qnd':I: :P: :C:' > WANT
+cd "$HERE"
+bk changes -qnd':I: :P: :C:' "$HERE/clone" > GOT
+checkfiles clone/WANT GOT
+echo OK
+
+echo $N Check remote search combined with dspec .....................$NL
+# The /dev/null is because we exit so fast that the bkd can't update the
+# logs, at least that is my theory.
+cd "$HERE/clone"
+bk changes -/Second/ -qnd':I: :P: :C:' ../project > GOT 2>/dev/null
+echo 1.3 second Second checkin > WANT
+checkfiles WANT GOT
+bk changes -'/Second checkin/' -qnd':I: :P: :C:' ../project > GOT 2>/dev/null
+checkfiles WANT GOT
+echo OK
+
+echo $N Check remote key listing ....................................$NL
+bk prs -r.. -h -nd:KEY: ChangeSet | bk sort > WANT
+cd "$HERE"
+bk changes -k "$HERE/clone" | bk sort > GOT
+checkfiles clone/WANT GOT
+echo OK
+
+echo $N Check remote verbose listing ................................$NL
+cd "$HERE/clone"
+bk changes -qvr+ | bk undos > WANT
+cd "$HERE"
+bk changes -qvr+ "$HERE/clone" > GOT
+checkfiles clone/WANT GOT
+echo OK
+
+echo $N Check bk changes -R url1 url2 ...............................$NL
+cd "$HERE"
+bk clone $Q  clone clone2
+cd "$HERE/project"
+bk changes -R -k "$HERE/clone" > keylist1
+bk changes -R -k "$HERE/clone" "$HERE/clone2" > keylist2
+checkfiles keylist1 keylist2
+cd "$HERE/clone2"
+bk lock -U
+bk edit $Q f
+echo "new" >> f
+bk delta $Q -ynew f
+bk commit $Q -ynew
+cd "$HERE/project"
+bk changes -R -k "$HERE/clone" "$HERE/clone2" > keylist2
+cmp -s keylist1 keylist2 && fail new key did not appear
+bk prs -nhr+ -d':KEY:' "$HERE/clone2/ChangeSet" >> keylist1
+bk sort < keylist1 > keylist1sorted
+bk sort < keylist2 > keylist2sorted
+checkfiles keylist1sorted keylist2sorted
+echo OK
+
+echo $N Check bk changes -R - .......................................$NL
+cd "$HERE/clone"
+bk changes -k -r+ > "$HERE/K1"
+cd "$HERE/clone2"
+bk changes -k -r+ > "$HERE/K2"
+cd "$HERE/project"
+echo "$HERE/clone" | bk changes -R -k - > GOT
+checkfiles GOT "$HERE/K1"
+( echo "$HERE/clone"
+  echo "$HERE/clone2" ) | bk changes -R -k - | bk sort > GOT
+cat "$HERE/K1" "$HERE/K2" | bk sort > WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N Check bk changes -L - .......................................$NL
+# PWD=project
+( echo "$HERE/clone"
+  echo "$HERE/clone2" ) | bk changes -k -L - > GOT
+bk changes -r+ -k > WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N Check bk changes - ..........................................$NL
+bk changes -r+ -k | bk changes - > GOT
+bk changes -r+ > WANT
+checkfiles WANT GOT
+bk changes -k | bk changes - > GOT
+bk changes > WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N Check bk changes - url is an error ..........................$NL
+# PWD=project
+echo + > "$HERE"/IN
+bk changes - ../clone 2> ERR <"$HERE"/IN && fail "failed (it worked)"
+grep -q "either '-' or URL list" ERR || fail -f ERR
+cd "$HERE"
+bk changes - project 2> ERR <"$HERE"/IN && fail "failed (it worked)"
+grep -q "either '-' or URL list" ERR || fail -f ERR
+echo OK
+
+echo $N Check that changes -L/-R in a subdirectory works ............$NL
+cd "$HERE/project"
+mkdir subdir
+cd subdir
+bk changes -R -k "$HERE/clone" > GOT
+checkfiles "$HERE/K1" GOT
+bk changes -L -k "$HERE/clone" > GOT
+bk changes -r+ -k > WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N Check that changes -L/-R in a subdir work w/rel parent path..$NL
+cd "$HERE/clone"
+bk parent $Q -sn ../project || fail 1
+mkdir subdir
+cd subdir
+bk changes -L -k > GOT
+bk changes -r+ -k > WANT
+checkfiles WANT GOT
+bk parent $Q -s "$HERE/project" || fail 1
+echo OK
+
+echo $N Demonstrate out of order changesets .........................$NL
+commercial p
+touch foo
+bk new $Q foo
+# The long string needed to overcome fudges.
+# 1 more than need for that case where the seconds wrap during the test
+bk mv foo bar
+bk mv bar b
+bk mv b foo
+bk mv foo fee
+bk commit $Q -yy
+files=`bk changes -T -r+ -v -d:DPN:`
+test "$files" = "ChangeSetfeefoobbarfoofoo" || fail $files
+cd "$HERE"
+rm -rf p
+echo OK
+
+echo $N Demonstrate the other way they can be out of order ..........$NL
+commercial p
+touch foo
+bk new $Q foo
+cd "$HERE"
+bk clone $Q p c2
+cd c2
+touch bar
+bk new $Q bar
+bk commit $Q -yq
+cd "$HERE/p"
+bk commit $Q -ya
+cd "$HERE/c2"
+bk pull $Q || fail
+files=`bk changes -r1.1.1.1,1.2 -v -d:DPN:`
+if [ "$files" != "ChangeSetfoofooChangeSetbarbar" ]
+then	fail;
+else	echo OK
+fi
+cd "$HERE"
+rm -rf p
+
+echo $N Does combining restrictions work ............................$NL
+cd project
+revs=`bk changes -c-1Y -ujane -d:REV:`
+test X$revs != X1.5 && fail
+echo OK
+
+echo $N "Make sure no auto indent for -d<dspec>"  ......................$NL
+bk changes -r+ -v -d':DPN:\n' > changes.out
+bk undos <<EOF > ref
+ChangeSet
+LS
+LS
+EOF
+checkfiles ref changes.out
+echo OK
+
+echo $N Verify changes -aL works with tags ..........................$NL
+cd "$HERE/clone"
+bk tag $Q -r1.2 bar
+bk changes -aL -qnd':REV: :COMMENTS: :SYMBOL:' > chgs
+cat <<EOF > expect
+1.2  bar
+1.5 C clone
+ 
+EOF
+bk diff -u expect chgs || fail changes returned wrong data
+echo OK
+
+echo $N Verify changes -a works with tags ...........................$NL
+# I think the same outout should be had with 'bk changes -ar1.2' but it
+# is not, because the tag on 1.2 is not connected to the range 1.2 .
+# I could hack range_markMeta to know about rev ranges and rev lists and
+# just mark corresponding tags, but we don't care that much about it.
+# I played with it and undo breaks. So I stopped.
+bk changes -ar1.2 -nd:DT:-:GFILE:-:I: > GOT
+cat <<'EOF' > WANT
+D-ChangeSet-1.2
+EOF
+checkfiles WANT GOT
+bk changes -and'$if(:I:=1.2){:KEY:}' > LIST
+bk changes -and:DT:-:GFILE:-:I: - < LIST > GOT
+cat <<'EOF' > WANT
+T-ChangeSet-1.2
+D-ChangeSet-1.2
+EOF
+checkfiles WANT GOT
+echo OK
+
+echo $N Verify changes -av works with tags ..........................$NL
+# This uses the shift from rev to ser in changes MDBM to distinguish
+# between a tag and a real delta in a -av setup
+bk changes -avnd:DT:-:GFILE:-:I: - < LIST > GOT
+cat <<'EOF' > WANT
+T-ChangeSet-1.2
+D-ChangeSet-1.2
+D-f-1.1
+D-f-1.0
+EOF
+checkfiles WANT GOT
+echo OK
+
+echo $N Change changes on a remote repository .......................$NL
+key=`bk prs -r+ -hnd:KEY: ChangeSet`
+cd "$HERE"
+key2=`bk changes -r+ -qnd:KEY: clone`
+if [ "$key" != "$key2" ]
+then	fail Remote changes failed - $key vs $key2
+fi
+echo OK
+
+# leftover from pull -nl, later tests want this.
+cd "$HERE"
+bk clone $Q project merge
+cd merge
+bk pull $Q ../clone
+cd ../project
+bk pull ../clone > junk 2>&1
+
+echo $N Check date formats ..........................................$NL
+Y=`bk prs -Yhnd:Dy: -r+ ChangeSet`
+bk changes -nd:Dy: > OUT || fail
+bk changes -v -nd:Dy: >> OUT || fail
+test `grep -v 1971 OUT | bk sort -u` = $Y || fail not all YEAR4 dates
+echo OK
+
+echo $N Check that changes -L -R works ..............................$NL
+cd "$HERE"
+bk clone $Q project clone1
+cd clone1
+bk edit $Q f
+bk delta $Q -fy'clone1 delta 1' f
+bk commit $Q -y'clone1 checkin 1' || fail
+
+cd "$HERE"
+rm -rf clone2
+bk clone $Q clone1 clone2 || fail
+cd clone2 || fail
+bk edit $Q f
+bk delta $Q -fy'clone2 delta' f
+bk commit $Q -y'clone2 checkin' || fail
+
+(bk changes -kL ../clone1; bk changes -kR ../clone1) > WANT
+bk changes -qand:KEY: -L -R ../clone1 > GOT
+checkfiles WANT GOT
+echo OK
+
+echo $N Test changes -L repo1 repo2 .................................$NL
+cd "$HERE/clone1"
+echo jj > baz
+bk new $Q baz || fail
+bk commit $Q -ybaz || fail
+bk changes -qand:C: -L ../project > p1
+bk changes -qand:C: -L ../clone2  > c1
+cat p1 c1 > WANT
+bk changes -L -qand:C: ../project ../clone2 > GOT
+checkfiles WANT GOT
+echo OK
+
+echo $N Test changes -L repo2 repo1 .................................$NL
+cat c1 p1 > WANT
+bk changes -L -qand:C: ../clone2 ../project > GOT
+checkfiles WANT GOT
+echo OK
+
+echo $N Test changes -D -L repo1 repo2 ..............................$NL
+cd "$HERE/clone1"
+bk changes -qand:C: -L ../project > p1
+bk changes -qand:C: -L ../clone2  > c1
+comm -12 p1 c1 > WANT
+bk changes -qand:C: -D -L ../project ../clone2 | sort > GOT
+checkfiles WANT GOT
+echo OK
+
+echo $N Set up for include/exclude tests ............................$NL
+cd "$HERE/project"
+for i in man src html
+do	mkdir $i
+done
+for i in foo bar blech
+do	echo $i > man/${i}.1
+	echo $i > src/${i}.c
+	echo $i > src/${i}.h
+	echo $i > html/${i}.html
+done
+bk extras | bk new $Q -
+bk commit $Q -ywhatever
+echo OK
+
+echo $N Demonstrate using dv2 on one line ...........................$NL
+bk changes -r+ -nd'#dv2\n${1=+}$1' > GOT
+echo "+" > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test a dspec of only dv2 line does not use data after null ..$NL
+# bug where code would pick up stuff after the null.
+# which would be junk.  For the test, make it not junk.
+perl -e 'print "#dv2\\n\0\n:I:\n"' > dspecf
+bk changes -r+ -n --dspecf=dspecf > GOT || fail -f GOT
+test -s GOT && fail -f GOT
+echo OK
+
+echo $N Demonstrate saving data across csets ........................$NL
+bk changes -r..1.2 -vf -d'#dv2
+$if (:CHANGESET:) {
+	${2=}			# dont compare path with other csets
+	$if ($1) {		# close old cset
+		</CSET>\n
+	} $else {
+		${1=1}		# start new cset
+	}
+	"<CSET rev=:I:>\n"
+} $else {
+	"  <FILE path="
+	$if (:DPN: = $2) {
+		SAME
+	} $else {
+		:DPN:
+		${2=:DPN:}	# save pathname
+	}
+	" rev=:I:>\n"
+	"    :USER:@:HOST:\n"
+	"  </FILE>\n"
+}
+$end{
+	$if ($1) {
+		</CSET>\n
+	}
+}'> GOT
+cat > WANT <<EOF
+<CSET rev=1.0>
+</CSET>
+<CSET rev=1.1>
+  <FILE path=BitKeeper/etc/collapsed rev=1.0>
+    bk@bk_regression.bk
+  </FILE>
+  <FILE path=SAME rev=1.1>
+    bk@bk_regression.bk
+  </FILE>
+  <FILE path=BitKeeper/etc/config rev=1.0>
+    bk@bk_regression.bk
+  </FILE>
+  <FILE path=SAME rev=1.1>
+    bk@bk_regression.bk
+  </FILE>
+  <FILE path=BitKeeper/etc/gone rev=1.0>
+    bk@bk_regression.bk
+  </FILE>
+  <FILE path=SAME rev=1.1>
+    bk@bk_regression.bk
+  </FILE>
+  <FILE path=BitKeeper/etc/ignore rev=1.0>
+    bk@bk_regression.bk
+  </FILE>
+  <FILE path=SAME rev=1.1>
+    bk@bk_regression.bk
+  </FILE>
+</CSET>
+<CSET rev=1.2>
+  <FILE path=f rev=1.0>
+    adam@bk_regression.bk
+  </FILE>
+  <FILE path=SAME rev=1.1>
+    adam@bk_regression.bk
+  </FILE>
+</CSET>
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Show usernames like the default dspec .......................$NL
+bk changes -v -r..1.6 \
+  -d':INDENT::DPN:@:I:'\
+'${1=:P:$if(:HT:){@:HT:}}'\
+'$if(:CHANGESET: && !:COMPONENT:){'\
+', DATE, $1${0=$1}}'\
+'$else{$if($0!=$1){, $1}}'\
+'$unless(:CHANGESET:){ +:LI: -:LD:}\n'\
+'$unless(:REV: = 1.0 || :REV: = 1.1){$each(:C:){:INDENT:  (:C:)\n}}' > GOT || {
+   fail
+}
+cat <<EOF >WANT
+ChangeSet@1.4.1.1, DATE, joe@bk_regression.bk
+  clone
+  mommy@1.1, bk@bk_regression.bk +1 -0
+  mommy@1.0, bk@bk_regression.bk +0 -0
+ChangeSet@1.5, DATE, jane@bk_regression.bk
+  project with spaces
+  LS@1.1, bk@bk_regression.bk +6 -0
+  LS@1.0, bk@bk_regression.bk +0 -0
+ChangeSet@1.4, DATE, third@bk_regression.bk
+  Third checkin
+  f@1.3 +0 -0
+    Third checkin
+ChangeSet@1.3, DATE, second@bk_regression.bk
+  Second checkin
+  f@1.2 +0 -0
+    Second checkin
+ChangeSet@1.2, DATE, adam@bk_regression.bk
+  Initial checkin
+  f@1.1 +1 -0
+  f@1.0 +0 -0
+ChangeSet@1.1, DATE, bk@bk_regression.bk
+  BitKeeper/etc/collapsed@1.1 +1 -0
+  BitKeeper/etc/collapsed@1.0 +0 -0
+  BitKeeper/etc/config@1.1 +7 -0
+  BitKeeper/etc/config@1.0 +0 -0
+  BitKeeper/etc/gone@1.1 +1 -0
+  BitKeeper/etc/gone@1.0 +0 -0
+  BitKeeper/etc/ignore@1.1 +1 -0
+  BitKeeper/etc/ignore@1.0 +0 -0
+ChangeSet@1.0, DATE, bk@bk_regression.bk
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test a list of urls, staring with a bad and ending good .....$NL
+bk changes -r+ -ndx /sldfjsdf/some/bad/url "$HERE/clone" > OUT 2> ERR && {
+	fail failed rc=0
+}
+echo OK
+
+echo $N Test :GFILE: in a subdirectory ..............................$NL
+cd html
+bk changes -r+ -nd:GFILE: > OUT || fail
+test "`cat OUT`" = ChangeSet || fail
+bk changes -qr+ -nd:GFILE: ../../clone1 > OUT || fail
+test "`cat OUT`" = ChangeSet || fail
+bk changes -qL -nd:GFILE: ../../clone1 > OUT || fail
+test "`cat OUT`" = ChangeSet || fail
+bk changes -qR -nd:GFILE: ../../clone1 > OUT || fail
+test "`head -1 OUT`" = ChangeSet || fail
+echo OK
+
+echo $N Check exit status for changes -L no/such/repo ...............$NL
+bk clone $Q -r1.1 "$HERE/project" "$HERE/superset"
+cd "$HERE/superset"
+bk changes -qL /no/such/repo > OUT 2>&1 && fail should not have exited 0
+grep -q "illegal, nonexistent, or not package root" OUT || {
+	fail -f OUT Wrong message
+}
+echo OK
+
+echo $N Check exit status for changes -R no/such/repo ...............$NL
+bk changes -qR /no/such/repo > OUT 2>&1 && {
+	fail should not have exited 0
+}
+grep -q "illegal, nonexistent, or not package root" OUT || {
+	fail -f OUT Wrong message
+}
+echo OK
+
+echo $N Check exit status for changes -L repo/with/lock .............$NL
+L=`cd "$HERE"/project ; bk lock -wt`
+bk changes -qL "$HERE/project" > OUT 2>&1 && {
+	bk _kill $L
+	fail -f OUT should not have exited 0
+}
+grep -q "Can't get read lock on the repository" OUT || {
+	bk _kill $L
+	fail -f OUT Wrong message
+}
+# keep lock going for next one
+echo OK
+
+echo $N Check exit status for changes -R repo/with/lock .............$NL
+bk changes -qR "$HERE/project" > OUT 2>&1 && {
+	bk _kill $L
+	fail -f OUT should not have exited 0
+}
+grep -q "Can't get read lock on the repository" OUT || {
+	bk _kill $L
+	fail -f OUT Wrong message
+}
+bk _kill $L
+echo OK
+
+echo $N Check exit status for changes -L different/package ..........$NL
+# give me a new root, work with old root'd parent
+bk newroot -q
+bk changes -qL > OUT 2>&1 && fail -f OUT should not have exited 0
+grep -q "You are trying to synchronize with an unrelated package" OUT || {
+	fail -f OUT Wrong message
+}
+echo OK
+
+echo $N Check exit status for changes -R different/package ..........$NL
+bk changes -qR > OUT 2>&1 && {
+	fail -f OUT should not have exited 0
+}
+grep -q "You are trying to synchronize with an unrelated package" OUT || {
+	fail -f OUT Wrong message
+}
+echo OK
+
+echo $N Tests if changes output is static ...........................$NL
+cd "$HERE"/project
+KEY=`bk changes -r+ -nd:KEY:`
+
+bk changes -r"$KEY" -v > OUT1 || fail
+bk mv junk zzz || fail
+bk commit $Q -ymv || fail
+bk changes -r"$KEY" -v > OUT2 || fail
+cmpfiles OUT1 OUT2
+echo OK
+
+echo $N See that interleaved files do not interleave in output ......$NL
+BK_CONFIG="partial_check: on!; checkout: edit!"
+export BK_CONFIG
+touch a
+bk new $Q a
+bk commit $Q -ya
+cd ..
+bk clone $Q -l project copy
+cd project
+for x in 1 2
+do	cd ../copy
+	bk delta $Q -fycopy a
+	cd ../project
+	bk delta $Q -fyproject a
+done
+bk commit $Q --tag=PROJ -yproject
+cd ../copy
+bk commit $Q --tag=COPY -ycopy
+bk pull $Q
+bk changes -v -rPROJ,COPY -nd:C: > GOT
+cat <<EOF > WANT
+copy
+copy
+copy
+project
+project
+project
+EOF
+cmpfiles GOT WANT
+unset BK_CONFIG
+echo OK
+
+echo $N Changes should not crash without a cset file ................$NL
+cd "$HERE"/copy
+bk _rm -f SCCS/s.ChangeSet
+bk changes -R 2>ERR && fail
+cat <<EOF > WANT
+changes: missing ChangeSet file
+EOF
+cmpfiles ERR WANT
+cd ..
+rm -rf copy
+echo OK
+
+echo $N Verify that --no-meta works remotely ........................$NL
+cd project
+bk changes -av > 1 || fail
+bk changes -av --no-meta > 2 || fail
+bk changes -q -av --no-meta . > 3 || fail
+cmp -s 2 3 || fail
+cmp -s 1 2 && fail
+echo OK
+
+echo $N Verify that --dspecf loads a dspec ..........................$NL
+bk changes -n --dspecf=nonexist 2> GOT && fail -f GOT
+echo 'changes: cannot load file "nonexist"' > WANT
+# Test v1
+echo :I: > dspec
+bk changes --dspecf=dspec > GOT || fail
+bk changes -nd:I: > WANT
+cmpfiles WANT GOT
+# Test v2
+echo '#dv2' > dspec
+echo :I: >> dspec
+bk changes -n --dspecf=dspec > GOT || fail
+bk changes -nd:I: > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check that a \} in a string doesn\'t screw up parsing..........$NL
+cat <<'EOF' > dspec
+#dspec-v2
+$if(:CHANGESET: && !:COMPONENT_V:) {
+	"{"
+	"."
+	"}\n"
+}
+EOF
+cat <<EOF > WANT
+{.}
+EOF
+bk changes -1 -v --dspecf=dspec > GOT
+cmpfiles WANT GOT
+echo OK
+
+
+# Setup a case where changes is hanging a remote repo with a read lock
+# and show that it doesn't in the -R case, as part2 now releases the readlock
+
+# This is because kill leaves bk_keylist_* file as litter, so leave it as
+# litter somewhere other than the tracked location.
+TMPDIR="$BK_TMP"
+export TMPDIR
+
+echo $N Test read lock being released in remote repo in -R case .....$NL
+cd "$HERE/clone1"
+# keep clone1 read locked
+L=`bk lock -rt`
+cd "$HERE/project"
+touch foo
+bk new $Q foo
+bk clone $Q . ../read-lock
+bk edit $Q foo
+# hack way to get a > 64k byte file (this is ~100k)
+# Note: On ia64, this test always passes with s/1000/2555/ and fails w/ 2556
+# So leaving the size of the block of data small as it fails on some machines.
+perl -e 'for (1..1000) {print "abcde" x 20, "\n"}' >> foo
+bk delta $Q -ydata foo
+bk commit $Q -ydata
+cd ../read-lock
+bk changes -vvR | bk lock -U ../clone1 &
+# Let things get started
+bk _usleep 10000
+# Wayne's cool trick from t.remote: do command holding write lock
+cd ../project
+bk -Lw10 _usleep 1 || {
+	bk _kill $L
+	fail didn\'t release lock
+}
+bk _kill $L
+echo OK
+
+echo $N Test that using a variable to access another rev works ......$NL
+cd "$HERE"/project
+test `bk changes -r1.5 -nd'${0=1.8}:REV|$0:'` = 1.8 || fail
+echo OK
+
+echo $N Test that bk changed_files does something useful ............$NL
+cd "$HERE/clone1"
+cat > WANT <<EOF
+1 ==== changes -R file://$HERE/project ====
+5 ChangeSet
+2 ERR
+2 GOT
+2 OUT
+2 WANT
+2 XXX
+2 YYY
+4 a
+2 changes.out
+3 foo
+2 html/bar.html
+2 html/blech.html
+2 html/foo.html
+2 keylist1
+2 keylist1sorted
+2 keylist2
+2 keylist2sorted
+2 man/bar.1
+2 man/blech.1
+2 man/foo.1
+2 ref
+2 src/bar.c
+2 src/bar.h
+2 src/blech.c
+2 src/blech.h
+2 src/foo.c
+2 src/foo.h
+2 subdir/GOT
+2 subdir/WANT
+3 zzz
+EOF
+bk changed_files -R > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test bk changed_files with an URL ...........................$NL
+cat > WANT <<EOF
+1 ==== changes -L $HERE/clone2 ====
+1 ChangeSet
+2 baz
+EOF
+bk changed_files -L ../clone2 > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Check that -/regex/t works ..................................$NL
+bk changes -/s.*/t -nd:SYMBOL: > GOT
+echo second > WANT
+cmpfiles WANT GOT
+bk changes -/t*i/gt -nd:SYMBOL: > GOT
+echo third > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test a comment with slashes..................................$NL
+touch afile
+bk new $Q afile
+cat <<EOF | bk cfile save ChangeSet
+This is a comment
+with / in it
+EOF
+bk commit -c $Q
+REV=`bk changes -nd:REV: -r+`
+bk changes -'/with ' 2>ERR && fail should have failed
+cat <<EOF > WANT
+unterminated search pattern: /with 
+EOF
+cmpfiles WANT ERR
+# now with a \/
+bk changes -'/with \/' 2>ERR && fail should have failed
+cat <<EOF > WANT
+unterminated search pattern: /with \/
+EOF
+cmpfiles WANT ERR
+echo OK
+
+echo $N Test -c restriction .........................................$NL
+cd "$HERE"
+BK_DATE_TIME_ZONE="97/05/20 18:48:16+00:00"
+export BK_DATE_TIME_ZONE
+fresh_commercial proj2
+unset BK_DATE_TIME_ZONE
+touch foo
+bk new $Q foo
+bk commit $Q -f
+REV=`bk changes -nd":REV:" -c-1d`
+WANT=1.2
+test "$REV" = "$WANT" || fail REV should be $WANT not $REV
+echo OK

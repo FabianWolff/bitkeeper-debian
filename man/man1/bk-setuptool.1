@@ -1,0 +1,74 @@
+.so ../bk-macros
+.TH "bk setuptool" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    ====================== BitKeeper setuptool ======================
+.SH NAME
+bk setuptool \- graphical front-end to the \*(BK setup command
+.SH SYNOPSIS
+.B bk setuptool
+.[ARG] directory
+.SH DESCRIPTION
+.LP
+The
+.B bk setuptool
+command is a graphical interface for creating new \*[BK] repositories.
+.LP
+The purpose of the tool is to help you enter all of the information 
+needed to create a repository by stepping you through a series of
+input forms and prompts.
+.LP
+You will be prompted for additional information
+that will be stored in the config file for the repository. Different
+types of repositories will require slightly different sets of
+data.
+.LP
+After all information has been entered you will have a chance to
+review the information that will be put into the config file before
+the repository is created. When the repository is created, the config 
+file is stored as a normal revision controlled file so that you may go 
+back and edit the file at a later date.
+.LP
+If you will be creating several repositories that will use the same 
+configuration information (such as contact information) you may
+create a system-wide default config file in 
+.BR /etc/BitKeeper/etc/config.template .
+This has the same format as a regular config file. 
+.B bk setuptool 
+will look for
+this file and, if found, use the data in the file to set the default
+values when creating a new repository.
+.SH "EXAMPLES"
+.LP
+To create a repository named
+.BR /projects/helloworld ,
+you type the following command:
+.DS
+bk setuptool /projects/helloworld
+.DE
+This will prompt you for information to place in the config file and
+then create a project hierarchy rooted at
+.BR /projects/helloworld .
+The config file with the data you entered is in 
+.BR /projects/helloworld/BitKeeper/etc/config .
+.LP
+You do not need to include the name of a directory on the command line. If
+you do not include it you will be required to enter a name during one
+of the configuration steps.
+.SH BINDINGS
+.LP
+.TP \fBENTER\fP
+.SB ENTER
+Perform the default action, which is either to go to the next step,
+or create the repository if on the final step.
+.tp
+.SB TAB
+Moves between input fields.
+.LP
+You may also use your system's cut, copy and paste keys in the input
+fields.
+.SH "SEE ALSO"
+.SA config-etc
+.SA setup
+.SH CATEGORY
+.B GUI-tools
+.br
+.B Repository

@@ -1,0 +1,168 @@
+# Copyright 2000,2005-2006,2008-2010,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# XXX still need to test propagation of:
+# descriptive text
+# permissions
+# LODs
+# per file information (flags, etc.)
+
+IDCACHE=BitKeeper/log/x.id_cache
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+echo $N test idcache update in chaining rename ......................$NL
+# commit the config file
+mkdir src
+cd "$HERE/project/src"
+echo foo1 > foo.c
+bk ci $Q -i foo.c
+bk mv foo.c bar.c
+echo foo2 >  foo.c
+bk ci $Q -i foo.c
+if [ "`bk prs -hr1.0 -d:KEY: bar.c`" = "`bk prs -hr1.0 -d:KEY: foo.c`" ]
+then	echo Failed to prevent duplicate root keys
+	bk prs -r1.0 -d:KEY:  bar.c fooc.
+	exit 1
+fi
+bk commit $S -y"abc" 
+if [ $? != 0 ]
+then	echo commit failed
+	exit 1
+fi
+bk rm bar.c
+bk commit $S -y"rm"
+bk -r check -a || fail
+echo OK
+
+echo $N corrupt the idcache, should rebuild .........................$NL
+cd "$HERE/project"
+echo "hi mom" > X
+bk _cat X $IDCACHE > Y
+bk _mv Y $IDCACHE
+cd "$HERE/project/src"
+bk -r check -a 2>OUT || fail
+grep -q 'Rebuilding idcache' OUT || {
+	echo Bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+bk sane
+echo $N No write permission on idcache ..............................$NL
+cd "$HERE/project"
+echo "hi mom" > X
+bk _cat X $IDCACHE > Y
+chmod -w Y
+bk _mv Y $IDCACHE
+cd "$HERE/project/src"
+bk -r check -a 2>OUT || fail
+grep -q 'Rebuilding idcache' OUT || {
+	echo Bad error message
+	cat OUT
+	exit 1
+}
+bk _cat "$HERE/project/$IDCACHE" | grep 'hi mom'  && {
+	echo failed to rewrite cache
+	bk _cat "`bk root`"/$IDCACHE
+	exit 1
+}
+echo OK
+
+echo $N No write permission on BitKeeper/log ........................$NL
+cd "$HERE/project"
+echo "hi mom" > X
+bk _cat X $IDCACHE > Y
+bk _cp Y $IDCACHE
+oldmode=`bk _stat "$HERE"/project/BitKeeper/log | awk -F\| '{ print substr($3, 3) }'`
+bk _chmod 555 "$HERE/project/BitKeeper/log"
+cd "$HERE/project/src"
+bk -r check -a 2>OUT && {
+	bk _chmod $oldmode "$HERE/project/BitKeeper/etc/SCCS"
+	echo failed to error about write permission
+	cat OUT
+	exit 1
+}
+bk _chmod $oldmode "$HERE/project/BitKeeper/log"
+grep -q 'no write permission' OUT || {
+	echo Bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Check for extra idcache rebuild for new files ...............$NL
+bk idcache 2>/dev/null
+cd "$HERE"
+bk clone $Q project clone
+cd project
+echo I hope not > rebuild
+bk new $Q rebuild
+bk commit $Q -ywhatever
+cd ../clone
+bk pull >OUT 2>&1
+grep -q 'Rebuilding idcache' OUT && {
+	echo Failed to short circuit rebuild
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure we catch duplicate files ..........................$NL
+cd "$HERE/project"
+echo catch me > duplicate
+bk new $Q duplicate
+bk commit $Q -ywhatever
+bk _cp SCCS/s.duplicate "$HERE/clone/SCCS/s.catch_me"
+cd ../clone
+BK_CONFIG='partial_check:off!;autofix:off!' bk pull >OUT 2>&1 && {
+	echo failed to exit non zero
+	cat OUT
+	exit 1
+}
+grep -q 'Rebuilding idcache' OUT && {
+	echo Failed to short circuit rebuild
+	cat OUT
+	exit 1
+}
+grep -q 'check: SCCS/s.catch_me should be SCCS/s.duplicate' OUT || {
+	echo Failed to catch duplicate
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N clone bug related to propagating idcache ....................$NL
+cd "$HERE/project"
+echo binary > bam
+bk new $Q -b bam
+bk commit $Q -ybam
+bk idcache -q
+bk _cp BitKeeper/log/x.id_cache BitKeeper/etc/SCCS/x.id_cache
+bk rm bam
+bk commit $Q -yrm
+bk clone $Q . ../copy 2> ERR || fail -f ERR
+test -s ERR && fail -f ERR
+echo OK
+
+echo $N Rclone bug related to propagating idcache ...................$NL
+bk _rclone $Q -s. . ../rcopy 2> ERR || fail -f ERR
+test -s ERR && fail -f ERR
+echo OK

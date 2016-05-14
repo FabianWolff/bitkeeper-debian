@@ -1,0 +1,644 @@
+# Copyright 2008-2011,2013-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Tests for product clone.
+
+set -e
+
+echo $N Create an ensemble...........................................$NL
+nested project
+# add some files
+cd "$HERE/project/gcc"
+for i in 1 2 3 4 5
+do
+	touch file$i
+	echo "stuff $i" > file$i
+	bk new $Q -y"add" file$i
+done
+bk commit -S $Q -y"Add $i to file$i"
+cd "$HERE/project" && bk commit -S $Q -y"Commit cset in gcc"
+cd "$HERE/project/gdb"
+for i in 1 2 3 4 5
+do
+	touch file$i
+	echo "stuff $i" > file$i
+	bk new $Q -y"add" file$i
+	bk commit -S $Q -y"add file $i"
+done
+cd "$HERE/project" && bk commit $Q -S -y"add csets to gdb"
+echo OK
+
+echo $N Try a null push..............................................$NL
+cd "$HERE"
+bk clone $Q project null-push
+cd "$HERE/null-push"
+bk push >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+grep -q "Nothing to push." OUT || {
+	echo failed
+	cat OUT
+	exit 1
+}
+test -f "$HERE/project/BitKeeper/writer/nested_lock" && {
+	echo failed
+	echo nested lock left
+	cat "$HERE/project/BitKeeper/writer/nested_lock"
+	exit 1
+}
+echo OK
+
+echo $N Try a simple push............................................$NL
+cd "$HERE"
+bk clone $Q project copy
+bk clone $Q project copy2
+# add some csets to gcc
+cd "$HERE/copy/gcc"
+for i in 1 2 3 4 5
+do
+	bk edit $Q file$i
+	echo "new stuff $i" >> file$i
+	bk delta $Q -y"modify" file$i
+	bk commit -S $Q -y"Add $i to file$i"
+done
+cd "$HERE/copy"
+bk commit $Q -y"more stuff to gcc"
+bk push >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+test -z "`bk changes -qL`" || {
+	echo failed
+	echo Did not push
+	bk changes -qL
+	exit 1
+}
+cd "$HERE/project"
+bk -e -r check -av >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Push with modified files in remote uses gfiles...............$NL
+cd "$HERE"
+bk clone $Q copy2 pp1
+bk clone $Q copy pp2
+cd pp1/gcc
+bk edit $Q file1
+echo mods >> file1
+cd ../../pp2
+bk push $Q ../pp1 2>ERR && fail -f ERR should have failed
+# strip the date in the first line
+cat ERR | grep -v ^takepatch: > GOT
+cat > WANT <<EOF
+
+=================================== ERROR ====================================
+The following files are modified locally and in the patch:
+	file1
+For more information run "bk help tp1"
+==============================================================================
+Errors during update of the following files:
+file1
+==============================================================================
+Push failed: remote takepatch (file://$HERE/pp1/gcc) exited 1
+Pushing gcc failed
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Try a push from a component..................................$NL
+cd "$HERE"
+bk clone $Q copy2 p1
+bk clone $Q copy p2
+cd p2
+bk parent $Q ../p1
+cd gcc
+bk push $Q 2>ERR || fail -f ERR should have worked
+cd ..
+test -z "`bk changes -qL`" || fail left changes
+echo OK
+
+
+echo $N Try a push with conflicts....................................$NL
+cd "$HERE/copy2"
+echo "hi" > newfile
+bk new $Q newfile
+bk commit $Q -y"new file"
+bk push >OUT 2>&1 && {
+	echo failed
+	exit 1
+}
+grep -q "The repository you are pushing to is 1 csets/tags" OUT || {
+	echo failed
+	exit 1
+}
+cd "$HERE"
+test -d project/RESYNC && {
+	echo failed
+	echo left remote locked
+	exit 1
+}
+echo OK
+
+echo $N Try a push -r................................................$NL
+cd "$HERE/copy"
+TIP=`bk changes -kr+`
+# add more stuff to gdb
+cd "$HERE/copy/gdb"
+for i in 1 2 3 4 5
+do
+	bk edit $Q file$i
+	echo "new stuff $i" >> file$i
+	bk delta $Q -y"modify" file$i
+	bk commit -S $Q -y"Add $i to file$i"
+done
+cd "$HERE/copy"
+bk commit $Q -y"more stuff to gdb"
+bk push $Q -r"$TIP" >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+cd "$HERE/project"
+test "`bk changes -kr+`" = "$TIP" || {
+	echo failed
+	echo Pushed too much
+	exit 1
+}
+echo OK
+
+echo $N Try a multi-parent push......................................$NL
+cd "$HERE"
+rm -rf project
+bk clone $Q -l null-push parent1
+bk clone $Q -l null-push parent2
+cd "$HERE/copy"
+TIP=`bk changes -kr+`
+bk push $Q "$HERE/parent1" "$HERE/parent2" >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+cd "$HERE/parent1"
+test "`bk changes -kr+`" = "$TIP" || {
+	echo failed
+	echo Pushed too much
+	exit 1
+}
+cd "$HERE/parent2"
+test "`bk changes -kr+`" = "$TIP" || {
+	echo failed
+	echo Pushed too much
+	exit 1
+}
+echo OK
+
+echo $N Try a push through the BKD...................................$NL
+cd "$HERE"
+bk clone $Q -l null-push project
+cd "$HERE/project"
+bk bkd -q -d -aPORT -ikill || fail
+P=`cat PORT`
+cd "$HERE/copy"
+bk push bk://localhost:$P >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+bk _kill bk://localhost:$P || fail
+echo OK
+
+echo $N Try a push using HTTP........................................$NL
+cd "$HERE"
+rm -rf project
+bk clone $Q -l null-push project
+cd "$HERE/project"
+bk bkd -q -d -aPORT -ikill || fail
+P=`cat PORT`
+cd "$HERE/copy"
+bk push http://localhost:$P >OUT 2>&1 || fail -f OUT
+bk _kill bk://localhost:$P || fail
+test -f "$HERE/project/BitKeeper/writer/nested_lock" && fail leaked lock
+echo OK
+
+echo $N Try a push with conflicts using HTTP.........................$NL
+cd "$HERE"
+rm -rf project
+bk clone $Q -l null-push project || fail
+cd "$HERE/project/gdb"
+bk edit $Q file1 || fail
+echo "conflicts" >> file1
+bk ci $Q -y"conflict" file1
+bk commit -S $Q -y"make a conflict" || fail
+cd "$HERE/project"
+bk commit $Q -y"make conflict" || fail
+bk bkd -q -d -aPORT -ikill || fail
+P=`cat PORT`
+cd "$HERE/copy"
+bk push http://localhost:$P >OUT 2>&1 && fail -f OUT
+RC=$?
+test $RC = 3 || fail -f OUT wrong exit code $RC
+bk _kill bk://localhost:$P || fail
+test -f "$HERE/project/BitKeeper/writer/nested_lock" && fail leaked lock
+echo OK
+
+echo $N Try a null-push using HTTP...................................$NL
+cd "$HERE"
+rm -rf project
+bk clone $Q -l null-push project
+cd "$HERE/null-push"
+bk bkd -q -d -aPORT -ikill || fail
+P=`cat PORT`
+cd "$HERE/project"
+bk push http://localhost:$P >OUT 2>&1 || fail -f OUT
+bk _kill bk://localhost:$P || fail
+i=0
+while test -f "$HERE/null-push/BitKeeper/writer/nested_lock"; do
+      sleep 1
+      i=`expr $i + 1`
+      test $i -gt 5 && fail leaked lock
+done
+echo OK
+
+echo $N Check to see that _BK_TRANSACTION is not set in a trigger ...$NL
+cd "$HERE"
+rm -rf project
+bk clone $Q null-push project
+cd copy/BitKeeper
+mkdir triggers
+cd triggers
+cat <<'EOF' > post-incoming.push
+#!/bin/sh
+env > ENV
+EOF
+chmod +x post-incoming.push
+bk new $Q post-incoming.push
+bk commit $Q -y'trigger'
+cd ../..
+bk push $Q ../project || fail
+cd ../project
+grep -q '_BK_TRANSACTION=.' ENV && {
+	echo failed
+	cat ENV | grep BK_
+	exit 1
+}
+# _TRANSACTION shouldn't be defined at the top level of a trigger
+echo OK
+
+echo $N Make sure triggers are not being run twice...................$NL
+cd "$HERE"
+rm -rf project
+rm -f TRIGGER FAIL
+bk clone $Q null-push project
+cd copy/BitKeeper/triggers
+cat <<EOF > post-incoming.push2
+#!/bin/sh
+test -f "$HERE"/TRIGGER && touch "$HERE"/FAIL
+touch "$HERE"/TRIGGER
+EOF
+chmod +x post-incoming.push2
+bk new $Q post-incoming.push2
+bk commit $Q -y'trigger2'
+cd ../..
+bk push $Q ../project || fail
+test -f "$HERE/FAIL" && {
+	echo failed
+	echo Product triggers running twice
+	exit 1
+}
+rm -f "$HERE"/FAIL
+echo OK
+
+echo $N Try a push that adds a component.............................$NL
+cd "$HERE"
+rm -rf project copy TRIGGER FAIL
+bk clone $Q null-push project
+bk clone $Q project copy
+cd "$HERE"
+commercial libc
+cd "$HERE"/copy
+bk portal $Q . || fail
+BEFORE=`bk parent -l`
+bk attach $Q ../libc libc
+AFTER=`bk parent -l`
+test "$BEFORE" = "$AFTER" || {
+	echo failed to leave parent pointer alone
+	echo "before $BEFORE"
+	echo "after $AFTER"
+	exit 1
+}
+bk push >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+cd "$HERE"/project
+test -d libc || {
+	echo failed
+	exit 1
+}
+cd libc
+bk -r check -av >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Check that push updates urllist .............................$NL
+cd "$HERE"
+bk clone $Q project clone || fail
+cd clone
+bk portal $Q . || fail
+bk setup -f newrepo || fail
+bk push $Q || fail
+# A successful push of newrepo should add newrepo's rootkey to the urllist.
+cd newrepo
+NEWREPO_ROOTKEY=`bk id -S`
+cd ..
+grep -q "$NEWREPO_ROOTKEY" BitKeeper/log/urllist || fail
+echo OK
+
+echo $N Try a push from sparse to full - not ever doable ............$NL
+cd "$HERE"
+bk clone $Q project full
+test -d project/RESYNC && fail
+test -d full/RESYNC && fail
+bk clone $Q full sparse
+test -d sparse/RESYNC && fail
+test -d full/RESYNC && fail
+# Now make a cset that spans two components, remove one of them, and push.
+cd sparse
+for i in gdb libc
+do	(cd $i
+	echo whatever > NEW_FILE
+	bk new $Q NEW_FILE
+	bk commit -S $Q -yNEW_FILE
+	)
+done
+bk commit $Q -yNEW_FILE
+rm -rf libc
+bk push $Q 2> OUT && fail -f OUT should have failed
+grep -q "libc is needed to push" OUT || {
+	echo bad message
+	cat OUT
+	exit 1
+}
+cd "$HERE"
+test -d project/RESYNC && fail
+test -d full/RESYNC && fail
+test -d sparse/RESYNC && fail
+echo OK
+
+echo $N Try a push from sparse to full - remote should find .........$NL
+# This eventually will be 2 test cases: remote does find and remote
+# cannot find.  Currently remote does not look.
+cd "$HERE"
+bk clone $Q -s. project solo
+cd solo
+bk alias new STUFF gcc
+cd ..
+# URLLIST works its magic here, getting gcc from project
+bk clone $Q -sSTUFF solo stuff || fail
+test -d stuff/gcc || fail
+cd solo
+bk alias add STUFF gdb || fail 3
+# URLLIST does not work magic here and proxy from project to stuff
+bk push $Q ../stuff 2> ERR && fail 5
+grep -q "push: component gdb needed at" ERR || fail 6
+cd "$HERE"
+test -d solo/RESYNC && fail
+test -d stuff/RESYNC && fail
+echo "failed (bug remote should find)"
+
+echo $N Try a push from full to sparse - should fail ................$NL
+# not legal to push updates to componets not present remotely
+cd "$HERE"
+bk clone $Q project modified || fail
+cd modified
+bk pull $Q ../solo || fail
+cd gdb
+touch newfile
+bk new $Q newfile
+bk commit -S $Q -ynewfile
+cd ..
+bk commit $Q -ynewfile
+bk push $Q ../solo 2>ERR && fail -f ERR should fail
+grep -q "push: gdb must be populated at file://.*/solo" ERR || fail
+grep -q "push: transfer aborted due to errors with 1 components." ERR || fail
+# No lock left, so that's good
+cd "$HERE"/solo
+test -d RESYNC && fail
+echo OK
+
+echo $N Try a push from sparse to full - local proxy ................$NL
+# Start from above and do a pull to bring in the sparse.
+# It can be populated later by a populate (urllist checked)
+bk pull --unsafe $Q ../modified || fail
+# stuff should have gdb by now, but can't find the patch to update
+bk push $Q ../stuff 2> ERR && fail 5
+grep -q "gdb is needed to push" ERR || fail 6
+cd "$HERE"
+test -d solo/RESYNC && fail
+test -d stuff/RESYNC && fail
+echo "failed (bug no proxy or urllist)"
+
+echo $N Try a push from sparse to sparse with unpopulated chg .......$NL
+cd "$HERE"
+bk clone $Q -s. project prod
+bk clone $Q -sTHERE prod prodclient1
+bk clone $Q -sTHERE prod prodclient2
+cd prodclient2
+bk portal $Q . || fail
+bk setup -f newcomp
+cd ../prodclient1
+bk pull --unsafe $Q ../prodclient2 || fail
+test -d newcomp && fail
+bk push $Q || fail
+cd ..
+rm -fr prodclient1 prodclient2
+cd prod
+# this can't work
+bk push $Q 2> ERR && fail
+grep -q 'push: newcomp is needed to push to .*/project' ERR || fail -f ERR
+cd ..
+test -d prod/RESYNC && fail
+test -d project/RESYNC && fail
+echo OK
+
+echo $N Try a tag-only push .........................................$NL
+cd "$HERE/full"
+bk -r check -ac || fail
+bk tag $Q -r1.3 oldtag || fail
+bk push $Q || fail
+cd ../project
+test `bk prs -hnd:REV: -roldtag ChangeSet` = 1.3 || fail
+echo OK
+
+echo $N Now push tag along with another cset ........................$NL
+bk unpull -f $Q || fail
+cd ../full
+touch tagf
+bk new $Q tagf || fail
+bk commit $Q -ytagf || fail
+bk push $Q || fail
+echo OK
+
+echo $N Try same push through a BKD..................................$NL
+cd "$HERE"
+rm -rf project
+bk clone $Q null-push project
+cd "$HERE"/project
+bk bkd -q -d -aPORT -ikill || fail
+P=`cat PORT`
+cd "$HERE/copy"
+bk push bk://localhost:$P >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+bk _kill bk://localhost:$P || fail
+cd "$HERE"/project
+test -d libc || {
+	echo failed
+	exit 1
+}
+cd libc
+bk -r check -av >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Try a push of a renamed component ...........................$NL
+cd "$HERE"
+bk _rm -fr project copy
+nested project
+bk clone $Q . ../copy
+mvcomp gcc gcc4
+bk commit $Q -S -y'rename component' || fail
+bk push $Q ../copy 2> ERR && {
+	echo fix test
+	exit 1
+}
+grep -q "cannot cd to .*/copy/gcc4" ERR || {
+	echo wrong msg
+	cat ERR
+	exit 1
+}
+# clean up litter so doit won't whine
+cd ..
+rm -fr project
+echo "failed (bug )"
+
+echo $N Try pushing to unrelated repos...............................$NL
+cd "$HERE"
+fresh_nested n1
+cd "$HERE"
+fresh_nested n2
+bk push $Q "$HERE/n1" 2>ERR && fail -f ERR should have failed
+grep -q "You are trying to push to an unrelated package." ERR \
+	|| fail -f ERR wrong error msg
+echo OK
+
+echo $N Try pushing from non-nested to nested........................$NL
+cd "$HERE"
+fresh_commercial nn
+bk push $Q "$HERE/n1" 2>ERR && fail -f ERR should have failed
+grep -q "You are trying to push to an unrelated package." ERR \
+	|| fail -f ERR wrong error msg
+echo OK
+
+echo $N Try pushing from nested to non-nested........................$NL
+cd "$HERE/n1"
+bk push $Q "$HERE/nn" 2>ERR && fail -f ERR should have failed
+grep -q "You are trying to push to an unrelated package." ERR \
+	|| fail -f ERR wrong error msg
+echo OK
+
+echo $N bk push does not commit pending..............................$NL
+cd "$HERE"
+nested parent
+cd gcc
+echo `date` > afile
+bk new $Q afile
+bk commit -S $Q -yafile
+bk -P commit $Q -yafile
+cd "$HERE"
+bk clone $Q parent child
+# add cset to parent
+cd "$HERE/parent/gcc"
+bk edit $Q afile
+echo new stuff > afile
+bk delta $Q -yafile-parent
+bk commit -S $Q -yafile-parent
+bk -P commit $Q -yafile-parent
+# add pending to child (that does not conflict)
+cd "$HERE/child/gcc"
+echo `date` > bfile
+bk new $Q bfile
+bk commit -S $Q  -ybfile
+# push should fail (we have a pending)
+cd "$HERE/parent"
+bk push $Q ../child 2>ERR && fail -f ERR should have failed
+grep -q "gcc has uncommitted changes" ERR || fail -f ERR wrong error
+# There should be no remote changes
+test -n "`bk -P changes -qR ../child`" && fail local changes found
+# destination repo should be fine
+cd "$HERE/child"
+bk -e -r check -ac >ERR 2>&1 || fail -f ERR
+echo OK
+
+echo $N Push from bweave to ascii such that comp uses clone -r ......$NL
+cd "$HERE"
+commercial stand
+printf "a\nb\nc\n" > foo
+bk new $Q foo
+bk commit $Q -f
+cd ..
+nested ug
+bk gate $Q -r
+bk clone $Q --downgrade . ../dg
+bk clone $Q . ../ug-copy
+bk attach $Q ../stand ug-comp
+cd ../stand
+bk edit $Q foo
+printf "0\na\nb\nc\n" > foo
+bk delta $Q -ya foo
+bk commit $Q -f
+cd ../ug
+bk edit $Q ug-comp/foo
+printf "a\nb\nc\n10\n" > ug-comp/foo
+bk delta $Q -yb ug-comp/foo
+bk commit $Q -f
+bk --cd=ug-comp port $Q "$HERE"/stand
+bk clone $Q --downgrade . ../dg-copy
+# Leave the component intact, causing a clone -r to remote
+bk portal $Q -r
+bk fix -cdP
+bk push $Q ../dg || fail
+echo OK
+
+echo $N Push from ascii to bweave such that comp uses clone -r ......$NL
+cd ../dg-copy
+# Leave the component intact, causing a clone -r to remote
+bk fix -cdP
+bk push $Q ../ug-copy || fail
+echo OK

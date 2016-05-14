@@ -1,0 +1,60 @@
+# Copyright 2000,2004-2006,2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+if [ "$PLATFORM" = "WIN32" ]
+then
+	echo "For non win32 only ..........................................skipped"
+	exit 0
+fi
+
+# Force my umask to be really closed.
+umask 077
+
+echo $N Create initial repository ...................................$NL
+fresh_commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+# commit the config file
+bk commit $S -y"This is \"Change Set\" A"
+echo OK
+
+echo $N Make sure that BitKeeper and subdirs are 0770 mode ..........$NL
+bk _find -type d | bk _stat | awk -F\| '$3 ~ /770$/ { print $NF }' | \
+	sort -u > LIST
+cat <<EOF > WANT
+.
+BitKeeper
+BitKeeper/deleted
+BitKeeper/deleted/SCCS
+BitKeeper/etc
+BitKeeper/etc/SCCS
+BitKeeper/log
+BitKeeper/tmp
+BitKeeper/tmp/SCCS
+SCCS
+EOF
+cmpfiles WANT LIST
+echo OK
+exit
+##
+
+echo $N Make sure owner/group get read/write ........................$NL
+ls > LS
+bk new $Q LS
+if [ `bk prs -d:RWXMODE: -h -r+ LS` != "-rw-rw----" ]
+then	echo Bad mode `bk prs -d:RWXMODE: -h -r+ LS`, wanted -rw-rw----
+	exit 1
+fi
+echo OK
+

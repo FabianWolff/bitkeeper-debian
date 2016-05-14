@@ -1,0 +1,137 @@
+# Copyright 2002,2006,2008-2009,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+commercial project
+echo $N Test bk mvdir ...............................................$NL
+mkdir foo
+cd foo
+echo "bar" > edited
+echo "bar" > edited_no_gfile
+echo "bar" > readonly
+echo "bar" > readonly_no_gfile
+bk new $Q edited edited_no_gfile readonly readonly_no_gfile
+bk edit $Q edited edited_no_gfile
+bk get $Q readonly
+rm -f edited_no_gfile readonly_no_gfile
+echo "bar-new" > edited
+echo "comment" > c.edited
+bk _mv c.edited SCCS/c.edited
+echo "extra" > extra
+# make some bad c.file
+mkdir junk
+bk _mkdir junk/SCCS
+echo XXX > c.junk
+bk _mv c.junk junk/SCCS/c.junk
+echo XXX > c.junk
+cd ..
+# Note: edited_no_gfile will be converted to a readonly file due to 
+# autofix in bk -r check -a
+bk mv foo foo2
+bk -r check -a || { echo failed; exit 1; }
+if [ ! -d foo2 ]; then echo failed; exit 1; fi
+if [ -d foo ]; then echo failed; exit 1; fi
+cd foo2
+if [ ! -f readonly ]; then echo failed; exit 1; fi
+if [ ! -w edited ]; then echo failed; exit 1; fi
+if [ -w readonly ]; then echo failed; exit 1; fi
+if [ -f readonly_no_gfile ]; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/s.edited; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/c.edited; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/p.edited; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/d.edited; then echo failed d; exit 1; fi
+if bk _test ! -f SCCS/s.edited_no_gfile; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/s.readonly; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/d.readonly; then echo failed; exit 1; fi
+if bk _test -f SCCS/p.readonly; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/s.readonly_no_gfile; then echo failed; exit 1; fi
+if bk _test -f SCCS/p.readonly_no_gfile; then echo failed; exit 1; fi
+if [ ! -f extra ]; then echo failed; exit 1; fi
+bk -r check -a || { echo failed; exit 1; }
+echo OK
+echo $N Test bk mvdir with -x -i ....................................$NL
+cd "$HERE/project/foo2"
+bk delta $Q -ynew_content edited
+REV=`bk prs -hnr+ -d:I: edited`
+if [ "$REV" != 1.3 ]; then echo failed; exit 1; fi
+bk edit $Q -i1.1 -x1.2 edited
+echo "comment" > c.edited
+bk _mv c.edited SCCS/c.edited
+bk _cp SCCS/p.edited "$HERE/pfile"
+cd ..
+bk mvdir foo2 foo3
+cd foo3
+if [ ! -w edited ]; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/s.edited; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/c.edited; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/p.edited; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/d.edited; then echo failed d; exit 1; fi
+bk _cat SCCS/p.edited | grep -q '^1.4 1.5' || { echo failed 1; exit 1; }
+bk _cat SCCS/p.edited | grep -q ' -I1.1 -X1.2$' || { echo failed 1; exit 1; }
+bk -r check -a || { echo failed; exit 1; }
+echo OK
+echo $N Test bk mvdir with -x -i to exitsing dir ....................$NL
+cd "$HERE/project/foo3"
+bk delta $Q -ynew_content edited
+REV=`bk prs -hnr+ -d:I: edited`
+if [ "$REV" != 1.5 ]; then echo failed; exit 1; fi
+bk edit $Q -i1.1 -x1.2 edited
+echo "comment" > c.edited
+bk _mv c.edited SCCS/c.edited
+bk _cp SCCS/p.edited "$HERE/pfile"
+cd ..
+mkdir foo4
+bk mv foo3 foo4
+cd foo4/foo3
+if [ ! -w edited ]; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/s.edited; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/c.edited; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/p.edited; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/d.edited; then echo failed d; exit 1; fi
+bk _cat SCCS/p.edited | grep -q '^1.6 1.7' || { echo failed 1; exit 1; }
+bk _cat SCCS/p.edited | grep -q ' -I1.1 -X1.2$' || { echo failed 1; exit 1; }
+bk -r check -a || { echo failed; exit 1; }
+echo OK
+
+echo $N mvdir should not delta things in the target directory .......$NL
+commercial project
+mkdir -p dir/sub
+mkdir lib
+touch dir/sub/a dir/sub/b lib/c
+bk new $Q dir/sub/a dir/sub/b lib/c
+bk commit $Q -y'added stuff'
+cd dir
+bk mv sub/ ../lib
+cd ../lib
+REV=`bk log -r+ -nd:REV: c`
+test "$REV" != "1.1" && {
+	echo failed
+	bk log -r+ c
+	exit 1
+}
+echo OK
+
+echo $N Run 'bk mv' from outside and test idcache .....................$NL
+cd "$HERE"
+cd project
+echo hi > move-me
+bk new $Q move-me
+cd ..
+commercial junk
+bk mv ../project/move-me ../project/moved || fail
+ID=`find . -name x.id_cache | head -1`
+grep -q move-me $ID && fail should not be here
+grep -q move-me ../project/$ID || fail should be here
+cd ..
+echo OK

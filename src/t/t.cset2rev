@@ -1,0 +1,101 @@
+# Copyright 2002,2006,2010-2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository using setup .......................$NL
+commercial project
+echo 1 > file1
+bk new $Q file1 || fail
+echo 2 > file2
+bk new $Q file2
+bk commit -y1 $Q || fail
+bk edit $Q file1 || fail
+bk delta -fy12 $Q file1 || fail
+echo 3 > file3
+bk new $Q file3
+bk commit --tag=t2 -y2 $Q || fail
+bk tag $Q t2-again || fail
+bk edit $Q file2 file3
+bk delta -fy233 $Q file2 file3 || fail
+bk commit -y3 $Q
+echo OK
+
+echo $N Check -r@ options ...........................................$NL
+x=`bk prs -r@1.2 -hd:GFILE::REV: file1 file2 file3`
+if [ "$x" != "file11.1file21.1file31.0" ]
+then	echo wrong: $x
+	bk changes -v -r1.2 | cat
+	exit 1
+fi
+key=`bk prs -r1.2 -hd:KEY: ChangeSet`
+x=`bk prs -r@"$key" -hd:GFILE::REV: file1 file2 file3`
+if [ "$x" != "file11.1file21.1file31.0" ]
+then	echo wrong: $x
+	bk changes -v -r"$key" | cat
+	exit 1
+fi
+x=`bk prs -r@t2 -hd:GFILE::REV: file1 file2 file3`
+if [ "$x" != "file11.2file21.1file31.1" ]
+then	echo wrong: $x
+	bk changes -v -rt2 | cat
+	exit 1
+fi
+x=`bk prs -r@t2-again -hd:GFILE::REV: file1 file2 file3`
+if [ "$x" != "file11.2file21.1file31.1" ]
+then	echo wrong: $x
+	bk changes -v -rt2-again | cat
+	exit 1
+fi
+x=`bk prs -r@1.4 -hd:GFILE::REV: file1 file2 file3`
+if [ "$x" != "file11.2file21.2file31.2" ]
+then	echo wrong: $x
+	bk changes -v -r1.4 | cat
+	exit 1
+fi
+echo OK
+
+echo $N Check -r@ range .............................................$NL
+bk prs -r@1.1..@t2 -hnd:GFILE:@:REV: file1 file2 file3 > GOT || fail
+cat <<EOF > WANT
+file1@1.2
+file1@1.1
+file2@1.1
+file3@1.1
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Verify that the cset2rev cache is cleaned ...................$NL
+test `ls BitKeeper/tmp/cset* | wc -l` -ne 5 && {
+	echo The cache files should have been cleaned
+	ls -l BitKeeper/tmp/cset*
+	exit 1
+}
+ls BitKeeper/tmp/cset* > BEFORE
+bk prs -r@=3 file1 > /dev/null || fail
+ls BitKeeper/tmp/cset* > AFTER
+
+# still only 5
+test `ls BitKeeper/tmp/cset* | wc -l` -ne 5 && {
+	echo The cache files should have been cleaned
+	ls -l BitKeeper/tmp/cset*
+	exit 1
+}
+
+# but a different 5	# this shows one file was replaced
+C=`bk diff BEFORE AFTER | wc -l`
+test $C -eq 4 || {
+     bk diff BEFORE AFTER
+     fail
+}
+echo OK

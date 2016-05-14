@@ -1,0 +1,524 @@
+# Copyright 2000,2002-2010,2013-2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+echo OK
+
+echo $N Create some data, commit it, clone it .......................$NL
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i foo.c bar.c h.h
+if bk _test ! -f SCCS/s.foo.c; then echo failed to create history; exit 1; fi
+bk commit $S -yCset
+cd "$HERE"
+bk clone $Q project copy
+echo OK
+
+echo $N Try to gone a file name .....................................$NL
+cd "$HERE/project"
+bk gone -q foo.c 2> GOT && fail -f GOT should have failed
+echo "gone: 'foo.c' is not a key." > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Add some data, commit it, then remove the file ..............$NL
+bk edit $Q foo.c
+echo foo >> foo.c
+bk ci $Q -ywhatever foo.c
+bk commit $Q -ywhatever
+KEY="`bk prs -hr+ -d:ROOTKEY: foo.c`"
+bk _rm SCCS/s.foo.c
+bk -r check -a 2> ERR && {
+	echo should have failed
+	exit 1
+}
+bk -r check -ag > gonestuff && fail
+echo "$KEY" > wanted
+checkfiles gonestuff wanted
+grep -q 'Missing file (bk help chk3)' ERR || {
+	echo Bad or no error message from check
+	cat ERR
+	exit 1
+}
+bk mv -f BitKeeper/etc/gone gone
+echo "$KEY" > BitKeeper/etc/gone
+bk -r check -a || fail
+echo OK
+
+echo $N Makepatch with a gfile gone file, should fail ...............$NL
+cd "$HERE/project"
+bk makepatch $Q -r+ 2> OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+# bkd to test rclone
+cd ..
+bk bkd -q -aPORT -d -ikill > BKD.OUT 2> BKD.ERR || fail
+P=`cat PORT`
+cd project
+
+echo $N Clone to child with gone as a gfile only, should fail .......$NL
+bk clone $Q . ../copy-clone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Lclone to child with gone as a gfile only, should fail ......$NL
+bk clone $Q -l . ../copy-lclone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Rclone to child with gone as a gfile only, should fail ......$NL
+bk clone $Q . bk://localhost:$P/copy-rclone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Push to child with gone as gfile only, should fail ..........$NL
+bk push $Q ../copy 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Bkd clone to child with gone as gfile only, should fail .....$NL
+cd "$HERE"
+bk clone $Q bk://localhost:$P/project copy-bkdclone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Pull to child with gone as gfile only, should fail ..........$NL
+cd "$HERE/copy"
+bk pull $Q 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Clone to child with edited gone file, should fail ...........$NL
+cd "$HERE/project"
+rm -f BitKeeper/etc/gone
+bk mv -f gone BitKeeper/etc/gone
+bk edit $Q BitKeeper/etc/gone
+echo "$KEY" >> BitKeeper/etc/gone
+bk -r check -a || fail
+bk clone $Q . ../copy-clone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Lclone to child with edited gone file, should fail ..........$NL
+bk clone $Q -l . ../copy-lclone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Rclone to child with edited gone file, should fail ..........$NL
+bk clone $Q . bk://localhost:$P/copy-rclone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Push to child with edited gone file, should fail ............$NL
+bk push $Q ../copy 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Bkd clone to child with edited gone file, should fail .......$NL
+cd "$HERE"
+bk clone $Q bk://localhost:$P/project copy-bkdclone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Pull to child with edited gone file, should fail ............$NL
+cd "$HERE/copy"
+bk pull $Q 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Clone to child with pending gone file, should fail ..........$NL
+cd "$HERE/project"
+# theory: wait for bkd to exit.  25 minutes of runs matches theory.
+bk lock -U
+bk delta $Q -y"gone the key" BitKeeper/etc/gone
+bk -r check -a || fail
+bk clone $Q . ../copy-clone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Lclone to child with pending gone file, should fail .........$NL
+bk clone $Q -l . ../copy-lclone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Rclone to child with pending gone file, should fail .........$NL
+bk clone $Q . bk://localhost:$P/copy-rclone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Push to child with pending gone file, should fail ...........$NL
+bk push $Q ../copy 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Bkd clone to child with pending gone file, should fail ......$NL
+cd "$HERE"
+bk clone $Q bk://localhost:$P/project copy-bkdclone 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Pull to child with pending gone file, should fail ...........$NL
+cd "$HERE/copy"
+bk pull $Q 2>OUT && fail
+grep -q 'must commit local changes to BitKeeper/etc/gone' OUT || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+# Done with the bkd
+bk _kill bk://localhost:$P
+
+echo $N Commit gone file and try pull again .........................$NL
+cd "$HERE/project"
+bk commit $Q -ygone
+cd "$HERE/copy"
+BK_CONFIG=partial_check:off! bk pull $Q 2>MSGS || {
+	cat MSGS
+	find . -type f -print
+	exit 1
+}
+grep -q 'Marked gone (bk help chk1): foo.c' MSGS || {
+	echo Bad or no warning message from pull
+	cat MSGS
+	exit 1
+}
+echo OK
+
+echo $N Test dups in gone file.......................................$NL
+cd "$HERE/project"
+bk edit $Q BitKeeper/etc/gone
+cat BitKeeper/etc/gone > GONE
+cat BitKeeper/etc/gone >> GONE
+mv GONE BitKeeper/etc/gone
+bk -r check -ac >ERR 2>&1 || fail -f ERR dups in gone make check fail
+bk changes > /dev/null 2>ERR || fail -f ERR dups in gone make changes fail
+test -s ERR && fail -f ERR dups in gone make changes fail
+bk delta $Q -ygone BitKeeper/etc/gone
+bk commit $Q -ygone 2>ERR
+echo OK
+
+echo $N Demo pushing new file that replaces a gone\'d file ...........$NL
+cd ../project
+bk -r check -ac || fail
+echo old > lose_this
+bk new $Q lose_this || fail
+bk commit $Q -yold || fail
+cd ../copy
+bk _rm SCCS/s.foo.c
+bk pull $Q || fail
+cd ../project
+KEY="`bk prs -hr+ -d:ROOTKEY: lose_this`"
+bk _rm -f SCCS/s.lose_this
+bk gone $Q "$KEY" || fail
+echo new > lose_this
+bk new $Q lose_this || fail
+bk commit $Q -ynew || fail
+echo q | bk push ../copy 2>ERR >OUT && {
+	echo should have failed
+	exit 1
+}
+grep -q "name conflict for ..lose_this" ERR || fail
+grep -q "pathname is used by an SCCS file that is marked gone" ERR || fail
+echo OK
+
+echo $N Try pulling the same cset ...................................$NL
+cd ../copy
+printf "h\nrl\ny\n" | bk pull 2>ERR >OUT || {
+	echo should have passed
+	cat ERR
+	exit 1
+}
+grep -q "create/sfile marked gone conflict" ERR || {
+	echo wrong message
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Test goned deltas ...........................................$NL
+cd "$HERE/project"
+bk edit $Q bar.c || fail
+echo foo >> bar.c
+bk ci $Q -yjj bar.c || fail
+bk commit $Q -yjj || fail
+bk stripdel $Q -Cr+ bar.c || fail
+bk -r check -agg | bk gone $Q -
+bk -r check -af || fail
+bk changes -v -r+ -nd:GFILE:@:REV: > OUT || fail
+cat <<EOF > WANT
+ChangeSet@1.8
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N Create missing delta, gone/comit it, push ...................$NL
+commercial project2
+# create a bucket brigadge  again2 -> copy2 -> project2
+# each start with a file called foo
+# again creates a delta record in foo, puts it in a cset, the deletes s.foo
+# marks file gone and pushes.  Now copy has foo, but is missing a delta,
+# so runs gone to mark delta as gone and pushes
+# makepatch fails because the file is there, but nothing in the file
+# is available for the patch.  It's a bug in cset.c:sccs_patch
+# where the assert(gfile) is getting hit because no deltas are being
+# selected.
+touch foo
+bk new $Q foo
+bk commit $Q -yfoo
+cd ..
+bk clone $Q project2 copy2
+bk clone $Q copy2 again2
+cd again2
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q -yfoo
+bk _rm SCCS/s.foo
+bk -r check -ag | bk gone - 2> ERR
+bk commit $Q -ygone
+bk push $Q
+cd ../copy2
+bk -r check -aggg | bk gone - 2> ERR
+bk commit $Q -ygone
+bk push $Q 2> ERR || {
+	echo "failed (bug 2007-03-13-002)"
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Run bk gone on top of a dangling delta ......................$NL
+# Next 2 not needed after this cset, but needed to show bug before cset
+bk admin $Q -fMONOTONIC BitKeeper/etc/gone
+bk commit $Q -ygonebar
+bk undo $Q -sfa1.3
+touch bar
+bk new $Q bar
+bk commit $Q -ybar
+bk _rm SCCS/s.bar
+bk -r check -ag | bk gone $Q - || fail
+bk commit $Q -ybar || fail
+echo OK
+
+echo $N Roll back a monotonic gone before it is created .............$NL
+cd "$HERE/project"
+bk commit $Q -ycleanup
+bk clone $Q . ../oldproject
+touch poof
+bk new $Q poof
+bk commit $Q --tag=NEW -y'now you see it'
+bk rm -f BitKeeper/etc/gone
+bk _rm SCCS/s.poof
+bk -r check -aggg | bk gone $Q -
+bk commit $Q -y'now you do not'
+cd ..
+bk clone $Q project a || fail
+bk clone $Q -rNEW project b || fail
+cd project
+# This goes back before the MONOTONIC was created
+bk undo $Q -sfaNEW || fail
+bk -r check -ac || fail
+cd ../oldproject
+bk pull -q ../b 2> ERR && fail
+grep -q 'Missing file .*poof' ERR || fail -f ERR
+bk abort -f
+bk pull $Q ../a
+echo OK
+
+echo $N Demonstrate users pushing deleted goned files ...............$NL
+cd "$HERE"
+rm -rf project copy1 copy2
+commercial project
+bk clone $Q . ../copy2 || fail
+touch foo
+bk new $Q foo || fail
+bk commit $Q -yadd || fail
+cd ..
+bk clone $Q project copy1 || fail
+cd copy1
+KEY=`bk prs -r1.0 -hnd:KEY: foo`
+bk rm  foo || fail
+bk commit $Q -yrm || fail
+#bk push $Q || fail
+SFILE=`bk sfiles BitKeeper/deleted`
+rm -rf BitKeeper/deleted
+bk _rm -f "$SFILE"
+bk gone $Q "$KEY" || fail
+bk commit $Q -ygone || fail
+bk push $Q || fail
+cd ../copy2
+# without this cset the following pull will error like this:
+# cset: cannot find
+#	ROOTKEY
+#	SCCS/s.foo
+# File named by key
+#	CSETKEY
+#	is missing and key is not in a committed gone delta, aborting.
+#adler32 aborting
+#cmd_pull_part2: makepatch failed; status = 1
+#----------------------------------------------------------------------------
+#ChangeSet: 3 deltas
+#BitKeeper/etc/gone takepatch.c:1962: fnext: No such file or directory
+#
+#=================================== ERROR ====================================
+#takepatch: missing checksum line in patch, aborting.
+#==============================================================================
+#
+bk pull -q 2>ERR || fail
+cat <<EOF > WANT
+Marked gone (bk help chk1): foo
+EOF
+checkfiles ERR WANT
+echo OK
+
+## OUTSOURCING test
+
+echo $N Create initial repository for outsourcing ...................$NL
+cd "$HERE"
+rm -fr project staging contractor
+commercial project
+mkdir secret public
+for i in A B C D E F G
+do	echo $i > secret/$i
+	echo $i > public/$i
+done
+bk -xr new $Q
+bk commit $Q -ysetup
+echo OK
+
+echo $N Set up staging tree .........................................$NL
+BK_GONE=BitKeeper/etc/gone-outsource
+export BK_GONE
+cd "$HERE"
+bk clone $Q project staging || fail
+cd staging
+sfilelist=`bk sfiles secret`
+bk _rm $sfilelist
+rm -rf secret
+bk -r check -ag | bk gone $Q -
+bk get $Q -S $BK_GONE
+test -f $BK_GONE || {
+	echo failed to create $BK_GONE
+	exit 1
+}
+# bk new $Q BitKeeper/etc/gone-outsource
+bk commit $Q -yOutsource
+echo OK
+
+echo $N Test contractor clone and commit ............................$NL
+cd "$HERE"
+bk clone $Q staging contractor
+cd contractor/public
+bk edit $Q
+for i in ?
+do	echo nice cheap outsource >> $i
+done
+bk -cr ci $Q -y'Nothing but the highest quality here'
+bk commit $Q -y'Contractors-R-Us goodness'
+echo OK
+
+echo $N Test push to staging ........................................$NL
+bk push $Q || fail
+echo OK
+
+echo $N Test push to main ...........................................$NL
+cd "$HERE/staging"
+bk push $Q || fail
+echo OK
+
+echo $N Make a cset in the full tree ................................$NL
+(
+BK_GONE=
+export BK_GONE
+cd "$HERE/project/secret"
+bk edit $Q
+for i in ?
+do	echo Buy American >> $i
+done
+bk -cr ci $Q -y'I got yer quality right here, Buddy'
+bk commit $Q -y"Proud to be an 'Merican"
+)
+echo OK
+
+echo $N Push to staging .............................................$NL
+cd "$HERE/project"
+# This only works because it is a file system push
+# The remote side needs BK_GONE_OK
+BK_GONE_OK=1 bk push $Q "$HERE/staging" || fail
+echo OK
+
+echo $N Pull from staging to contractor .............................$NL
+cd "$HERE/contractor"
+bk pull $Q || fail
+echo OK
+

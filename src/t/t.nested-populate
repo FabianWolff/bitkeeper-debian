@@ -1,0 +1,735 @@
+# Copyright 2008-2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Tests for populate/unpopulate
+
+
+echo $N Create an ensemble...........................................$NL
+nested project
+# add some files
+cd "$HERE/project/gcc"
+for i in 1 2 3 4 5
+do
+	touch file$i
+	echo "stuff $i" > file$i
+	bk new $Q -y"add" file$i
+done
+bk commit -S $Q -y"Add $i to file$i"
+cd "$HERE/project" && bk commit $Q -y"Commit cset in gcc"
+cd "$HERE/project/gdb"
+for i in 1 2 3 4 5
+do
+	touch file$i
+	echo "stuff $i" > file$i
+	bk new $Q -y"add" file$i
+	bk commit -S $Q -y"add file $i"
+done
+cd "$HERE/project"
+echo hi > bam
+bk new $Q -b bam || fail
+bk commit $Q -y"add csets to gdb"
+echo OK
+
+echo $N Set up some components.......................................$NL
+cd "$HERE/project"
+echo > "$HERE/empty"
+for i in 1 2 3 4 5 6 7 8 9 10
+do	bk setup -fc"$HERE/empty" comp$i
+done
+bk alias new -C odd comp1 comp3 comp5 comp7 comp9
+bk alias new -C even comp2 comp4 comp6 comp8 comp10
+bk alias new -C primes comp2 comp3 comp5 comp7
+bk commit $Q -y"adding components and aliases"
+cd "$HERE"
+bk clone $Q -seven -sodd -sprimes project copy
+bk clone $Q -sodd project odd
+echo OK
+
+echo $N Add PrOdUcT and see that nothing is added ...................$NL
+cd project
+cat <<EOF > WANT
+ALL
+PRODUCT
+EOF
+# Goofy case
+bk here set $Q aLl
+bk here > GOT
+cmpfiles WANT GOT
+# Add product with goofy case
+bk here add $Q PrOdUcT
+bk here > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Unpopulate even and primes...................................$NL
+cd "$HERE/copy"
+echo even | bk here rm $Q - || fail dash
+bk here rm $Q -- primes || fail dashdash
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp1
+./comp3
+./comp5
+./comp7
+./comp9
+EOF
+cmpfiles GOT WANT
+bk alias -k here > GOT
+cat << EOF > WANT
+PRODUCT
+odd
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Populate them back from a repo that does not have them ......$NL
+bk populate $Q -@../odd even primes || fail
+cat <<EOF > WANT
+PRODUCT
+even
+odd
+primes
+EOF
+bk alias -k here > GOT
+cmpfiles GOT WANT
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp1
+./comp10
+./comp2
+./comp3
+./comp4
+./comp5
+./comp6
+./comp7
+./comp8
+./comp9
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Show -@url is used before urllist by populate ...............$NL
+bk here rm $Q odd || fail
+bk populate -v -@../odd odd >OUT 2>&1 || fail
+grep -q 'Clone.*/odd\?' OUT || {
+	cat OUT
+	fail
+}
+echo OK
+
+echo $N Unpopulate odd...............................................$NL
+bk unpopulate $Q odd || {
+	echo failed
+	exit 1
+}
+bk comps -h > GOT
+# gotta love our ordering :)
+cat <<EOF > WANT
+./comp10
+./comp2
+./comp3
+./comp4
+./comp5
+./comp6
+./comp7
+./comp8
+EOF
+cmpfiles GOT WANT
+cat <<EOF > WANT
+PRODUCT
+even
+primes
+EOF
+bk alias -k here > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Unpopulate even..............................................$NL
+bk unpopulate $Q even || {
+	echo failed
+	exit 1
+}
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp2
+./comp3
+./comp5
+./comp7
+EOF
+cmpfiles GOT WANT
+cat << EOF > WANT
+PRODUCT
+primes
+EOF
+bk alias -k here > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Unpopulate alias not populated is an error...................$NL
+bk here rm DEFAULT 2>ERR && fail
+grep -q "here: DEFAULT not in HERE" ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+bk here rm all 2> ERR && fail
+grep -q "here: ALL not in HERE" ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Populate special alias \'ALL\' and unpopulate it...............$NL
+bk here add $Q all || fail
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp1
+./comp10
+./comp2
+./comp3
+./comp4
+./comp5
+./comp6
+./comp7
+./comp8
+./comp9
+./gcc
+./gdb
+EOF
+cmpfiles GOT WANT
+cat <<EOF > WANT
+ALL
+PRODUCT
+primes
+EOF
+bk alias -k here > GOT
+cmpfiles GOT WANT
+bk here rm $Q all || fail
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp2
+./comp3
+./comp5
+./comp7
+EOF
+cmpfiles GOT WANT
+cat <<EOF > WANT
+PRODUCT
+primes
+EOF
+bk alias -k here > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Populate a glob and unpopulate it............................$NL
+bk here add $Q './g*' || fail
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp2
+./comp3
+./comp5
+./comp7
+./gcc
+./gdb
+EOF
+cmpfiles GOT WANT
+(echo PRODUCT; echo primes; cd gcc; bk id -S; cd ../gdb; bk id -S) | bk _sort > WANT
+bk alias -k here > GOT
+cmpfiles GOT WANT
+bk here rm $Q './g*' || fail
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp2
+./comp3
+./comp5
+./comp7
+EOF
+cmpfiles GOT WANT
+cat <<EOF > WANT
+PRODUCT
+primes
+EOF
+bk alias -k here > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Unpopulate primes............................................$NL
+bk here rm $Q primes || fail
+bk comps -h > GOT
+cat <<EOF > WANT
+EOF
+cmpfiles GOT WANT
+bk alias -k here > GOT
+cat <<EOF > WANT
+PRODUCT
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Unpopulate a component with changes should fail..............$NL
+bk here add $Q primes || fail
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp2
+./comp3
+./comp5
+./comp7
+EOF
+cmpfiles GOT WANT
+cat <<EOF > WANT
+PRODUCT
+primes
+EOF
+bk alias -k here > GOT
+cmpfiles GOT WANT
+cd comp2
+touch foobar
+bk new $Q foobar
+cd ..
+bk here rm primes 2> ERR && fail
+grep -q 'Non-committed file' ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+bk comps -h | grep -q comp2 || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Add a deep nest and populate it..............................$NL
+SP=""
+for i in 2 3 5 7
+do	cd "$HERE/project/comp$i"
+	bk setup -fc"$HERE/empty" sub$i
+	SP="$SP comp$i/sub$i"
+done
+cd "$HERE/project"
+bk alias new subprimes $SP
+cd "$HERE/copy"
+bk pull $Q || fail
+bk here add $Q subprimes || fail
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp2
+./comp2/sub2
+./comp3
+./comp3/sub3
+./comp5
+./comp5/sub5
+./comp7
+./comp7/sub7
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Unpopulate subprimes.........................................$NL
+bk here rm $Q subprimes || fail
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp2
+./comp3
+./comp5
+./comp7
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Remove enclosing and populate subcomponents should work......$NL
+bk _rm comp2/SCCS/s.foobar  # crud from above test
+bk alias set $Q HERE subprimes || fail
+bk comps -h > GOT
+cat <<EOF > WANT
+./comp2/sub2
+./comp3/sub3
+./comp5/sub5
+./comp7/sub7
+EOF
+bk here add $Q primes || {
+	echo failed
+	exit 1
+}
+bk comps -h > GOT
+cat > WANT <<EOF
+./comp2
+./comp2/sub2
+./comp3
+./comp3/sub3
+./comp5
+./comp5/sub5
+./comp7
+./comp7/sub7
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Unpopulate of subcomponents should work......................$NL
+bk here rm $Q primes || fail
+cat > WANT <<EOF
+PRODUCT
+subprimes
+EOF
+bk alias -k here > GOT
+cmpfiles GOT WANT
+bk comps -h > GOT
+cat > WANT <<EOF
+./comp2/sub2
+./comp3/sub3
+./comp5/sub5
+./comp7/sub7
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Conflict in deep nest should be detected.....................$NL
+touch comp2/sub23
+bk here add $Q primes 2> ERR && {
+	echo should fail
+	cat ERR
+	exit 1
+}
+grep -q "comp2 not empty" ERR || fail -f ERR wrong error message
+bk alias -k here > GOT
+cat << EOF > WANT
+PRODUCT
+subprimes
+EOF
+cmpfiles GOT WANT
+bk comps -h > GOT
+cat > WANT <<EOF
+./comp2/sub2
+./comp3/sub3
+./comp5/sub5
+./comp7/sub7
+EOF
+cmpfiles GOT WANT
+rm -f comp2/sub23
+echo OK
+
+echo $N Multiple conflicts should be reported at the same time.......$NL
+bk here rm $Q subprimes || fail
+for i in 2 3 5 7
+do
+	touch ./comp${i}/sub${i}
+done
+bk here add $Q subprimes 2> ERR && fail -f ERR should have failed
+for i in 2 3 5 7
+do
+	grep -q "comp${i}/sub${i} not empty" ERR || fail -f ERR sub${i} not in error
+	rm -f ./comp${i}/sub${i}
+done
+bk here add $Q subprimes || fail now it should have worked
+echo OK
+
+echo ---- Test very deeply nested deep nests
+echo $N Setup the repo...............................................$NL
+cd "$HERE/project"
+for i in 1 2 3 4 5
+do	bk setup -C -fc"$HERE/empty" deep$i
+	cd deep$i
+done
+cd "$HERE/project"
+bk commit $Q -y"add deep stuff" || fail
+cd "$HERE/copy"
+# should only have subprimes currently
+bk alias -k here > GOT
+cat << EOF > WANT
+PRODUCT
+subprimes
+EOF
+cmpfiles GOT WANT
+bk pull $Q || fail
+bk here rm $Q subprimes || fail
+# make sure the pull did not bring the deeps stuff
+# since it's not in our aliases file
+bk comps -h > GOT
+cat > WANT <<EOF
+EOF
+cmpfiles GOT WANT
+bk alias -k here > GOT
+cat > WANT <<EOF
+PRODUCT
+EOF
+cmpfiles GOT WANT
+echo OK
+
+# now start the deep nest fun
+echo $N Populate deep1/deep2/deep3/deep4/deep5.......................$NL
+bk here add $Q ./deep1/deep2/deep3/deep4/deep5 || fail
+bk comps -h > GOT
+cat > WANT <<EOF
+./deep1/deep2/deep3/deep4/deep5
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Populate deep1/deep2.........................................$NL
+bk here add $Q ./deep1/deep2 || fail
+bk comps -h > GOT
+cat > WANT <<EOF
+./deep1/deep2
+./deep1/deep2/deep3/deep4/deep5
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Populate deep1/deep2/deep3 with a conflict...................$NL
+touch deep1/deep2/deep3/conflict
+bk here add $Q ./deep1/deep2/deep3 >ERR 2>&1 && {
+	echo failed
+	exit 1
+}
+rm deep1/deep2/deep3/conflict
+bk comps -h > GOT
+cat > WANT <<EOF
+./deep1/deep2
+./deep1/deep2/deep3/deep4/deep5
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Unpopulate deep1/deep2 should work...........................$NL
+bk here rm $Q ./deep1/deep2 || fail
+bk comps -h > GOT
+cat > WANT <<EOF
+./deep1/deep2/deep3/deep4/deep5
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Repopulate deep1/deep2 with conflict should fail.............$NL
+mkdir deep1/deep2/conflict || fail
+bk here add $Q ./deep1/deep2 > ERR 2>&1 && {
+	echo failed
+	exit 1
+}
+bk comps -h > GOT
+cat > WANT <<EOF
+./deep1/deep2/deep3/deep4/deep5
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Remove the conflict, now it works............................$NL
+rmdir deep1/deep2/conflict || fail
+bk here add $Q ./deep1/deep2
+bk comps -h > GOT
+cat > WANT <<EOF
+./deep1/deep2
+./deep1/deep2/deep3/deep4/deep5
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Run here set here to repair a repo ..........................$NL
+rm -rf deep1/deep2/deep3/deep4/deep5
+bk here set $Q  here || fail
+bk comps -h > GOT
+cat > WANT <<EOF
+./deep1/deep2
+./deep1/deep2/deep3/deep4/deep5
+EOF
+cmpfiles GOT WANT
+echo OK
+
+if [ $WINDOWS = NO ]; then
+echo $N Populate with a symlink -- fails.............................$NL
+bk here rm $Q ./deep1/deep2/deep3/deep4/deep5 || fail
+test -d deep1/deep2/deep3/deep4/deep5 && fail
+rmdir deep1/deep2/deep3/deep4 || fail
+ln -s ../../../../deep1 deep1/deep2/deep3/deep4
+bk here add $Q ./deep1/deep2/deep3 > ERR 2>&1 && {
+	echo failed
+	exit 1
+}
+bk comps -h > GOT
+cat > WANT <<EOF
+./deep1/deep2
+EOF
+cmpfiles GOT WANT
+# clean
+rm -f deep1/deep2/deep3/deep4 || fail
+echo OK
+
+echo $N Populate with a symlink in a deeper component -- passes......$NL
+mkdir deep1/deep2/deep3/deep4 || fail
+ln -s ../../../../deep1 deep1/deep2/deep3/deep4/deep5
+bk here add $Q ./deep1/deep2/deep3 > ERR 2>&1 || fail -f ERR
+bk comps -h > GOT
+cat > WANT <<EOF
+./deep1/deep2
+./deep1/deep2/deep3
+EOF
+cmpfiles GOT WANT
+rm deep1/deep2/deep3/deep4/deep5
+echo OK
+fi
+
+echo ---- Test unmapped repos
+echo $N Create an not-remapped component ............................$NL
+# in a remapped product...
+cd "$HERE"
+bk setup --sccs-compat -fcempty not-remapped || fail
+mv not-remapped copy
+cd copy
+bk portal $Q . || fail
+bk attach -N $Q not-remapped || fail
+test -d not-remapped/SCCS || fail
+test -d not-remapped/.bk && fail
+echo OK
+
+echo $N Try to unpopulate it -- should fail because no parent .......$NL
+bk portal $Q -r || fail
+bk comps | bk here set $Q -
+bk here rm $Q not-remapped > GOT 2>&1 && fail -f GOT
+cat <<EOF > WANT
+here: searching $HERE/project...ok (gate)
+here: ./not-remapped cannot be found at a gate
+here: unable to remove ./not-remapped
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Try to force unpopulate it ..................................$NL
+bk here rm $Q -f not-remapped || fail
+echo OK
+
+echo $N Test not-present comps do not interfere with rmcomp..........$NL
+cd "$HERE"
+echo > "$HERE/empty"
+nested all-present
+mkdir -p src
+cd src
+bk setup -fc"$HERE/empty" gui
+cd gui
+echo foo > Makefile
+bk new $Q Makefile
+bk commit -S $Q -y.
+bk -P commit $Q -y.
+bk setup -fc"$HERE/empty" tcltk/tcl
+bk setup -fc"$HERE/empty" tcltk/tk
+cd "$HERE"
+bk clone -sall $Q all-present not-present
+cd not-present
+bk here set $Q .
+test -d src/gui/tcltk && fail did not remove empty path
+echo OK
+
+echo $N Unpopulating should list local csets on failure .............$NL
+bk here add $Q src/gui/tcltk/tk
+cd src/gui/tcltk/tk
+echo hi > local
+bk new $Q local
+bk commit -S $Q -ylocal || fail
+cd ../../../..
+bk here rm $Q src/gui/tcltk/tk 2> ERR && fail -f ERR
+sed 's/ChangeSet@1.2,.*/ChangeSet@1.2,/' < ERR > ERR2
+cat <<EOF >WANT
+here: unable to remove ./src/gui/tcltk/tk, it contains csets not committed in product.
+EOF
+
+cmpfiles ERR2 WANT
+echo OK
+
+echo $N And with no other URLs we just list failure .................$NL
+rm BitKeeper/log/urllist
+bk parent $Q -r
+bk here rm $Q src/gui/tcltk/tk 2> ERR && fail -f ERR
+cat <<EOF > WANT
+here: unable to remove ./src/gui/tcltk/tk, it contains csets not committed in product.
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N Show rmcomp removes deep nest litter ........................$NL
+nested project3
+bk setup -f gcc/deep/stuff
+bk portal $Q -r
+bk gate $Q -r
+bk comps -h | bk here set -
+bk here rm $Q -f gcc/deep/stuff || fail
+mkdir -p gcc/deep/stuff/
+touch gcc/deep/stuff/README
+# XXX perhaps delta should prevent this?
+bk new $Q gcc/deep/stuff/README	|| fail
+bk here rm $Q -f gcc
+test -d gcc && fail
+echo OK
+
+echo $N Test populate through a pull.................................$NL
+cd "$HERE"
+nested pull-test
+bk alias set $Q GCC gcc
+bk alias set $Q GDB gdb
+cd "$HERE"
+bk clone $Q -sGCC pull-test pull-repo1
+bk clone $Q -sGCC pull-test pull-repo2
+cd pull-repo1
+bk alias set $Q GCC gcc gdb
+bk here set $Q gcc
+bk comps -h | grep -q gdb && fail
+cd ../pull-repo2
+bk pull $Q ../pull-repo1 2>ERR || fail -f ERR should have used populate
+bk comps -h | grep -q gdb || fail
+echo OK
+
+echo $N See if we can fool bk into using itself as a source .........$NL
+cd "$HERE"/copy
+rm BitKeeper/log/urllist
+bk parent $Q -r || fail
+bk comps -h > BEFORE
+bk here set $Q -@"$HERE"/copy . 2>ERR && fail -f ERR should have failed
+bk comps -h > AFTER
+cmpfiles BEFORE AFTER
+echo OK
+
+echo $N Test forcing an unpopulate in a portal or gate ..............$NL
+nested project
+echo "Cannot remove components in a portal." > WANT
+bk here set PRODUCT 2> GOT && fail -f GOT
+cmpfiles WANT GOT
+bk here set -f PRODUCT 2> GOT && fail -f GOT
+cmpfiles WANT GOT
+bk portal $Q -r
+echo "Cannot remove components in a gate." > WANT
+bk here set PRODUCT 2> GOT && fail -f GOT
+cmpfiles WANT GOT
+bk here set -f PRODUCT 2> GOT && fail -f GOT
+cmpfiles WANT GOT
+echo OK
+
+echo ---- Test parallel populate
+echo $N Parallel repocheck that does an edit ........................$NL
+cd "$HERE"/project
+bk comps | while read c
+do
+	echo hi > $c/test
+	bk new $Q $c/test || fail
+done
+bk commit $Q -ytest || fail
+cd ..
+bk --config=checkout:none clone $Q project p-none || fail
+cd p-none
+bk --config=checkout:edit repocheck -j10 $Q || fail
+rm -f WANT
+bk comps | while read c
+do
+	echo ignore:me >> $c/test
+	echo $c/test | sed 's/\.\///' >> WANT
+done
+bk -Uc > GOT
+cmpfiles WANT GOT
+echo OK

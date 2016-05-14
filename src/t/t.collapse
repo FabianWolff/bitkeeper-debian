@@ -1,0 +1,572 @@
+# Copyright 2006-2012,2014-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Verify that collapsed csets cannot return ...................$NL
+commercial project
+echo test > file
+bk new $Q file
+bk commit -yfirst $Q || fail
+cd "$HERE"
+bk clone $Q project copy
+cd copy
+bk collapse -el || fail
+echo test2 > file
+bk -cr ci -c $Q || fail
+bk commit -yreplacement $Q || fail
+bk pull $Q 2>ERR && fail -f ERR
+grep -q "the cset has been collapsed" ERR || fail -f ERR
+echo OK
+
+echo $N Test that \'bk pull -D\' will allow uncollapsed csets .........$NL
+(echo rr; echo y) | BK_FORCE_RESOLVE_RERUN=1 bk pull $Q -D 2> ERR || {
+	fail -f ERR should have worked
+}
+grep -q "1 unresolved name conflict" ERR || fail
+echo OK
+
+# test 'bk collapse -e'
+echo $N Test collapse -e with many different delta types ............$NL
+cd "$HERE/project"
+for f in renamed deleted modes xflags file1 file2 file3 exclude edited chg_edit
+do	echo initial > $f
+	bk new $Q $f
+done
+bk edit $Q exclude
+echo newline >> exclude
+bk ci -ynew $Q exclude || fail
+echo binary junk > binary
+bk new -Euuencode $Q binary || fail
+echo binary junk > binpool
+bk new -EBAM $Q binpool || fail
+
+if [ "$PLATFORM" != "WIN32" ]
+then
+	ln -s file1 change_symlink
+	bk new $Q change_symlink || fail
+fi
+bk commit $Q -yinitial || fail
+
+
+#  contents edit
+bk edit $Q file || fail
+echo add line >> file
+bk ci -ycontents $Q file || fail
+#  renamed file
+bk mv renamed rename_dest || fail
+#  deleted file
+bk rm deleted || fail
+#  file cereated in this cset
+echo new_file > new_file
+bk new $Q new_file || fail
+#  change mode
+bk chmod +x modes || fail
+#  add/del xflags
+bk admin -fRCS xflags || fail
+bk admin -FSCCS xflags || fail
+echo hi > create_delete
+bk new $Q create_delete || fail
+bk rm create_delete || fail
+
+# excludes
+bk edit $Q -x1.2 exclude || fail
+echo replace >> exclude
+bk ci -yreplace $Q exclude || fail
+
+# binary files
+bk edit $Q binary || fail
+echo more junk >> binary
+bk ci -ymore $Q binary || fail
+bk edit $Q binpool || fail
+echo more junk >> binpool
+bk ci -ymore $Q binpool || fail
+
+# changes and edited file
+bk edit $Q chg_edit || fail
+echo stuff in fixed cset >> chg_edit
+bk ci -ystuff $Q chg_edit || fail
+
+# nulls moves disappear
+bk mv file2 junk
+bk mv junk file2
+
+# multiple moves collapse
+bk mv file3 file4
+bk mv file4 file5
+
+if [ "$PLATFORM" != "WIN32" ]
+then
+	#  change symlink
+	bk edit $Q change_symlink
+	rm change_symlink
+	ln -s file2 change_symlink
+	bk ci $Q -ymovelink change_symlink
+
+	#  create symlink
+	ln -s file3 new_symlink
+	bk new $Q new_symlink
+
+	ln -s file3 edited_symlink
+	bk new $Q edited_symlink
+fi
+
+bk commit $Q -ynewcset || fail
+
+# already edited file
+bk edit $Q edited || fail
+echo new stuff not in cset >> edited
+echo edited comment | bk cfile save edited
+
+bk edit $Q chg_edit || fail
+echo new stuff not in cset >> chg_edit
+echo edited comment | bk cfile save chg_edit
+
+if [ "$PLATFORM" != "WIN32" ]
+then
+	bk edit $Q edited_symlink
+	rm edited_symlink
+	ln -s file2 edited_symlink
+	echo edited comment | bk cfile save edited_symlink
+fi
+
+BK_USER=u1 bk collapse -el $Q || fail
+BK_USER=u2 bk -xlr delta -a $Q -c || fail
+BK_USER=u3 bk commit $Q -ycollapse || fail
+
+bk changes -r+ -v -d'# dspec-v2
+:GFILE:\ :REV:\ $unless(:CHANGESET:){:DL:\ }:USER:
+$if(:ENC:!=ascii){\ :ENC:}\n
+:FLAGS:\n
+$if (:DI:) {
+	inc/exc\ :DI:\n
+}
+$unless (:CHANGESET:) {
+	$unless (:REV:=1.0) {
+		:RWXMODE:\n
+	}
+}
+:COMMENTS:
+$unless (:CHANGESET:) {
+	$if (:GFILE: != BitKeeper/etc/collapsed) {
+		:DIFFS_U:
+	}
+}
+---\n
+' | perl -pe 's/^([-+]{3} \S+).*/$1/; s/([-l][-rwx]{3})[-rwx]{6}/$1/' > GOT
+
+bk -rBitKeeper/deleted get -qS
+CREATE_DELETE=`bk gfiles BitKeeper/deleted/*/create_delete*`
+DELETED=`bk gfiles BitKeeper/deleted/*/deleted~*`
+cat <<EOF > WANT
+ChangeSet 1.4 u3
+BITKEEPER,CSETMARKED,HASH,EOLN_UNIX
+C collapse
+---
+EOF
+
+cat <<EOF > cd
+$CREATE_DELETE 1.1 1/0/0 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+-rw-
+C BitKeeper file $HERE/project/create_delete
+--- /dev/null
++++ 1.1/$CREATE_DELETE
+@@ -0,0 +1 @@
++hi
+---
+$CREATE_DELETE 1.0 0/0/0 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+---
+EOF
+
+cat <<EOF > d
+$DELETED 1.2 0/0/1 u1
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+-rw-
+C Rename: deleted -> $DELETED
+---
+EOF
+
+# adjust for the sort order of the deleted dir
+( echo $CREATE_DELETE
+  echo $DELETED ) | bk sort | head -1 > .tmp
+if [ `cat .tmp` = $CREATE_DELETE ]
+then	cat cd d >> WANT
+else	cat d cd >> WANT
+fi
+
+cat <<EOF >>WANT
+BitKeeper/etc/collapsed 1.2 1/1/0 u1
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+-rw-
+---
+binary 1.2 1/1/1 u2 uuencode
+BITKEEPER,CSETMARKED,EOLN_UNIX
+-rw-
+C more
+--- 1.1/binary
++++ 1.2/binary
+@@ -1 +1,2 @@
+ binary junk
++more junk
+---
+binpool 1.2 22/0/0 u2 BAM
+BITKEEPER,CSETMARKED,EOLN_UNIX
+-rw-
+C more
+--- 1.1/binpool
++++ 1.2/binpool
+@@ -1 +1,2 @@
+ binary junk
++more junk
+---
+change_symlink 1.2 0/0/0 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+lrwx
+C movelink
+--- 1.1/change_symlink
++++ 1.2/change_symlink
+@@ -1 +1 @@
+-SYMLINK -> file1
++SYMLINK -> file2
+---
+chg_edit 1.2 2/0/1 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+-rw-
+C stuff
+C ---
+C edited comment
+--- 1.1/chg_edit
++++ 1.2/chg_edit
+@@ -1 +1,3 @@
+ initial
++stuff in fixed cset
++new stuff not in cset
+---
+edited 1.2 1/0/1 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+-rw-
+C edited comment
+--- 1.1/edited
++++ 1.2/edited
+@@ -1 +1,2 @@
+ initial
++new stuff not in cset
+---
+edited_symlink 1.1 0/0/0 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+lrwx
+C BitKeeper file $HERE/project/edited_symlink
+C ---
+C edited comment
+--- /dev/null
++++ 1.1/edited_symlink
+@@ -0,0 +1 @@
++SYMLINK -> file2
+---
+edited_symlink 1.0 0/0/0 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+---
+exclude 1.3 1/0/1 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+inc/exc -3
+-rw-
+C replace
+--- 1.2/exclude
++++ 1.3/exclude
+@@ -1,2 +1,2 @@
+ initial
+-newline
++replace
+---
+file 1.2 1/0/1 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+-rw-
+C contents
+--- 1.1/file
++++ 1.2/file
+@@ -1 +1,2 @@
+ test
++add line
+---
+file5 1.2 0/0/1 u1
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+-rw-
+C Rename: file3 -> file5
+---
+modes 1.2 0/0/1 u1
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+-rwx
+C Change mode to -rwx
+---
+new_file 1.1 1/0/0 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+-rw-
+C BitKeeper file $HERE/project/new_file
+--- /dev/null
++++ 1.1/new_file
+@@ -0,0 +1 @@
++new_file
+---
+new_file 1.0 0/0/0 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+---
+new_symlink 1.1 0/0/0 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+lrwx
+C BitKeeper file $HERE/project/new_symlink
+--- /dev/null
++++ 1.1/new_symlink
+@@ -0,0 +1 @@
++SYMLINK -> file3
+---
+new_symlink 1.0 0/0/0 u2
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+---
+rename_dest 1.2 0/0/1 u1
+BITKEEPER,CSETMARKED,SCCS,EOLN_UNIX
+-rw-
+C Rename: renamed -> rename_dest
+---
+xflags 1.3 0/0/1 u1
+BITKEEPER,RCS,CSETMARKED,EOLN_UNIX
+-rw-
+C Turn off SCCS flag
+---
+xflags 1.2 0/0/1 u1
+BITKEEPER,RCS,CSETMARKED,SCCS,EOLN_UNIX
+-rw-
+C Turn on RCS flag
+---
+EOF
+if [ "$PLATFORM" = "WIN32" ]
+then
+	# filter out symlink results
+	perl -0 -i.bck -pe 's/^\w+symlink.*?\n---\n//msg' WANT
+fi
+cmpfiles WANT GOT
+echo OK
+
+echo $N Verify that collapse works starting with edited ChangeSet ...$NL
+bk edit $Q file
+bk delta $Q -fyempty file || fail
+bk commit $Q -yempty || fail
+bk edit $Q ChangeSet || fail
+bk collapse $Q -e || fail
+test -f ChangeSet && fail
+echo OK
+
+echo $N Demonstrate using collapse -d for multiple users ............$NL
+REV=`bk changes -r+ -nd:REV:`
+echo f1 > f1
+BK_USER=user1 bk new $Q f1 || fail
+BK_USER=user1 bk commit $Q -yf1 || fail
+echo f2 > f2
+BK_USER=user2 bk new $Q f2 || fail
+BK_USER=user2 bk commit $Q -yf2 || fail
+
+bk collapse --no-save -eda$REV || fail
+bk -r check -ac || fail
+# bk fix can be used to do a partial collapse of files before commit
+BK_USER=user3 bk commit $Q -ynew || fail
+bk changes -r+ -v -nd':USER: :GFILE:@:REV:' > GOT
+cat <<EOF > WANT
+user3 ChangeSet@1.5
+user1 f1@1.1
+user1 f1@1.0
+user2 f2@1.1
+user2 f2@1.0
+EOF
+cmpfiles GOT WANT
+echo OK
+
+#echo $N Test collapse -e -aREV ......................................$NL
+#  above plus
+#  merges
+#  merged modes
+#  csets before and after merge
+
+# test merging of BitKeeper/etc/collapsed files
+
+# test collapse -e of tags 
+#  keep tag on old tip
+#  strip tags in middle and tip of stripped csets (with warnings)
+
+# test collapse of tags without -e
+#  keep tag on old tip
+#  strip tags in middle of stripped csets (with warnings)
+#  recreate tag on tip of stripped csets
+
+
+echo $N Test collapse -e@ with no parent ............................$NL
+cd "$HERE"
+bk clone $Q -l project clone || fail
+cd clone
+echo hi > myfile
+bk new $Q myfile || fail
+bk commit -ynew $Q || fail
+bk parent $Q -r || fail
+bk collapse -e@ 2>ERR && fail -f ERR
+cat <<EOF > WANT
+collapse: no single parent to use for -@
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N Test collapse -e@bad.repo ...................................$NL
+bk collapse -e@bad.repo 2>ERR && fail -f ERR
+grep -q 'collapse: failed to contact .*bad.repo for -@.' ERR || fail -f ERR
+echo OK
+
+echo $N Test collapse -e@ when missing tip ..........................$NL
+bk parent $Q -s ../project || fail
+cd ../project
+echo kk > kk
+bk new $Q kk || fail
+bk commit -ykk $Q || fail
+cd ../clone
+bk collapse -e@ 2>ERR && fail -f ERR
+cat <<EOF > WANT
+collapse: current repo is behind $HERE/project, must pull before collapsing.
+EOF
+cmpfiles WANT ERR
+echo OK
+
+echo $N Test collapse -e@ ...........................................$NL
+bk pull $Q || fail
+bk collapse --no-save -e@ || fail
+touch GOT
+test "`bk sfiles -cp`" && fail
+bk sfiles -x > GOT
+cat <<EOF > WANT
+ERR
+GOT
+WANT
+myfile
+EOF
+cmpfiles GOT WANT
+bk _test -f SCCS/c.myfile || fail
+bk _cat SCCS/c.ChangeSet | grep -q '^new$' || fail
+echo OK
+
+echo $N Test collapse -e@url ........................................$NL
+bk new $Q -c myfile || fail
+bk commit $Q -yhi2 || fail
+mkdir src
+cd src
+bk collapse -e@../../project || fail
+cd ..
+touch GOT
+test "`bk sfiles -cp`" && fail
+bk sfiles -x > GOT
+cat <<EOF > WANT
+ERR
+GOT
+WANT
+myfile
+EOF
+cmpfiles GOT WANT
+bk _test -f SCCS/c.myfile || fail
+bk _cat SCCS/c.ChangeSet | grep -q '^hi2' || fail
+echo OK
+
+echo $N Make sure collapse does not leave edited attr file...........$NL
+cd "$HERE"
+rm -rf project copy
+commercial project
+touch afile bfile
+bk new $Q afile
+bk new $Q bfile
+bk commit -y. $Q
+REV=`bk changes -qnd:REV: -r+`
+cd "$HERE"
+bk clone $Q project copy
+cd project
+bk edit $Q afile
+echo content > afile
+bk delta $Q -y. afile
+bk commit $Q -y.
+cd "$HERE/copy"
+bk edit $Q bfile
+echo more > bfile
+bk delta $Q -y. bfile
+bk commit $Q -y.
+unset BK_CONFIG
+bk pull $Q ../project || fail
+bk collapse $Q -ea$REV || fail
+bk sfiles -cg | grep -q attr && fail left edited attr file
+echo OK
+
+echo $N Test attr file again but in nested this time.................$NL
+cd "$HERE"
+rm -rf project copy
+nested project
+bk gate $Q -r
+bk portal $Q -r
+# create csets in all components
+touch afile gcc/afile gdb/afile
+bk new $Q afile gcc/afile gdb/afile
+(cd gcc && bk commit $Q -S -yafile)
+(cd gdb && bk commit $Q -S -yafile)
+bk commit $Q -yafile
+REV=`bk changes -qnd:REV: -r+`
+bk edit $Q afile gcc/afile gdb/afile
+echo content > afile
+echo content > gcc/afile
+echo content > gdb/afile
+bk delta $Q -y. afile gcc/afile gdb/afile
+(cd gcc && bk commit $Q -S -yafile)
+(cd gdb && bk commit $Q -S -yafile)
+bk commit $Q -yafile
+unset BK_CONFIG
+bk collapse $Q -ea$REV || fail collapse failed
+bk -e sfiles -cg | grep -q attr && fail left edite attr file
+echo OK
+
+echo $N Test pending exclude ........................................$NL
+echo 0 > f
+bk new -l $Q f
+for h in 1 2 3 4 5 6 7 8 9 10
+do	echo $h > f
+	bk delta $Q -y$h -l f || fail
+done
+bk commit -y10 $Q
+REV=`bk changes -r+ -nd:REV:`
+bk edit -x1.2 $Q f
+bk delta $Q -yex f || fail
+bk commit -y2 $Q || fail
+bk edit -x1.4 $Q f
+bk collapse $Q -ea$REV || fail
+X=`bk _cat SCCS/p.f | sed 's/.*-X/-x/'`
+test X$X = X-x1.2,1.4 || fail
+bk collapse -ea$REV 2>/dev/null || fail
+X=`bk _cat SCCS/p.f | sed 's/.*-X/-x/'`
+test X$X = X-x1.2,1.4 || fail
+echo OK
+
+echo $N Try collapse of gone file ...................................$NL
+REV=`bk changes -r+ -k`
+echo hi > file1
+bk new -l $Q file1
+bk commit $Q -y1 || fail
+echo bye >> file1
+bk ci $Q -y2 file1 || fail
+bk commit $Q -y2 || fail
+bk edit $Q BitKeeper/etc/gone || fail
+bk prs -hnd:KEY: -r1.0 file1 >> BitKeeper/etc/gone
+bk ci $Q -y3 BitKeeper/etc/gone
+bk commit $Q -y3 || fail
+bk rmgone $Q || fail
+bk collapse $Q -ea"$REV" || fail
+test -f file1 && fail should be gone
+echo OK

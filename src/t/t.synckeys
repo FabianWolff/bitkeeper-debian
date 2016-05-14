@@ -1,0 +1,106 @@
+# Copyright 2001-2006,2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+bk clone $Q "$HERE/project" "$HERE/copy"
+mkdir src
+cd src
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i bar.c h.h
+bk commit $S -yCset
+bk tag $Q proj1
+mkdir "$HERE/copy/src"
+cd "$HERE/copy/src"
+echo foo > foo.c
+bk new $Q foo.c
+bk commit $Q -yfoo
+bk tag $Q copy1
+echo OK
+
+echo $N List keys which are local only, changes -Lk .................$NL
+bk changes -qaLk "$HERE/project" | bk sort > GOT
+bk -R prs -hand:KEY: ChangeSet | head -2 | bk sort > WANT
+cmp -s WANT GOT || { echo failed; diff -u WANT GOT; exit 1; }
+echo OK
+
+echo $N List local changes as rev and type ..........................$NL
+bk changes -qafLnd'$if(:DT:=T){:TAG:}$if(:DT:=D){:I:}' "$HERE/project" > WANT
+bk -R prs -hafnd'$if(:DT:=T){:TAG:}$if(:DT:=D){:I:}' | tail -2 > GOT
+cmp -s WANT GOT || { echo failed; diff WANT GOT; exit 1; }
+echo OK
+
+echo $N List keys which are remote only, changes -Rk ................$NL
+bk changes -qaRk "$HERE/project" | bk sort > GOT
+( cd "$HERE/project" && 
+  bk -R prs -hand:KEY: ChangeSet | head -2 | bk sort ) > WANT
+cmp -s WANT GOT || { echo failed; diff WANT GOT; exit 1; }
+echo OK
+
+echo $N List remote changes as rev and type .........................$NL
+bk changes -qafRnd'$if(:DT:=T){:TAG:}$if(:DT:=D){:I:}' "$HERE/project" |
+    bk sort > GOT
+( cd "$HERE/project" && 
+  bk -R prs -hafnd'$if(:DT:=T){:TAG:}$if(:DT:=D){:I:}' | tail -2 ) > WANT
+cmp -s WANT GOT || { echo failed; diff WANT GOT; exit 1; }
+echo OK
+
+echo $N make sure bk send xfers tags correctly ......................$NL
+cd "$HERE/copy"
+bk send $Q -u../project  - > "$HERE/patch" || fail
+cd "$HERE/project"
+bk takepatch -qay'Hello daddy, hello mama!
+Here I am in Camp Granada!' < "$HERE/patch" || fail
+bk prs -hn -d:TAG: | grep copy1 > OUT2
+test $? -eq 0 || {
+	echo failed
+	echo TAKEPATCH
+	cat OUT2
+	exit 1
+}
+bk changes -r+ > OUT3
+grep -q '^  Hello daddy, hello mama!$' OUT3 || {
+	echo failed comments
+	cat OUT3
+	exit 1
+}
+grep -q '^  Here I am in Camp Granada!$' OUT3 || {
+	echo failed comments
+	cat OUT3
+	exit 1
+}
+echo OK
+
+echo $N Check synckeys error handling ...............................$NL
+cd "$HERE/project"
+bk _mv SCCS/s.ChangeSet csetfile
+bk synckeys -lk ../copy 2>ERR
+rc=$?
+bk _mv csetfile SCCS/s.ChangeSet
+test $rc = 0 && {
+	echo should have failed
+	cat ERR
+	exit 1
+}
+bk _mv ../copy/SCCS/s.ChangeSet csetfile
+bk synckeys -lk ../copy 2>ERR
+rc=$?
+bk _mv csetfile ../copy/SCCS/s.ChangeSet
+test $rc = 0 && {
+	echo should have failed
+	cat ERR
+	exit 1
+}
+echo OK

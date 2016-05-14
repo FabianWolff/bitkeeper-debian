@@ -1,0 +1,79 @@
+.so ../bk-macros
+.TH "bk cset" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk cset \- manage changesets
+.SH SYNOPSIS
+.B bk cset
+.[B] \-Cq
+.[OPTreq] \-i list
+.\" .[OPTreq] \-M range
+.[OPTreq] \-x list
+.\" .[B] \-
+.SH DESCRIPTION
+.LP
+The cset command may be used to restore changeset marks in files (part 
+of \*(BK's per file metadata),
+to re-include one or more changesets which were previously excluded,
+or to exclude one or more changesets.
+.SH OPTIONS
+.TP \-x\*<list\*>
+.B \-C
+Clear and remark all changeset boundaries in all files under \*(BK control.
+.tp
+.OPTreq \-i list
+Create a new changeset that includes the changes in
+.ARG list .
+.\" .tp
+.\" .OPTreq \-M range
+.\" Mark the files included in the
+.\" .ARG range
+.\" of csets.
+.tp
+.B \-q
+Run quietly.
+.tp
+.B \-S
+If using -i or -x and not currently in the product, then limit
+the -i or -x to a component.
+.tp
+.OPTreq \-x list
+Create a new changeset that excludes the changesets in 
+.ARG list .
+.SH BUGS
+The 
+.Q \-i
+and
+.Q \-x
+options currently work only on file contents, not renames, creates, 
+mode changes, or xflags.
+.SH REMOVED INTERFACES
+Older versions of
+.B bk cset
+had two forms which are no longer supported since 
+.B bk changes
+can provide the same information.
+.DS
+$ \f(CBbk cset -r1.5\fP
+ChangeSet|1.5
+BitKeeper/deleted/.del-resolve.perl|1.4
+src/takepatch.c|1.16
+$ \f(CBbk changes -r1.5 -vnd':GFILE:|:REV:'\fP
+ChangeSet|1.5
+BitKeeper/deleted/.del-resolve.perl|1.4
+src/takepatch.c|1.16
+$ \f(CBecho 1.5 | bk cset -l \-\fP
+ChangeSet|1.5
+BitKeeper/deleted/.del-resolve.perl|1.4
+src/takepatch.c|1.16
+$ \f(CBecho 1.5 | bk changes -vnd':GFILE:|:REV:' \-\fP
+ChangeSet|1.5
+BitKeeper/deleted/.del-resolve.perl|1.4
+src/takepatch.c|1.16
+.DE
+.SH SEE ALSO
+.SA admin
+.SA changes
+.SH CATEGORY
+.B Admin
+.br
+.B Repository

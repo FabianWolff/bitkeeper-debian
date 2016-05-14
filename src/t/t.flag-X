@@ -1,0 +1,55 @@
+# Copyright 1999-2001,2005 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Do not use this feature.
+# This feature is likely to be removed in the future
+commercial project
+echo $N Test x flag .................................................$NL
+echo "echo this is a shell script > CMP1" > test_script.sh
+bk ci $Q -i test_script.sh
+bk admin $Q -fSHELL test_script.sh
+bk co $Q test_script.sh
+echo this is a shell script > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+echo $N Test delete of x flag .......................................$NL
+bk admin $Q -FSHELL test_script.sh
+rm -f CMP1 CMP2
+bk clean test_script.sh
+bk co $Q test_script.sh
+if [ -f CMP1 ]; then echo failed; exit 1; fi
+echo OK
+
+test "$PLATFORM" != "WIN32" && {
+echo $N Test symlink create .........................................$NL
+cd ..
+cp -rp project symtest
+cd symtest
+echo "xx" > symfile
+ln -s symfile symlink
+echo "ln -s symfile symlink" > make_sym.sh
+bk ci $Q -i make_sym.sh
+rm -f symlink
+bk admin $Q -fSHELL make_sym.sh
+bk co $Q make_sym.sh
+if [ ! -h symlink ]; then echo failed; exit 1; fi;
+echo "yy" > symfile
+cat symlink > file
+diff symfile file > /dev/null
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+cd ../project
+}
+exit 0

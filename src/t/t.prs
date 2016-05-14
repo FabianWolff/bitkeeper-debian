@@ -1,0 +1,1084 @@
+# Copyright 1999-2008,2010-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+commercial project
+
+########################################################################
+# Check correct syntax and usage of keyword and text printing, and
+# the various conditional statements, on a single rev of a file.  All of
+# these are run as follows and none should fail:
+#     bk prs -hr+ -d<dspec> FILE2
+
+echo "data" >FILE2
+bk new $Q FILE2
+bk edit $Q FILE2
+bk delta $Q -f -yc1 FILE2
+bk edit $Q FILE2
+bk delta $Q -f -yc2 FILE2
+bk _get $Q -er1.2 FILE2
+bk delta $Q -f -yc3 FILE2
+bk edit $Q -M FILE2
+bk delta $Q -f -yc3 FILE2
+bk commit $Q -ycommit
+bk tag $Q tag
+# The syntax is <dspec> # <expected output>
+# where <expected output> can end with "<nonl>" to mean that
+# no newline at the end is expected.
+cat >cmds <<'EOF'
+\1		# 1
+\12		# 12
+\141		# a
+\061		# 1
+:REV:		# 1.4
+:REV|1.1:	# 1.1
+:REV|1.2:	# 1.2
+:REV|1.3:	# 1.3
+:REV|+:		# 1.4
+:REV|tag:	# 1.4
+:UNKNOWN:	# :UNKNOWN:
+:UNKNOWN|1.1:	# :UNKNOWN|1.1:
+:UNKNOWN|tag:	# :UNKNOWN|tag:
+:KID:		# <nonl>
+:KID|1.2:	# 1.3
+:SIBLINGS|1.3:	# 1.2.1.1
+:SIBLINGS|1.2.1.1:	# <nonl>
+a		# a
+xyzzy		# xyzzy
+:		# :
+:nokw		# :nokw
+nokw:x		# nokw:x
+x: y: z:	# x: y: z:
+a\tb		# a	b
+a\$b		# a$b
+a\xb		# axb
+a\\\\b		# a\\b
+a b c		# a b c
+ a b c		#  a b c
+\ a b c		#  a b c
+\ a\ b\ c	#  a b c
+{xxx}		# {xxx}
+{}		# {}
+{		# {
+}		# }
+$		# $
+$$$$$$$$:REV:$$$$$$$$$	# $$$$$$$$1.4$$$$$$$$$
+$i			# $i
+$0			# <nonl>
+x$0			# x
+x$0y			# xy
+$1			# <nonl>
+x$1			# x
+x$1y			# xy
+$2			# <nonl>
+x$2			# x
+x$2y			# xy
+$3			# <nonl>
+x$3			# x
+x$3y			# xy
+$4			# <nonl>
+x$4			# x
+x$4y			# xy
+$5			# <nonl>
+x$5			# x
+x$5y			# xy
+$6			# <nonl>
+x$6			# x
+x$6y			# xy
+$7			# <nonl>
+x$7			# x
+x$7y			# xy
+$8			# <nonl>
+x$8			# x
+x$8y			# xy
+$9			# <nonl>
+x$9			# x
+x$9y			# xy
+$eac			# $eac
+$unles			# $unles
+$else			# $else
+$if(e){$else}		# $else
+$if(e){{{{{{{}		# {{{{{{
+$if(e){}		# <nonl>
+$if(e){x}		# x
+$if(e){x:REV:y}		# x1.4y
+$if(e){x}$else{}	# x
+$if(e){x}$else{y}	# x
+$if(e){x}$else{y:REV:z}	# x
+$if(:FALSE:){false}	# <nonl>
+$if(:TRUE:){true}	# true
+$if(!:FALSE:){true}	# true
+$if(!:FALSE: || :FALSE:){true}	# true
+$if(!(:FALSE: || :FALSE:)){true}	# true
+$if(!:FALSE: && :FALSE:){true}	# <nonl>
+$if(!(:FALSE: && :FALSE:)){true}	# true
+$if(!:TRUE: && :FALSE:){true}	# <nonl>
+$if(!(:TRUE: && :FALSE:)){true}	# true
+$if($0){true}$else{false}	# false
+$if($1){true}$else{false}	# false
+$if($2){true}$else{false}	# false
+$if($3){true}$else{false}	# false
+$if($4){true}$else{false}	# false
+$if($5){true}$else{false}	# false
+$if($6){true}$else{false}	# false
+$if($7){true}$else{false}	# false
+$if($8){true}$else{false}	# false
+$if($9){true}$else{false}	# false
+$if($x){true}$else{false}	# true
+$if(${0=nope}){bad}$else{good}$0	# good
+$if(${0=nope){bad}$else{good}$0	# good
+${0=x}				# <nonl>
+x${0=x}				# x
+${0=x}y				# y
+x${0=x}y			# xy
+${0=x}$0			# x
+${0=}				# <nonl>
+${0=}$0				# <nonl>
+${0=}x$0y			# xy
+$0${0=x}$0			# x
+$0${0=x}$0$0			# xx
+$0${1=x}$0$0			# <nonl>
+$0${0=x}$0$1			# x
+$0${0=x}$0$1$0			# xx
+$0${0=1.1}:REV|$0:		# 1.1
+a${0=x}b$0c			# abxc
+a$0b${0=x}c$0d			# abcxd
+a$0b${0=x}c$0d$0e		# abcxdxe
+a$0b${1=x}c$0d$0e		# abcde
+a$0b${0=x}c$0d$1e		# abcxde
+a$0b${0=x}c$0d$1e$0f		# abcxdexf
+${0=x}$0${0=y}			# x
+${0=x}$0${0=y}$0		# xy
+${0=x}$0${0=y}$0${0=z}$0	# xyz
+${0=x0}${1=x1}${2=x2}${3=x3}${4=x4}${5=x5}${6=x6}${7=x7}${8=x8}${9=x9}$0$1$2$3$4$5$6$7$8$9	# x0x1x2x3x4x5x6x7x8x9
+$0x${0=$0}y$0z			# xyz
+$0x${0=${0=getsclobbered}}y$0z	# xyz
+$0x${0=${0=${0=getsclobbered}}}y$0z	# xyz
+$0x${0=${1=ok}}y$0z$1		# xyzok
+$0x${0=${0=${1=ok}}}y$0z$1	# xyzok
+$unless(e){x}			# <nonl>
+$unless(e){}			# <nonl>
+$unless(e){x:REV:y}		# <nonl>
+$unless(e){x}$else{y}		# y
+$unless(e){x}$else{}		# <nonl>
+$unless(e){x}$else{y:REV:z}	# y1.4z
+$unless($0){false}		# false
+$unless($1){false}		# false
+$unless($2){false}		# false
+$unless($3){false}		# false
+$unless($4){false}		# false
+$unless($5){false}		# false
+$unless($6){false}		# false
+$unless($7){false}		# false
+$unless($8){false}		# false
+$unless($9){false}		# false
+$each(:C:){x}			# x
+$each(:C:){(:C:)}		# c3
+$each(:C:){:each:}		# c3
+$if(:REV:=1.4){t}		# t
+$if(:REV: = 1.4){t}		# t
+$if(:REV: = 1.4 ){t}$else{f}	# f
+$if(:REV:\ =1.4\ ){t}		# t
+$if(:REV:\  = 1.4\ ){t}		# t
+$if(e){x}$if(e){y}$if(e){z}	# xyz
+$if(e){x}$else{q}$if(e){y}$if(e){z}	# xyz
+$if(e){x}$if(e){y}$else{q}$if(e){z}	# xyz
+$if(e){x}$if(e){y}$if(e){z}$else{q}	# xyz
+$if(e){x}$else{q}$if(e){y}$else{q}$if(e){z}$else{q}	# xyz
+$if(e){$if(e){x}}			# x
+$if(e){$if(e){x}}$else{z}		# x
+$if(e){$if(e){x}$else{y}}$else{z}	# x
+$if(:REV:){t}$else{f}			# t
+$unless(:REV:){t}$else{f}		# f
+$if(:REV:=1.4){t}$else{f}		# t
+$unless(:REV:=1.4){t}$else{f}		# f
+$unless(:REV:!=1.4){t}$else{f}		# t
+$if(:REV|tag:){t}$else{f}		# t
+$if(:DPN:=~file*){t}$else{f}		# t
+$if(:DPN:=~f*){t}$else{f}		# t
+$if(1.0 -eq 1.0){t}$else{f}		# t
+$if(1.0 -ne 2.0){t}$else{f}		# t
+$if(2.0 -gt 1.0){t}$else{f}		# t
+$if(2.0 -ge 1.0){t}$else{f}		# t
+$if(1.0 -lt 2.0){t}$else{f}		# t
+$if(1.0 -le 2.0){t}$else{f}		# t
+$if(a && b){t}$else{f}			# t
+$if(a || b){t}$else{f}			# t
+$if(:REV:=1.4 && :DPN:=FILE2){t}$else{f}		# t
+$if(:REV:=1.4 && :DPN:!=FILE2){t}$else{f}		# f
+$if(:REV:=1.4 || :DPN:=FILE2){t}$else{f}		# t
+$if(:REV: && :C|1.0:){t}$else{f}			# f
+$if(:REV: || :REV: && :C|1.0:){t}$else{f}			# f
+$if(:REV: || (:REV: && :C|1.0:)){t}$else{f}			# t
+$if((:REV: && :C|1.0:) || (:REV: && :C|1.0:)){t}$else{f}	# f
+$if((:REV: || :C|1.0:) && (:REV: || :C|1.0:)){t}$else{f}	# t
+$if((:REV:=1.4 && :C|1.0:) || (:REV:!=1.1 && :C|1.0:)){t}$else{f}	# f
+$if((:REV:=1.4 && :REV:!=1.1) || (:REV:!=1.1 && :REV=1.4:)){t}$else{f}	# t
+$if(((:REV:=1.4) && (:REV:!=1.1)) || ((:REV:!=1.1) && (:REV=1.4:))){t}$else{f}	# t
+$if(:REV:||:REV:&&:C|1.0:){t}$else{f}			# f
+$if(:REV:||(:REV:&&:C|1.0:)){t}$else{f}			# t
+$if((:REV:&&:C|1.0:)||  (:REV: && :C|1.0:)){t}$else{f}	# f
+$if((:REV: ||:C|1.0:)&& (:REV: ||:C|1.0:)){t}$else{f}	# t
+$if((:REV: = 1.4&&:C|1.0:) || (:REV: != 1.1 &&:C|1.0:)){t}$else{f}	# f
+$if((:REV:= 1.4&&:REV: != 1.1)||(:REV: != 1.1 &&:REV=1.4:)){t}$else{f}	# t
+$if( :REV: = \ 1.4){t}		# t
+$if(:REV:   = 1.4){t}		# t
+$if(:REV:\ = 1.4){t}$else{f}	# f
+$if(abc=~a?c){t}		# t
+$if(abc =~a?c){t}		# t
+$if(abc=~ a?c){t}		# t
+$if(abc =~ a?c){t}		# t
+$if(a c =~ a?c){t}		# t
+$if(a c =~ a c){t}		# t
+$if(a c =~ x c){t}$else{f}	# f
+$if(a c=a c){t}			# t
+$if(a c = a c){t}		# t
+$tcl{testing}		# {testing}
+$tcl{{}			# {\{}
+$tcl{\}}		# {\}}
+$tcl{[]$;' }		# {\[\]\$\;'\ }
+$tcl{\\x}		# {\\x}
+$tcl{$tcl{a} $tcl{b} $tcl{c}}	# {{a}\ {b}\ {c}}
+$if(x =~ /x/){t}		# t
+$if(xyz =~ /x.z/){t}		# t
+$if(xyz=~/x.z/){t}		# t
+$if(xyz =~ /x?z/g){t}		# t
+EOF
+cat cmds | perl -ne '
+	chomp;
+	($dspec, $out) = /([^\t]*)\t+# ?(.*)/;
+	die "\nunmatched <$_>\n" unless $dspec;
+	print "Check $dspec " . ("." x (53 - length($dspec))) . ".";
+
+	# run prs without shell quoting issues
+	open(OLDOUT, ">&STDOUT") or die "Cant dup STDOUT: $!";
+	open(OLDERR, ">&STDERR") or die "Cant dup STDERR: $!";
+	open(STDOUT, ">prs.out") or die "Cant redirect STDOUT: $!";
+	open(STDERR, ">&STDOUT") or die "Cant dup STDOUT=>ERR: $!";
+	system("bk", "prs", "-r+", "-hnd$dspec", "FILE2") == 0 or
+	    die "\nprs failed: $got\n";
+	open(STDOUT, ">&OLDOUT") or die "Cant restore STDOUT: $!";
+	open(STDERR, ">&OLDERR") or die "Cant restore STDERR: $!";
+	open(PRS, "prs.out") or die "Cant open prs.out: $!";
+	$got = "";
+	$got .= $_ while <PRS>;
+	close(PRS);
+	$got .= "<nonl>" unless $got =~ /\n$/;
+	chomp($got);		# trim trailing newline
+	$got =~ s/\n/ /g;	# merge multiple lines together
+	if ($got ne $out) {
+		print "\nexpected <$out> got <$got>\n";
+		exit(1);
+	}
+	print "OK\n";
+' || fail
+
+########################################################################
+# Check $each statement.  Create a multi-line comment and iterate
+# over it.
+
+echo "data" >FILE3
+bk new $Q FILE3
+bk edit $Q FILE3
+cat >cmt <<EOF
+z1
+z2
+z3
+z4
+EOF
+bk delta $Q -f -Ycmt FILE3
+bk edit $Q FILE3
+cat >cmt <<EOF
+l1
+l2
+l3
+l4
+EOF
+bk delta $Q -f -Ycmt FILE3
+# The syntax is <dspec> # <expected output>
+cat >cmds <<'EOF'
+$each(:C:){(:C:)x}		# l1xl2xl3xl4x
+$each(:C:){:each:x}		# l1xl2xl3xl4x
+$each(:C:){:each::each:x}		# l1l1xl2l2xl3l3xl4l4x
+$each(:C:){(:C:) :each:x}		# l1 l1xl2 l2xl3 l3xl4 l4x
+$each(:C:){:line: :each:x}		# 1 l1x2 l2x3 l3x4 l4x
+$each(:C:){$if(:line:=1){one}$if(:line:=2){two}$if(:line:=3){three}}	# onetwothree
+$each(:REV:){:each:}		# 1.3
+$each(:C:){:JOIN::each:}		# l1,l2,l3,l4
+$each(:C:){${0=(:C:)}}$0		# l4
+$each(:C:){${0=$0(:C:)}}$0		# l1l2l3l4
+$each(:C:){${0=(:C:)$0}}$0		# l4l3l2l1
+$each(:C:){${0=$0(:C:)$0}}$0		# l1l2l1l3l1l2l1l4l1l2l1l3l1l2l1
+EOF
+cat cmds | perl -ne '
+	chomp;
+	($dspec, $out) = /([^\t]*)\t+# ?(.*)/;
+	die "\nunmatched <$_>\n" unless $dspec;
+	print "Check $dspec " . ("." x (53 - length($dspec))) . ".";
+
+	# run prs without shell quoting issues
+	open(OLDOUT, ">&STDOUT") or die "Cant dup STDOUT: $!";
+	open(OLDERR, ">&STDERR") or die "Cant dup STDERR: $!";
+	open(STDOUT, ">prs.out") or die "Cant redirect STDOUT: $!";
+	open(STDERR, ">&STDOUT") or die "Cant dup STDOUT=>ERR: $!";
+	system("bk", "prs", "-r+", "-hd$dspec", "FILE3") == 0 or
+	    die "\nprs failed: $got\n";
+	open(STDOUT, ">&OLDOUT") or die "Cant restore STDOUT: $!";
+	open(STDERR, ">&OLDERR") or die "Cant restore STDERR: $!";
+	open(PRS, "prs.out") or die "Cant open prs.out: $!";
+
+	$got = "";
+	$got .= $_ while <PRS>;
+	close(PRS);
+	chomp($got);		# trim trailing newline
+	$got =~ s/\n/ /g;	# merge multiple lines together
+	if ($got ne $out) {
+		print "\nexpected <$out> got <$got>\n";
+		exit(1);
+	}
+	print "OK\n";
+' || fail
+
+########################################################################
+# Check incorrect syntax.  These should all fail with error status.
+
+echo "data" >FILE4
+bk new $Q FILE4
+bk edit $Q FILE4
+bk delta $Q -f -ycmt FILE4
+cat >cmds <<'EOF'
+$if(a
+$if(a)
+$if(a)(
+$if(a){
+$if(a){}$else{
+$unless(a
+$unless(a)
+$unless(a)(
+$unless(a){
+$unless(a){}$else{
+$each(
+$each(:id
+$each(:id:
+$each(:C:)
+$each(:C:){
+$if((:REV:=1.4)
+$each(:C:){$each(:TAG:){x}}
+${}
+${x}
+${x=}
+${x=y}
+${0
+${0=
+${0=x
+${0=xyzzy
+EOF
+cat cmds | perl -ne '
+	chomp;
+	print "Check $_ " . ("." x (53 - length($_))) . ".";
+	# \047 == single quote
+	open(PRS, "bk prs -r+ -hd\047$_\047 FILE4 2>&1 |");
+	$got = "";
+	$got .= $_ while <PRS>;
+	die "\ncommand should not have worked got <$got>\n" if close(PRS);
+	print "OK\n";
+' || fail
+
+########################################################################
+# Check some of the meta-data keywords.
+
+BK_YEAR2=YES
+export BK_YEAR2
+R=1
+for D in '87/05/28 23:49:57' '97/05/28 23:49:57' '97/05/30 01:34:11' '97/06/23 01:33:45+06:30' '98/01/30 17:45:17-05:00'
+do	cat > INITX <<EOF
+D 1.$R $D $USER@bk_regression.bk 0 0 0/0/0
+c This is revision 1.$R of $D
+c This the second comment of 1.$R
+P this/is/the/pathname.$R
+------------------------------------------------
+EOF
+	echo 1.$R >> FILE
+	if [ $R -eq 1 ]
+	then	bk delta $Q -i -IINITX FILE
+	else	bk delta $Q -IINITX FILE
+	fi
+	R=`expr $R + 1`
+	bk co $Q -l FILE
+done
+bk unedit FILE
+echo $N checking file name :F: ......................................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.5 ========
+s.FILE
+EOF
+bk prs -r1.5 -d':F:\n' FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking s file path name :PN: ..............................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.5 ========
+SCCS/s.FILE
+EOF
+bk prs -r1.5 -d':PN:\n' FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking per delta path name :DPN: ..........................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.1..1.5 ========
+this/is/the/pathname.5
+this/is/the/pathname.4
+this/is/the/pathname.3
+this/is/the/pathname.2
+EOF
+bk prs -r1.1..1.5 -d':DPN:\n' FILE > CMP2
+cmpfiles CMP1 CMP2
+echo OK
+
+echo $N test EVEN ODD and JOIN ......................................$NL
+cat <<EOF > WANT
+e1.4,o1.3,e1.2,o1.1
+EOF
+bk prs -r..1.4 -hd'$if(:EVEN:){:JOIN:e:REV:}$if(:ODD:){:JOIN:o:REV:}' \
+	FILE > GOT
+echo >> GOT	# missing newline
+cmpfiles WANT GOT
+echo OK
+
+echo $N test JOIN is reset for each \$each ...........................$NL
+# Similar to FILE3 tests done above, but we need two revisions
+bk prs -r1.2,1.3 -hnd'Comments $each(:C:){:JOIN:(:C:)}' FILE3 > GOT
+cat <<'EOF' > WANT
+Comments l1,l2,l3,l4
+Comments z1,z2,z3,z4
+EOF
+cmpfiles WANT GOT
+bk prs -r1.2,1.3 -hd':JOIN:$each(:C:){:JOIN:(:C:)}' FILE3 > GOT
+echo >> GOT	# newline
+cat <<'EOF' > WANT
+l1,l2,l3,l4,z1,z2,z3,z4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N checking comment :C: ........................................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.1..1.5 ========
+This is revision 1.5 of 98/01/30 17:45:17-05:00
+This the second comment of 1.5
+This is revision 1.4 of 97/06/23 01:33:45+06:30
+This the second comment of 1.4
+This is revision 1.3 of 97/05/30 01:34:11
+This the second comment of 1.3
+This is revision 1.2 of 97/05/28 23:49:57
+This the second comment of 1.2
+EOF
+bk prs -r1.1..1.5 -d'$each(:C:){(:C:)\n}' FILE > CMP2
+cmpfiles CMP1 CMP2
+echo OK
+
+echo $N checking delta type :DT: ....................................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.5 ========
+D
+EOF
+bk prs -d ':DT:\n' -r1.5 FILE  >CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking rev id :I: .........................................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.3 ========
+1.3
+EOF
+bk prs -d ':I:\n' -r1.3 FILE  >CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking date :Dy: :Dm: :Dd: ................................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.1 ========
+87
+EOF
+bk prs -d':Dy:\n' -r1.1 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+bk undos > CMP1 <<EOF
+======== FILE 1.1 ========
+1987
+EOF
+unset BK_YEAR2
+bk prs -d':Dy:\n' -r1.1 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; diff -u CMP1 CMP2; exit 1; fi
+export BK_YEAR2=YES
+bk undos > CMP1 <<EOF
+======== FILE 1.4 ========
+06
+EOF
+bk prs -d':Dm:\n' -r1.4 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+bk undos > CMP1 <<EOF
+======== FILE 1.4 ========
+23
+EOF
+bk prs -d':Dd:\n' -r1.4 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking time :T: ...........................................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.1..1.5 ========
+17:45:17
+01:33:45
+01:34:11
+23:49:57
+EOF
+bk prs -r1.1..1.5 -d':T:\n' FILE > CMP2
+cmpfiles CMP1 CMP2
+echo OK
+
+echo $N checking user :P: ...........................................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.1 ========
+$USER
+EOF
+bk prs -r1.1 -d':P:\n' FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; diff CMP1 CMP2; exit 1; fi
+echo OK
+
+echo $N checking host :HT: ..........................................$NL
+echo data > host
+bk ci -i host > ${DEV_NULL} 2>&1
+bk undos > CMP1 <<EOF
+======== host 1.1 ========
+bk_regression.bk
+EOF
+bk prs -d':HT:\n' -r1.1 host > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; else echo OK; fi
+echo $N checking lines inserted :LI: and :Li: .......................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.2 ========
+1
+EOF
+bk prs -d':LI:\n' -r1.2 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+bk undos > CMP1 <<EOF
+======== FILE 1.2 ========
+00001
+EOF
+bk prs -d':Li:\n' -r1.2 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking lines deleted :Ld: .................................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.2 ========
+00000
+EOF
+bk prs -d':Ld:\n' -r1.2 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking lines unchanged :Lu: ...............................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.3 ========
+00002
+EOF
+bk prs -d':Lu:\n' -r1.3 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking module name :M: ....................................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.4 ========
+FILE
+EOF
+bk prs -d':M:\n' -r1.4 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking UTC TIME :UTC: .....................................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.5 ========
+19980130224517
+EOF
+bk prs -d':UTC:\n' -r1.5 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking UTC TIME :UTC-FUDGE: ...............................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.5 ========
+19980130224517
+EOF
+bk prs -d':UTC-FUDGE:\n' -r1.5 FILE > CMP2
+cmp -s CMP1 CMP2 || fail -f CMP2 file did not match
+echo OK
+
+echo $N checking body :GB: ..........................................$NL
+bk undos > CMP1 <<EOF
+1.1
+EOF
+bk prs -r1.1 -h -d':GB:' FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; sdiff -w80 CMP[12]; exit 1; fi
+echo OK
+
+echo $N checking default output......................................$NL
+bk undos > CMP1 <<EOF
+======== FILE .. ========
+D 1.5 98/01/30 17:45:17-05:00 ${USER}@bk_regression.bk 5 4 1/0/4
+P this/is/the/pathname.5
+C This is revision 1.5 of 98/01/30 17:45:17-05:00
+C This the second comment of 1.5
+------------------------------------------------
+D 1.4 97/06/23 01:33:45+06:30 ${USER}@bk_regression.bk 4 3 1/0/3
+P this/is/the/pathname.4
+C This is revision 1.4 of 97/06/23 01:33:45+06:30
+C This the second comment of 1.4
+------------------------------------------------
+D 1.3 97/05/30 01:34:11 ${USER}@bk_regression.bk 3 2 1/0/2
+P this/is/the/pathname.3
+C This is revision 1.3 of 97/05/30 01:34:11
+C This the second comment of 1.3
+------------------------------------------------
+D 1.2 97/05/28 23:49:57 ${USER}@bk_regression.bk 2 1 1/0/1
+P this/is/the/pathname.2
+C This is revision 1.2 of 97/05/28 23:49:57
+C This the second comment of 1.2
+------------------------------------------------
+D 1.1 87/05/28 23:49:57 ${USER}@bk_regression.bk 1 0 1/0/0
+P this/is/the/pathname.1
+C This is revision 1.1 of 87/05/28 23:49:57
+C This the second comment of 1.1
+------------------------------------------------
+EOF
+bk prs -r.. FILE > CMP2
+cmpfiles CMP1 CMP2
+echo OK
+
+echo $N checking conditional prefix/suffix...........................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.1..1.5 ========
+1.5 This is revision 1.5 of 98/01/30 17:45:17-05:00
+1.5 This the second comment of 1.5
+1.4 This is revision 1.4 of 97/06/23 01:33:45+06:30
+1.4 This the second comment of 1.4
+1.3 This is revision 1.3 of 97/05/30 01:34:11
+1.3 This the second comment of 1.3
+1.2 This is revision 1.2 of 97/05/28 23:49:57
+1.2 This the second comment of 1.2
+EOF
+bk prs -r1.1..1.5 -d'$each(:C:){:I: (:C:)\n}' FILE > CMP2
+cmpfiles CMP1 CMP2
+echo OK
+
+echo $N checking conditional with colon..............................$NL
+bk undos > CMP1 <<EOF
+======== FILE .. ========
+FOO Comment: This is revision 1.5 of 98/01/30 17:45:17-05:00
+Comment: This the second comment of 1.5
+FOO Comment: This is revision 1.4 of 97/06/23 01:33:45+06:30
+Comment: This the second comment of 1.4
+FOO Comment: This is revision 1.3 of 97/05/30 01:34:11
+Comment: This the second comment of 1.3
+FOO Comment: This is revision 1.2 of 97/05/28 23:49:57
+Comment: This the second comment of 1.2
+FOO Comment: This is revision 1.1 of 87/05/28 23:49:57
+Comment: This the second comment of 1.1
+EOF
+bk prs -r.. -d'FOO $each(:C:){Comment: (:C:)\n}' FILE > CMP2
+cmpfiles CMP1 CMP2
+echo OK
+
+echo $N checking nested conditional..................................$NL
+bk undos > CMP1 <<EOF
+======== FILE .. ========
+this/is/the/pathname.5
+1.5 This is revision 1.5 of 98/01/30 17:45:17-05:00
+1.5 This the second comment of 1.5
+this/is/the/pathname.4
+1.4 This is revision 1.4 of 97/06/23 01:33:45+06:30
+1.4 This the second comment of 1.4
+this/is/the/pathname.3
+1.3 This is revision 1.3 of 97/05/30 01:34:11
+1.3 This the second comment of 1.3
+this/is/the/pathname.2
+1.2 This is revision 1.2 of 97/05/28 23:49:57
+1.2 This the second comment of 1.2
+this/is/the/pathname.1
+1.1 This is revision 1.1 of 87/05/28 23:49:57
+1.1 This the second comment of 1.1
+EOF
+bk prs -r.. -d'$if(:DPN:){:DPN:\n$each(:C:){:I: (:C:)\n}}' FILE > CMP2
+cmpfiles CMP1 CMP2
+echo OK
+
+echo $N another test for nested conditional..........................$NL
+bk co $Q -l FILE
+echo "new data" > FILE
+_BK_MV_OK=1 bk ci $Q -y FILE
+bk prs -r1.4..1.6 -hd':I: Comments:\n$if(:C:){$each(:C:){  (:C:)\n}}------------\n'  FILE > CMP2
+bk undos > CMP1 <<EOF
+1.6 Comments:
+------------
+1.5 Comments:
+  This is revision 1.5 of 98/01/30 17:45:17-05:00
+  This the second comment of 1.5
+------------
+EOF
+cmpfiles CMP1 CMP2
+echo OK
+
+bk stripdel $Q -r1.6 FILE
+echo $N checking escape of control symbol............................$NL
+bk undos > CMP1 <<EOF
+======== FILE 1.1 ========
+FOO \$if(PN){ BAR }
+EOF
+bk prs -d'FOO \$if(PN){ BAR }\n' -r1.1 FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking emulation of Sun prs................................$NL
+bk undos > CMP1 <<EOF
+D 1.5 98/01/30 17:45:17 ${USER} 5 4	00001/00000/00004
+MRs:
+COMMENTS:
+This is revision 1.5 of 98/01/30 17:45:17-05:00
+This the second comment of 1.5
+
+D 1.4 97/06/23 01:33:45 ${USER} 4 3	00001/00000/00003
+MRs:
+COMMENTS:
+This is revision 1.4 of 97/06/23 01:33:45+06:30
+This the second comment of 1.4
+
+D 1.3 97/05/30 01:34:11 ${USER} 3 2	00001/00000/00002
+MRs:
+COMMENTS:
+This is revision 1.3 of 97/05/30 01:34:11
+This the second comment of 1.3
+
+D 1.2 97/05/28 23:49:57 ${USER} 2 1	00001/00000/00001
+MRs:
+COMMENTS:
+This is revision 1.2 of 97/05/28 23:49:57
+This the second comment of 1.2
+
+D 1.1 87/05/28 23:49:57 ${USER} 1 0	00001/00000/00000
+MRs:
+COMMENTS:
+This is revision 1.1 of 87/05/28 23:49:57
+This the second comment of 1.1
+
+EOF
+bk prs -r.. -h -d':Dt:\t:Li:/:Ld:/:Lu:\nMRs:\n:MR:$if(:C:){COMMENTS:\n$each(:C:){(:C:)\n}}\n' FILE > CMP2
+cmpfiles CMP1 CMP2
+echo OK
+
+echo $N checking expression in '$if'...................................$NL
+echo "$USER D 1.3 97/05/30 01:34:11 $USER 3 2" | bk undos > CMP1
+bk prs -h -d'$if(:I:=1.3){:P: :Dt:\n}' FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking expression in '$if !='................................$NL
+bk undos > CMP1 <<EOF
+${USER} D 1.5 98/01/30 17:45:17 ${USER} 5 4
+${USER} D 1.4 97/06/23 01:33:45 ${USER} 4 3
+${USER} D 1.2 97/05/28 23:49:57 ${USER} 2 1
+${USER} D 1.1 87/05/28 23:49:57 ${USER} 1 0
+EOF
+bk prs -h -d'$if(:I:!=1.3){:P: :Dt:\n}' FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking expression in '$if -gt'...............................$NL
+bk undos > CMP1 <<EOF
+${USER} D 1.5 98/01/30 17:45:17 ${USER} 5 4
+${USER} D 1.4 97/06/23 01:33:45 ${USER} 4 3
+EOF
+bk prs -h -d'$if(:UTC: -gt 19970601224809){:P: :Dt:\n}' FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N checking expression in '$if -lt'...............................$NL
+bk undos > CMP1 <<EOF
+${USER} D 1.3 97/05/30 01:34:11 ${USER} 3 2
+${USER} D 1.2 97/05/28 23:49:57 ${USER} 2 1
+${USER} D 1.1 87/05/28 23:49:57 ${USER} 1 0
+EOF
+bk prs -h -d'$if(:UTC: -lt 19970601224809){:P: :Dt:\n}' FILE > CMP2
+cmp -s CMP1 CMP2
+echo OK
+
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo $N checking descriptive text :FD: ..............................$NL
+echo dtext1 > dtext
+echo dtext2 >> dtext
+bk admin -fRCS --text=dtext FILE
+bk undos > CMP1 <<EOF
+<dtext1>
+<dtext2>
+EOF
+bk prs -h -r+ -d'$each(:FD:){<(:FD:)>\n}' FILE > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; sdiff -w80 CMP[12]; exit 1; fi
+echo OK
+
+echo $N checking that libsfiles.a handles unterminated lines ........$NL
+rev=`echon 'ChangeSet|1.1' | bk -R prs -hn -d:REV: -`
+if [ $rev != "1.1" ]; then
+	echo didn\'t read the right data
+	exit 1
+fi
+echo OK
+
+echo $N checking expression "\$if(:TAG:!='')" ..........................$NL
+bk prs -d"\$if(:TAG:!=''){:TAG:}" FILE > /dev/null || fail
+echo OK
+
+echo $N checking regular diffs ......................................$NL
+bk edit $Q FILE
+cat > FILE <<EOF
+main(int ac, char *av)
+{
+	some_function(1);
+	other_function(av[1]);
+}
+
+/*
+ * A function which takes an int.
+ */
+some_function(int x)
+{
+	/*
+	 * Comment to force us into this function name's context.
+	 */
+	printf("arg=%d\n", x);
+}
+
+/*
+ * A function which takes a string.
+ */
+other_function(char *s)
+{
+	/*
+	 * Comment to force us into this function name's context.
+	 */
+	printf("arg=%s\n", s);
+}
+EOF
+bk delta $Q -ywhatever FILE
+bk edit $Q FILE
+sed 's/printf(/fprintf(stderr, /' < FILE > XXX
+mv XXX FILE
+bk delta $Q -ywhatever FILE
+bk prs -r+ -h -d:DIFFS: FILE > GOT
+bk diffs --no-unified -R+ -h FILE > WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N checking unified diffs ......................................$NL
+# We need to remove the 1.7/FILE 2005-07-27 08:41:22 -07:00 header
+# because it can straddle a clock tick and be different by one second.
+bk prs -r1.8 -h -d:DIFFS_U: FILE | grep -v /FILE > GOT
+bk diffs -R1.8 -uh FILE | grep -v /FILE > WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N checking unified / procedural diffs .........................$NL
+bk prs -r1.8 -h -d:DIFFS_UP: FILE | grep -v /FILE > GOT
+bk diffs -R1.8 -uph FILE | grep -v /FILE > WANT
+checkfiles WANT GOT
+grep -q '@@ some_function' GOT || {
+	echo should have noted the function name
+	cat GOT
+	exit 1
+}
+grep -q '@@ other_function' GOT || {
+	echo should have noted the other function name
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Make sure binary files do not print tmp paths................$NL
+printf "This is\0a binary\n" > binfile
+bk new $Q binfile
+bk edit $Q binfile
+printf "Now with a \0 change\n" > binfile
+bk ci $Q -y.
+echo "Binary files differ" > WANT
+for dspec in :DIFFS: :DIFFS_U: :DIFFS_UP:
+do
+	bk log -nd$dspec -r+ binfile > GOT
+	cmpfiles WANT GOT
+done
+echo OK
+
+echo $N checking prs -C on branch side of merge .....................$NL
+cd "$HERE"
+bk _rm -fr project copy
+commercial project
+echo XXX > bar
+bk new $Q bar
+bk commit $Q -ycset1
+cd ..
+bk clone $Q project copy
+cd project
+# at the time of this writing; mv first doesn't mean it records first
+# so make a normal mergable delta to claim trunk, then mv to force
+# a delta on the branch during the merge.
+bk edit $Q bar
+printf "before\nXXX\n" > bar
+bk delta $Q -ybar bar
+bk mv bar newbar
+bk commit $Q -ycset2
+cd ../copy
+bk edit $Q bar
+printf "XXX\nafter\n" > bar
+bk delta $Q -ybar bar
+bk commit $Q -ycset3
+bk pull $Q
+bk prs -hC1.1.1.2 -nd:I: newbar > GOT
+printf "1.4\n1.1.1.2\n" > WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N checking prs -C on pending deltas returns an empty list .....$NL
+bk edit $Q newbar
+bk delta $Q -fybar newbar
+bk prs -hC+ -nd:I: newbar > GOT || fail
+test -s GOT && {
+	echo failed
+	echo expected nothing, got
+	cat GOT
+	exit 1
+}
+bk stripdel -qr+ newbar
+echo OK
+
+echo $N checking prs -p fails on a range and on a merge .............$NL
+bk prs -phnd:I: newbar 2> ERR && {
+	echo failed range
+	exit 1
+}
+grep -q "requires a single non-merge revision" ERR || {
+	echo failed range msg
+	exit 1
+}
+bk prs -phnd:I: -r+ newbar 2> ERR && {
+	echo failed merge
+	exit 1
+}
+grep -q "requires a single non-merge revision" ERR || {
+	echo failed merge msg
+	exit 1
+}
+bk prs -phnd:I: -r1.2 newbar > OUT || {
+	echo failed valid
+	exit 1
+}
+grep -q "1.1" OUT || {
+	echo failed valid msg
+	exit 1
+}
+echo OK
+
+echo $N checking dspec variables persist across dspec evaluations....$NL
+echo "data" >DVFILE
+bk new $Q DVFILE
+bk edit $Q DVFILE
+bk delta $Q -f -yc1 DVFILE
+bk edit $Q DVFILE
+bk delta $Q -f -yc2 DVFILE
+bk edit $Q DVFILE
+bk delta $Q -f -yc3 DVFILE
+bk commit $Q -ycommit
+bk prs -hd'$unless($0){${0=:REV:}}<$0>' DVFILE > GOT
+printf "<1.4><1.4><1.4><1.4>" > WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N checking :B: and :S: do not output garbage ..................$NL
+bk prs -r1.2 -hnd'$if(:B:){failed B ":B:" :GFILE:}' DVFILE newbar > OUT
+test -s OUT && fail -f OUT
+bk prs -r1.2 -hnd'$if(:S:){failed S ":S:" :GFILE:}' DVFILE newbar > OUT
+test -s OUT && fail -f OUT
+echo OK
+
+echo $N checking :SETGCA: does not block prs from looping ...........$NL
+bk _get $Q -e -r1.1.1.2 newbar
+bk delta $Q -fynull newbar
+bk edit $Q -M newbar
+bk delta $Q -fynull newbar
+bk log -nd:SETGCA: newbar > GOT
+cat <<EOF > WANT
+1.1.1.2
+1.1
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N See data comes out in right order ...........................$NL
+# sccs_get data was bypassing dspec and going straight out the door
+commercial standalone
+echo A Big Binary File of Data > bin
+echo A Big ASCCI File of Data > asc
+bk new $Q -b bin
+bk new $Q asc
+cat <<'EOF' > myspec
+# dspec-v2
+"And now the data...\n"
+:GB:
+EOF
+bk prs -hr+ --dspecf=myspec asc > got.asc
+bk prs -hr+ --dspecf=myspec bin > got.bin
+#
+cat <<EOF > want.asc
+And now the data...
+A Big ASCCI File of Data
+EOF
+cmpfiles want.asc got.asc
+#
+# Binary data printed first?!
+#
+cat <<EOF > want.bin
+And now the data...
+A Big Binary File of Data
+EOF
+cmpfiles want.bin got.bin
+echo OK

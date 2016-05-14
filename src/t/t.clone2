@@ -1,0 +1,78 @@
+# Copyright 2004-2006 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+echo OK
+
+echo $N Test trivial clone ..........................................$NL
+cd "$HERE"
+bk clone $Q project clone || { echo clone failed; exit 1; }
+rm -rf clone
+echo OK
+
+echo $N Test that clone with unwritable destination fails ...........$NL
+cd "$HERE"
+mkdir foo; chmod ugo-w foo
+bk clone $Q project foo/clone 2>ERR && { echo clone did not fail; exit 1; }
+[ -s ERR ] || { echo clone did not print error message; exit 1; }
+chmod -R u+w foo; rm -rf foo
+echo OK
+
+echo $N Test that clone with unwritable . fails .....................$NL
+cd "$HERE"
+mkdir foo; chmod ugo-w foo
+cd foo
+bk clone $Q ../project clone 2>"$HERE/ERR" && { echo clone did not fail; exit 1; }
+[ -s "$HERE/ERR" ] || { echo clone did not print error message; exit 1; }
+cd "$HERE"
+chmod -R u+w foo; rm -rf foo
+echo OK
+
+echo $N Test that clone with unwritable . and implicit dest fails ...$NL
+cd "$HERE"
+mkdir foo; chmod ugo-w foo
+cd foo
+bk clone $Q ../project 2>"$HERE/ERR" && { echo clone did not fail; exit 1; }
+[ -s "$HERE/ERR" ] || { echo clone did not print error message; exit 1; }
+cd "$HERE"
+chmod -R u+w foo; rm -rf foo
+echo OK
+
+echo $N Test clone with path ........................................$NL
+cd "$HERE"
+bk clone $Q project foo/bar/baz || { echo clone failed; exit 1; }
+rm -rf foo
+echo OK
+
+echo $N Test clone with partially-extant path .......................$NL
+cd "$HERE"
+mkdir foo; mkdir foo/bar
+bk clone $Q project foo/bar/baz/quux || { echo clone failed; exit 1; }
+rm -rf foo
+echo OK
+
+echo $N Test clone with absolute path ...............................$NL
+cd "$HERE"
+bk clone $Q project "$HERE/foo" || { echo clone failed; exit 1; }
+rm -rf foo
+echo OK
+
+echo $N Test clone with absolute path requiring mkdirp ..............$NL
+cd "$HERE"
+bk clone $Q project "$HERE/foo/bar/baz" || { echo clone failed; exit 1; }
+rm -rf foo
+echo OK

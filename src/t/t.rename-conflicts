@@ -1,0 +1,392 @@
+# Copyright 2000,2004-2008,2010-2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# These tests are for the case where the remote side is renaming a file
+# to what is a local conflict.  In other words:
+# local$ touch conflict
+# remote$ bk mv some_file conflict
+# local$ bk pull
+
+# XXX - todo
+# rename to junk/middle when junk/middle/end is what exists.
+
+# Because we use tar xmf we don't check for timestamp errors here.
+unset _BK_DEVELOPER
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i foo.c bar.c h.h
+if bk _test ! -f SCCS/s.foo.c; then echo failed to create history; exit 1; fi
+bk commit $S -yCset 
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo failed to clear pending list; bk pending; exit 1; fi
+echo OK
+echo $N Clone and create gfile conflict .............................$NL
+cd "$HERE"
+bk clone $Q project copy
+cd copy
+echo I am the CONFLICT > CONFLICT
+cd "$HERE/project"
+bk mv src/foo.c CONFLICT
+bk commit $Q -ywhatever 
+cd "$HERE/copy"
+bk pull -R $Q
+cd "$HERE"
+tar cf TAR copy 2> /dev/null
+echo OK
+echo $N Resolve by removing local conflict ..........................$NL
+cd "$HERE"
+rm -rf copy
+tar xmf TAR
+cd copy
+cat > CMDS <<EOF
+rl
+y
+q
+EOF
+bk resolve -l -a $Q < CMDS > OUT 2>&1
+if [ -d RESYNC ]
+then	echo failed to finish resolve
+	cat OUT
+	exit 1
+fi
+if bk _test ! -f SCCS/s.CONFLICT
+then	echo failed to move s.CONFLICT
+	cat OUT
+	exit 1
+fi
+if bk _test -f src/SCCS/s.foo.c
+then	echo failed to move src/SCCS/s.foo.c
+	cat OUT
+	exit 1
+fi
+if [ "`bk get -qkp CONFLICT`" != foo ]
+then	echo bad contents in CONFLICT
+	cat OUT
+	exit 1
+fi
+echo OK
+echo $N Resolve by moving local conflict ............................$NL
+cd "$HERE"
+rm -rf copy
+tar xmf TAR
+cd copy
+cat > CMDS <<EOF
+ml
+JUNK
+q
+EOF
+bk resolve -l -a $Q < CMDS > OUT 2>&1
+if [ -d RESYNC ]
+then	echo failed to finish resolve
+	cat OUT
+	exit 1
+fi
+if bk _test ! -f SCCS/s.CONFLICT
+then	echo failed to move s.CONFLICT
+	cat OUT
+	exit 1
+fi
+if bk _test -f src/SCCS/s.foo.c
+then	echo failed to move src/SCCS/s.foo.c
+	cat OUT
+	exit 1
+fi
+if [ "`bk get -qkp CONFLICT`" != foo ]
+then	echo bad contents in CONFLICT
+	cat OUT
+	exit 1
+fi
+if [ ! -f JUNK ]
+then	echo failed to leave local file in JUNK
+	cat OUT
+	exit 1
+fi
+echo OK
+
+echo $N Sfile/create conflict .......................................$NL
+cd "$HERE"
+rm -rf copy
+tar xmf TAR
+cd copy
+rm -fr RESYNC PENDING
+bk new $Q CONFLICT
+bk commit $Q -y"make a mess"
+bk pull $Q -R
+echo q | bk resolve $Q -a 2> ERR && { echo failed; exit 1; }
+tail ERR | grep -q '^(create/sfile conflict) CONFLICT' || {
+	echo failed: wrong msg
+	cat ERR
+	exit 1
+}
+(echo rr; echo y) | bk resolve -l -a $Q > OUT 2>&1 || {
+	echo FAILED
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Sfile/create conflict with a merge ..........................$NL
+cd "$HERE"
+rm -rf copy
+tar xmf TAR
+cd copy
+rm -fr RESYNC PENDING
+bk edit $Q src/foo.c
+echo "/* end */" >> src/foo.c
+bk delta $Q -ynewend src/foo.c
+bk new $Q CONFLICT
+bk commit $Q -y"make a mess"
+bk pull $Q -R
+echo q | bk resolve $Q -a 2> ERR && { echo failed; exit 1; }
+tail ERR | grep -q '^(create/sfile conflict) CONFLICT' || {
+	echo failed: wrong msg
+	cat ERR
+	exit 1
+}
+printf "rr\ny\nm\nC\n" | bk resolve -l -a $Q > OUT 2>&1 || {
+	echo FAILED
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Prepare to test dir/file conflict ...........................$NL
+cd "$HERE"
+rm -fr project copy
+commercial project
+mkdir src
+touch src/a
+bk new $Q src/a
+bk commit $Q -ybaseline
+cd ..
+bk clone $Q project copy
+cd project
+bk mv src oldsrc
+# could do symlink, but then can't test on windows.  So doing files.
+touch src block
+bk new $Q src block
+bk commit $Q -ysetup
+cd ../copy
+bk pull $Q -R
+cd ..
+tar cf copy.tar copy
+echo OK
+
+echo $N Test a pull with no local work ..............................$NL
+cd copy
+bk resolve $Q --batch || { echo failed; exit 1; }
+test -d PENDING && fail left PENDING directory
+cd ..
+echo OK
+
+# cases where expecting a file dir conflict
+# empty directory
+# directory with new files, new sfiles, renamed sfiles, empty subdirs
+#
+# The remote repo is always the same:
+
+echo $N Test a local empty directory colliding with remote file .....$NL
+rm -fr copy
+tar xf copy.tar
+cd copy
+mkdir block
+bk resolve $Q --batch 2> ERR || { echo failed; exit 1; }
+grep -q "removing empty directory" ERR || { echo failed; exit 1; }
+cd ..
+echo OK
+
+echo $N Test an empty subdirectory in the src directory .............$NL
+rm -fr copy
+tar xf copy.tar
+cd copy
+mkdir -p src/empty/empty/empty1 src/empty/empty/empty2
+bk resolve $Q --batch 2> ERR || { echo failed; exit 1; }
+grep -q "removing empty directory" ERR || { echo failed; exit 1; }
+cd ..
+echo OK
+
+echo $N Test an new gfile in the src directory with mr ..............$NL
+rm -fr copy
+tar xf copy.tar
+cd copy
+touch src/newfile
+echo q | bk resolve $Q -a 2> ERR && { echo failed; exit 1; }
+tail ERR | grep -q '^(create/dir conflict) src' || {
+	echo failed: wrong msg
+	cat ERR
+	exit 1
+}
+(echo mr; echo x;) | bk resolve -a 2> ERR || {
+	echo failed resolve
+	cat ERR
+	exit 1
+}
+grep -q "100% |==============================| OK" ERR || {
+	echo failed: resolve msg
+	cat ERR
+	exit 1
+}
+cd ..
+echo OK
+
+echo $N Test an new sfile in the src directory with mr ..............$NL
+rm -fr copy
+tar xf copy.tar
+cd copy
+bk abort -f
+touch src/newfile
+bk new $Q src/newfile
+bk pull $Q -R
+echo q | bk resolve $Q -a 2> ERR && { echo failed; exit 1; }
+tail ERR | grep -q '^(create/dir conflict) src' || {
+	echo failed: wrong msg
+	cat ERR
+	exit 1
+}
+(echo mr; echo x;) | bk resolve -a 2> ERR || {
+	echo failed resolve
+	cat ERR
+	exit 1
+}
+grep -q "100% |==============================| OK" ERR || {
+	echo failed: resolve msg
+	exit 1
+}
+cd ..
+echo OK
+
+echo $N Test an new gfile in the src directory with ml ..............$NL
+rm -fr copy
+tar xf copy.tar
+cd copy
+touch src/newfile
+echo q | bk resolve $Q -a 2> ERR && { echo failed; exit 1; }
+tail ERR | grep -q '^(create/dir conflict) src' || {
+	echo failed: wrong msg
+	cat ERR
+	exit 1
+}
+(echo ml; echo x; echo mr; echo x;) | bk resolve -a 2> ERR || {
+	echo failed resolve
+	cat ERR
+	exit 1
+}
+grep -q "Local directory has version controlled files" ERR || {
+	echo failed: resolve msg
+	exit 1
+}
+grep -q "100% |==============================| OK" ERR || {
+	echo failed: resolve msg
+	exit 1
+}
+cd ..
+echo OK
+
+echo $N Test an ml with a directory which has no sfiles .............$NL
+rm -fr copy
+tar xf copy.tar
+cd copy
+bk abort -f
+bk mv src oldsrc
+bk commit $Q -yrename
+mkdir src
+touch src/newfile
+bk pull $Q -R
+echo q | bk resolve $Q -a 2> ERR && { echo failed; exit 1; }
+tail ERR | grep -q '^(create/dir conflict) src' || {
+	echo failed: wrong msg
+	cat ERR
+	exit 1
+}
+(echo ml; echo x;) | bk resolve -a 2> ERR || {
+	echo failed resolve
+	cat ERR
+	exit 1
+}
+grep -q "100% |==============================| OK" ERR || {
+	echo failed: resolve msg
+	exit 1
+}
+cd ..
+echo OK
+
+echo $N Test a renamed file in the src directory - use remote .......$NL
+rm -fr copy
+tar xf copy.tar
+cd copy
+# want a new merge; throw away takepatch
+bk abort -f
+bk mv src/a src/b
+bk commit $Q -yrename
+bk pull $Q -R
+cd ..
+tar cf copy2.tar copy
+cd copy
+# continue on with test
+echo q | bk resolve $Q -a 2> ERR && { echo failed; exit 1; }
+tail ERR | grep -q '^(rename conflict) src/b' || {
+	echo failed: wrong msg
+	cat ERR
+	exit 1
+}
+echo r | bk resolve -a 2> ERR || {
+	echo failed resolve
+	cat ERR
+	exit 1
+}
+grep -q "100% |==============================| OK" ERR || {
+	echo failed: resolve msg
+	exit 1
+}
+cd ..
+echo OK
+
+echo $N Test a renamed file in the src directory - use local ........$NL
+# This is a messy case: the user needs to move the files out of
+# the way in the file/dir conflict, but instead chooses to keep the
+# local file name, perpetuating the dir/file conflict.  The later
+# stages of the resolve do not pick this up and the RESYNC area is
+# left in a state where running 'resolve' doesn't help.  Just doing
+# a bk abort and pull again, then don't pick local!
+#
+rm -fr copy
+tar xf copy2.tar
+cd copy
+echo q | bk resolve $Q -a 2> ERR && { echo failed; exit 1; }
+tail ERR | grep -q '^(rename conflict) src/b' || {
+	echo failed: wrong msg
+	cat ERR
+	exit 1
+}
+echo l | bk resolve -a 2> ERR && {
+	# expect to fail
+	echo fix test
+	exit 1
+}
+grep -q "Commit aborted, no changes applied" ERR || {
+	echo failed: resolve msg
+	exit 1
+}
+cd ..
+echo "failed (bug )"

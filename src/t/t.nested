@@ -1,0 +1,1608 @@
+# Copyright 2008-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -e
+
+echo $N Setup .......................................................$NL
+commercial standalone
+bk cat BitKeeper/etc/config > ../config
+cd ..
+bk setup -fcconfig -P project || fail
+test -f BitKeeper/log/PRODUCT && {
+	echo should not be a product
+	exit 1
+}
+bk clone $Q standalone gcc
+cd gcc
+echo gcc > name
+bk new $Q name
+bk commit $Q -y'Create gcc repo'
+cd "$HERE"
+bk clone $Q standalone gdb
+cd gdb
+echo gdb > name
+bk new $Q name
+bk commit $Q -y'Create gdb repo'
+echo OK
+
+echo $N Convert to product ..........................................$NL
+cd "$HERE/project"
+bk edit $Q BitKeeper/etc/aliases
+echo > BitKeeper/etc/aliases
+bk ci $Q -yempty BitKeeper/etc/aliases || fail
+bk commit -yempty $Q || fail
+bk portal $Q . || fail
+echo OK
+
+# XXX: Why should id -p fail if in a product?
+# echo $N id -p on a product should return not a component.............$NL
+# 
+echo $N id -p on a product should return id of the product ..........$NL
+cd "$HERE/project"
+bk changes -r+ -nd:ROOTKEY: >WANT || fail
+bk id -p >GOT || fail
+cmpfiles WANT GOT
+echo OK
+
+echo $N Add some components .........................................$NL
+bk attach --force -C $Q ../gcc gcc || fail
+bk attach --force -C $Q ../gdb gdb || fail
+bk gfiles -p > GOT
+cat > WANT <<EOF
+gcc/ChangeSet
+gdb/ChangeSet
+EOF
+cmpfiles WANT GOT
+bk commit $Q -y'gcc & gdb' || fail
+bk sfiles -p > PENDING
+test -s PENDING && fail
+rm -f PENDING
+cd gcc
+test "`bk repotype`" = "component" || {
+	echo failed to make it a component
+	ls BitKeeper/log
+	exit 1
+}
+test -z "`bk pending -S || true`" || {
+	echo did not clear pending marks
+	exit 1
+}
+echo OK
+
+echo $N Set up a new component ......................................$NL
+cd ..
+bk -R get $Q -S BitKeeper/etc/config
+bk setup -Cfc"`bk root`"/BitKeeper/etc/config new-comp
+cp -rp new-comp "$HERE/save"
+cd new-comp || fail
+test "`bk repotype`" = "component" || {
+	echo failed to make it a component
+	ls BitKeeper/log
+	exit 1
+}
+test -z "`bk pending -S || true`" || {
+	echo did not clear pending marks
+	exit 1
+}
+echo OK
+
+echo $N New component should be pending .............................$NL
+cd ..
+test X`bk gfiles -p` = Xnew-comp/ChangeSet || fail
+test `cat new-comp/BitKeeper/log/COMPONENT` = new-comp || {
+	echo failed to leave pointer
+	exit 1
+}
+bk pending | grep -q "new-comp/ChangeSet@1.1" || fail
+echo OK
+
+bk here rm $Q new-comp || fail
+# because default is still all, removing the component means it is
+# still there, so really remove it!
+rm -rf new-comp
+
+echo $N id -p on a component should work.............................$NL
+cd "$HERE/project"
+ROOTKEY=`bk id`
+cd "gcc"
+bk id >GOT 2>&1 || {
+	echo failed
+	cat GOT
+	exit 1
+}
+test "`cat GOT`" = "$ROOTKEY" || {
+	echo failed
+	cat GOT
+	exit 1
+}
+bk id -S >GOT 2>&1 || {
+	echo failed
+	cat GOT
+	exit 1
+}
+test "`cat GOT`" = "$ROOTKEY" && {
+	echo failed
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test that a standalone in a prod gets the right prod ........$NL
+cd "$HERE"
+commercial comp
+cd "$HERE/project"
+mv ../comp .
+cd comp
+# there are no sub repos in this standalone repo inside a product
+printf "" > WANT
+bk -P sfiles -R > GOT
+checkfiles WANT GOT
+cd ..
+rm -fr comp
+echo OK
+
+echo $N Test that a comp in a prod in a prod gets the right prod ....$NL
+cd "$HERE/project"
+touch c
+bk setup -P -f -cc subproduct || fail
+rm c
+cd subproduct
+bk portal $Q . || fail
+commercial comp
+echo comp > WANT
+bk -P sfiles -R > GOT
+checkfiles WANT GOT
+cd "$HERE/project"
+rm -fr subproduct
+echo OK
+
+echo $N Check nested configs ........................................$NL
+cd "$HERE/project/gcc"
+bk edit $Q BitKeeper/etc/config ../BitKeeper/etc/config || fail
+cat <<EOF >> BitKeeper/etc/config
+a: 1
+b: 2
+c: 3
+EOF
+cat <<EOF >> ../BitKeeper/etc/config
+a: 1p!
+b: 2p
+d: 4p
+EOF
+test X`bk config a` = X1p || fail
+test X`bk config b` = X2 || fail
+test X`bk config c` = X3 || fail
+test X`bk config d` = X4p || fail
+cd ..
+# make sure the trailing ! gets stripped
+test X`bk config a` = X1p || fail
+test X`bk config b` = X2p || fail
+test X`bk config c || true` = X || fail
+test X`bk config d` = X4p || fail
+cd gcc
+bk unedit $Q BitKeeper/etc/config ../BitKeeper/etc/config || fail
+echo OK
+
+echo $N Check dspecs ................................................$NL
+cd "$HERE/project"
+test "`bk log -r+ -nd:FILE: gcc/ChangeSet`" = gcc/ChangeSet || {
+	echo bad gcc/ChangeSet
+	exit 1
+}
+echo OK
+
+echo $N Check for components in top changeset .......................$NL
+cd "$HERE/project"
+bk changes -V -r+ -nd'$if(:FILE:){:GFILE:}' | sort > GOT
+cat > WANT <<EOF
+gcc/ChangeSet
+gcc/ChangeSet
+gcc/ChangeSet
+gdb/ChangeSet
+gdb/ChangeSet
+gdb/ChangeSet
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check that we can get a relative name from product ..........$NL
+mkdir -p gcc/a/b/c
+cd gcc/a/b/c
+test `bk pwd -P` = gcc/a/b/c || {
+	echo pwd -P failed
+	exit 1
+}
+test `bk pwd -R` = a/b/c || {
+	echo pwd -R failed
+	exit 1
+}
+echo OK
+
+echo $N Check that sfiles lists components ..........................$NL
+cd "$HERE/project"
+bk gfiles > GOT
+cat > WANT <<EOF
+ChangeSet
+BitKeeper/etc/aliases
+BitKeeper/etc/attr
+BitKeeper/etc/collapsed
+BitKeeper/etc/config
+BitKeeper/etc/gone
+BitKeeper/etc/ignore
+gcc/ChangeSet
+gdb/ChangeSet
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check that gfiles lists components ..........................$NL
+cd "$HERE/project"
+bk gfiles > GOT
+cat > WANT <<EOF
+ChangeSet
+BitKeeper/etc/aliases
+BitKeeper/etc/attr
+BitKeeper/etc/collapsed
+BitKeeper/etc/config
+BitKeeper/etc/gone
+BitKeeper/etc/ignore
+gcc/ChangeSet
+gdb/ChangeSet
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check that gfiles -x lists extra repos ......................$NL
+bk clone $Q ../gcc extra
+mkdir foo
+bk clone $Q ../gcc foo/extra
+bk gfiles -x > GOT
+cat > WANT <<EOF
+GOT
+WANT
+extra/ChangeSet
+foo/extra/ChangeSet
+EOF
+cmpfiles WANT GOT
+test `bk gfiles -x foo` = "foo/extra/ChangeSet" || {
+	echo failed on foo/extra
+	exit 1
+}
+echo OK
+
+echo $N Check that sfiles -U does not list gcc/ChangeSet ............$NL
+cd "$HERE/project"
+bk sfiles -U > LIST
+grep ChangeSet LIST && {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Check iterator from product root - default mode aka quiet ...$NL
+cd "$HERE/project"
+bk -e pwd -P > GOT
+cat > WANT <<EOF
+gcc
+gdb
+.
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check iterator from product root - noisy mode ...............$NL
+cd "$HERE/project"
+bk --headers -e pwd -P > GOT
+cat > WANT <<EOF
+#### 1/3 gcc ####
+gcc
+#### 2/3 gdb ####
+gdb
+#### 3/3 . ####
+.
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check iterator from component - default mode aka quiet ......$NL
+cd "$HERE/project/gcc"
+bk -e pwd -P > GOT
+cat > WANT <<EOF
+gcc
+gdb
+.
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check iterator from component - noisy mode ..................$NL
+cd "$HERE/project/gcc"
+bk --headers -e pwd -P > GOT
+cat > WANT <<EOF
+#### 1/3 gcc ####
+gcc
+#### 2/3 gdb ####
+gdb
+#### 3/3 . ####
+.
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check iterator with get .....................................$NL
+bk --headers -e -Ur get > GOT 2>&1
+cat > WANT <<EOF
+#### 1/3 gcc ####
+name 1.1: 1 lines
+#### 2/3 gdb ####
+name 1.1: 1 lines
+#### 3/3 . ####
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Run a full integrity check with and w/o extra repos .........$NL
+cd "$HERE/project"
+bk -r check -ac || {
+	echo failed
+	exit 1
+}
+rm -rf extra foo
+bk -r check -ac || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Same thing in a sub repo ....................................$NL
+cd "$HERE/project/gcc"
+bk clone $Q "$HERE/gcc" extra
+bk -r check -ac || {
+	echo failed
+	exit 1
+}
+rm -rf extra 
+bk -r check -ac || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Make a cset in a subrepo and make sure bk gfiles -p works ...$NL
+cd "$HERE/project/gcc"
+bk edit $Q name
+echo him mom > name
+bk delta $Q -yxxx name
+bk commit -S -yxxx $Q
+bk _test -f SCCS/d.ChangeSet || fail failed to leave d.file
+cd "$HERE/project"
+test "`bk sfiles -p`" = "gcc/SCCS/s.ChangeSet" || fail
+echo OK
+
+echo $N Check gfiles -pC ............................................$NL
+test "`bk gfiles -pC`" = "gcc/ChangeSet|1.3" || {
+	echo failed
+	bk sfiles -pC
+	bk sfiles -E
+	exit 1
+}
+echo OK
+
+echo $N Check gfiles -pA with more than one cset pending ............$NL
+cd gcc
+bk edit $Q name
+echo him mom >> name
+bk delta $Q -yxxx name
+bk commit -S -yxxx $Q
+bk _test -f SCCS/d.ChangeSet || {
+	echo failed to leave d.file
+	exit 1
+}
+cd "$HERE/project"
+cat > WANT <<EOF
+gcc/ChangeSet|1.4
+gcc/ChangeSet|1.3
+EOF
+bk gfiles -pA > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk pending ............................................$NL
+bk pending > GOT
+grep -q 1.3 GOT || {
+	echo failed to find 1.4
+	exit 1
+}
+grep -q 1.4 GOT || {
+	echo failed to find 1.5
+	exit 1
+}
+echo OK
+
+echo $N Make sure that commit finds the two csets ...................$NL
+REV=`bk changes -r+ -nd:REV:`
+bk commit -y'Commit the 1.3 and 1.4 gcc csets' $Q || {
+	echo failed
+	exit 1
+}
+test "`bk changes -r+ -nd:REV:`" = $REV && {
+	echo did not make a changeset
+	exit 1
+}
+test "`bk sfiles -p`" = "" || {
+	echo failed to clear pending state
+	exit 1
+}
+bk changes -Vr+ -nd'$if(:FILE:){:FILE:|:REV:}' > GOT
+cat > WANT <<EOF
+gcc/ChangeSet|1.4
+gcc/ChangeSet|1.3
+EOF
+cmpfiles WANT GOT 
+echo OK
+
+
+echo $N Make sure check will fail if a component is removed .........$NL
+mv gdb "$HERE/gdb.save"
+bk -r check -ac 2>ERR && {
+	echo should have failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Make sure changes -v is OK with missing components ..........$NL
+bk changes -v > OUT || fail
+echo OK
+
+echo $N Make sure product check will fail if a component is moved ...$NL
+mv gcc gcc4
+bk -r check -ac > OUT 2>&1 && {
+	echo should have failed
+	cat OUT
+	exit 1
+}
+grep -q "missing components" OUT  || {
+	echo bad message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure check in moved component will succeed .............$NL
+cd gcc4
+bk -r check -ac || {
+	echo should not have failed
+	exit 1
+}
+cd ..
+echo OK
+
+echo $N Make sure changes -v is OK with moved components ............$NL
+bk changes -v > OUT || fail
+echo OK
+
+echo $N A rename delta in the ChangeSet file should fix things up ...$NL
+mv "$HERE/gdb.save" gdb
+cd gcc4
+bk edit $Q ChangeSet
+bk commit $Q -S -F -y'Rename gcc -> gcc4' - < /dev/null
+cd ..
+bk -r check -ac || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N bk sfiles -n should list components in the wrong location ...$NL
+mv gcc4 gcc
+bk sfiles -n > OUT
+test -s OUT || {
+	echo failed
+	bk sfiles -E
+	exit 1
+}
+grep -q gcc/SCCS/s.ChangeSet OUT || grep -q gcc OUT || {
+	echo bogus path
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N See if bk names will fix simple rename ......................$NL
+bk -r check -acf > OUT 2>&1 || test $? = 2 || {
+	bad exit
+	cat OUT
+	exit 1
+}
+bk -r check -ac || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N See if bk names will fix circular rename ....................$NL
+mv gdb "$HERE/gdb.save"
+mv gcc4 gdb
+mv "$HERE/gdb.save" gcc4
+bk -r check -acf > OUT 2>&1 || test $? = 2 || {
+	echo failed
+	echo bad exit
+	cat OUT
+	exit 1
+}
+bk -r check -ac || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N See if sfiles working with deep nested ......................$NL
+mvcomp gcc4 gdb/gcc4
+
+# should work but doesn't at the moment
+bk sfiles | grep -q gdb/gcc4 && {
+	echo fix test
+	exit 1
+}
+# first try to fix, cd there, and run sfiles
+cd gdb/gcc4
+bk sfiles > /dev/null
+cd ../..
+bk sfiles | grep -q gdb/gcc4 && fail
+# second try to fix, same thing but use 'bk -r' as way to run sfiles
+cd gdb/gcc4
+bk -r > /dev/null
+cd ../..
+bk sfiles | grep -q gdb/gcc4 || {
+	echo failed
+	echo this one should work
+	exit 1
+}
+rm BitKeeper/log/deep-nests || fail
+bk stripdel $Q -r+ gdb/gcc4/ChangeSet
+mv gdb/gcc4 gcc4
+bk -r check -ac || fail
+echo "failed (bug )"
+
+echo $N Make sure that check will fix BitKeeper/log/COMPONENT .......$NL
+echo wrong > gcc4/BitKeeper/log/COMPONENT
+bk -r check -a
+test wrong = `cat gcc4/BitKeeper/log/COMPONENT` && {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Same thing in the component .................................$NL
+cd gcc4
+echo wrong > BitKeeper/log/COMPONENT
+bk -r check -a
+test wrong = `cat BitKeeper/log/COMPONENT` && {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N See if repocheck notices a bad HERE file ....................$NL
+cd ..
+cp BitKeeper/log/HERE SAVE
+KEY='lm@lm.bitmover.com|ChangeSet|19990319224848|02682|B:1000:6a5ce40345b2dee1'
+echo $KEY >> BitKeeper/log/HERE
+bk repocheck -j2 -q 2>ERR && fail -f ERR should fail
+cat <<EOF > WANT
+check in '.' exited 1, error output:
+check: not a component rootkey: $KEY
+check: current aliases not valid.
+EOF
+checkfiles WANT ERR
+cat < /dev/null > BitKeeper/log/HERE
+bk repocheck -j2 -q 2>ERR && fail -f ERR should fail
+cat <<EOF > WANT
+check in '.' exited 1, error output:
+check: comp 'gcc4' is present and not included in current aliases.
+check: comp 'gdb' is present and not included in current aliases.
+check: missing components!
+EOF
+checkfiles WANT ERR
+mv SAVE BitKeeper/log/HERE
+echo OK
+
+echo $N Make some csets and look at changes output ..................$NL
+# First commit the rename
+cd "$HERE/project"
+bk commit -S $Q -y"rename cset"
+cp -rp gcc4 ../gcc4-save
+cd gcc4
+for i in file1 file2 file3
+do	echo $i > $i
+	bk new $Q $i
+	bk commit $Q -S -y"Add in $i in gcc"
+done
+cd "$HERE/project"
+bk commit $Q -y"Should be 3 csets"
+bk changes -vr+ > GOT
+grep -q gcc4/ChangeSet@1.8 GOT || fail
+grep -q gcc4/ChangeSet@1.7 GOT || fail
+grep -q gcc4/ChangeSet@1.6 GOT || fail
+echo OK
+
+echo $N See if bk log -r@1.6 maps to 1.8 in the component ...........$NL
+test "`bk log -r@1.6 -nd:REV: gcc4/ChangeSet`" = 1.8 || {
+	echo failed
+	bk log -r@1.6 -nd:REV: gcc4/ChangeSet
+	exit 1
+}
+echo OK
+
+echo $N Check that cset -l does not list component changesets........$NL
+bk cset -l -r+ > GOT
+cat > WANT <<EOF
+ChangeSet|1.6
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Create a pending deep nested component ......................$NL
+cd gdb || fail
+(cd "$HERE"; commercial pendingdeepnest)
+mv "$HERE/pendingdeepnest" .
+(cd "$HERE"; commercial extradeepnest)
+mv "$HERE/extradeepnest" .
+bk attach --force $Q -C -N pendingdeepnest
+cd ..
+echo OK
+
+echo $N bk _nested -Pr+ lists product and components ................$NL
+bk _nested -Pr+ > GOT
+cat > WANT <<EOF
+.
+gcc4
+gdb
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested -r+ lists committed components only ..............$NL
+bk _nested -r+ > GOT
+cat > WANT <<EOF
+gcc4
+gdb
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested lists committed and pending components only ......$NL
+bk _nested > GOT
+cat > WANT <<EOF
+gcc4
+gdb
+gdb/pendingdeepnest
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested -Pr1.3 lists product and components ..............$NL
+bk _nested -Pr1.3 > GOT
+cat > WANT <<EOF
+.
+gcc4
+gdb
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested -r1.5 -r1.6 lists just gcc4 ......................$NL
+cat > LIST <<EOF
+1.5
+1.6
+EOF
+bk _nested -P - < LIST > GOT
+cat > WANT <<EOF
+.
+gcc4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e lists committed and pending components ................$NL
+bk --headers -e > GOT
+cat <<EOF > WANT
+#### 1/4 gcc4 ####
+#### 2/4 gdb ####
+#### 3/4 gdb/pendingdeepnest ####
+#### 4/4 . ####
+EOF
+cmpfiles WANT GOT
+echo OK
+
+# Done with pending component
+bk here rm $Q gdb/pendingdeepnest || fail
+rm -fr gdb/pendingdeepnest gdb/extradeepnest
+
+echo $N bk _nested for undo -r+ .....................................$NL
+echo + | bk _nested -Plpnd -u - > GOT
+# The list should be desired tips of .|1.5 and gcc4|1.6
+(
+bk changes -qnd".|:KEY:" -r1.5 .
+bk changes -Sqnd"gcc4|:KEY:" -r1.5 gcc4
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for undo -r+ with component missing ..............$NL
+mv gcc4 ..
+echo + | bk _nested -Plhpnd -u - > GOT
+mv ../gcc4 .
+# The list should be desired tips of .|1.5 and gcc4|1.6
+(
+bk changes -qnd".|:KEY:|(present)" -r1.5 .
+bk changes -Sqnd"gcc4|:KEY:" -r1.5 gcc4
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for push -r+ with component missing...............$NL
+# now do it the other way
+mv gcc4 ..
+bk _nested -Plhpnd -r+ > GOT
+mv ../gcc4 .
+# The list should be the current tips
+(
+bk changes -qnd".|:KEY:|(present)" -r+ .
+bk changes -Sqnd"gcc4|:KEY:|(new)" -r+ gcc4
+bk changes -Sqnd"gdb|:KEY:|(new)|(present)" -r+ gdb
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for undo -a1.2, check the removes ................$NL
+(
+echo 1.6
+echo 1.5
+echo 1.4
+echo 1.3
+) | bk _nested -Plnp -u - > GOT
+cat > WANT <<EOF
+.
+gcc4|(new)
+gdb|(new)
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for undo -a1.2 ...................................$NL
+(
+echo 1.6
+echo 1.5
+echo 1.4
+echo 1.3
+) | bk _nested -Plpd -u - > GOT
+# The list should be desired tips of .|1.2
+# because the other two are removed.
+(
+bk changes -qnd".|:KEY:" -r1.2 .
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for undo -a1.3 ...................................$NL
+(
+echo 1.6
+echo 1.5
+echo 1.4
+) | bk _nested -Plpd -u - > GOT
+# The list should be desired tips of 1.3 (just works out that way)
+(
+bk changes -qnd".|:KEY:" -r1.3 .
+bk changes -Sqnd"gcc4|:KEY:" -r1.2 gcc4
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for clone -r+ ....................................$NL
+bk _nested -Plpd -r+ > GOT
+(
+bk changes -qnd".|:KEY:" -r+ .
+bk changes -Sqnd"gcc4|:KEY:" -r+ gcc4
+bk changes -Sqnd"gdb|:KEY:" -r+ gdb
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for clone -r1.3 ..................................$NL
+bk _nested -Plpd -r1.3 > GOT
+# They are all at 1.3 in 1.3
+(
+bk changes -qnd".|:KEY:" -r1.3 .
+bk changes -Sqnd"gcc4|:KEY:" -r1.2 gcc4
+bk changes -Sqnd"gdb|:KEY:" -r1.2 gdb
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for clone -r1.4 ..................................$NL
+bk _nested -Plpd -r1.4 > GOT
+(
+bk changes -qnd".|:KEY:" -r1.4 .
+bk changes -Sqnd"gcc4|:KEY:" -r1.4 gcc4
+bk changes -Sqnd"gdb|:KEY:" -r1.2 gdb
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for push -r1.6 ...................................$NL
+echo 1.6 | bk _nested -Plpd - > GOT
+# The list should be desired tips of .|1.6 and gcc4|1.9
+(
+bk changes -qnd".|:KEY:" -r1.6 .
+bk changes -Sqnd"gcc4|:KEY:" -r1.8 gcc4
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for push -r1.5 ...................................$NL
+echo 1.5 | bk _nested -Plpd - > GOT
+(
+bk changes -qnd".|:KEY:" -r1.5 .
+bk changes -Sqnd"gcc4|:KEY:" -r1.5 gcc4
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for push -r1.4 ...................................$NL
+echo 1.4 | bk _nested -Plpd - > GOT
+(
+bk changes -qnd".|:KEY:" -r1.4 .
+bk changes -Sqnd"gcc4|:KEY:" -r1.4 gcc4
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for push -r1.3 ...................................$NL
+echo 1.3 | bk _nested -Plnpd - > GOT
+(
+bk changes -qnd".|:KEY:" -r1.3 .
+bk changes -Sqnd"gcc4|:KEY:|(new)" -r1.2 gcc4
+bk changes -Sqnd"gdb|:KEY:|(new)" -r1.2 gdb
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for push -r1.2 ...................................$NL
+echo 1.2 | bk _nested -Plpd - > GOT
+(
+bk changes -qnd".|:KEY:" -r1.2 .
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk _nested for push with a gca of 1.2........................$NL
+(
+echo 1.3
+echo 1.4
+echo 1.5
+echo 1.6
+) | bk _nested -Plnpd - > GOT
+(
+bk changes -qnd".|:KEY:" -r1.6 .
+bk changes -Sqnd"gcc4|:KEY:|(new)" -r1.8 gcc4
+bk changes -Sqnd"gdb|:KEY:|(new)" -r1.2 gdb
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk changes / bk cset core dumps .............................$NL
+bk changes -afnd:KEY: -r1.3.. > OUT
+test -f core && {
+	echo changes died
+	exit 1
+}
+bk cset -fl5 - < OUT > GOT
+test -f core && {
+	echo cset died
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure bk cset listing does not list components...........$NL
+echo 1.6 | bk cset -fl - > GOT
+cat > WANT <<EOF
+ChangeSet|1.6
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Make sure bk cset creating a patch can skip components ......$NL
+echo 1.6 | bk cset -Bfm - > PATCH
+grep -q 'P gcc4/ChangeSet' PATCH && {
+	echo failed
+	cat PATCH
+	exit 1
+}
+echo OK
+
+echo $N Make sure bk makepatch does not include components...........$NL
+bk makepatch -r+ > PATCH
+grep -q 'P gcc4/ChangeSet' PATCH && {
+	echo failed
+	cat PATCH
+	exit 1
+}
+echo OK
+
+cd "$HERE"/project
+bk portal -r $Q || fail
+bk gate -r $Q || fail
+cd ..
+tar cf TAR project
+cd project
+
+echo $N Test bk undo -r+ in an ensemble, removes data in one comp ...$NL
+bk undo $Q -fsr+ || {
+	echo failed undo
+	exit 1
+}
+bk $Q -e -r check -ac || {
+	echo failed check
+	exit 1
+}
+cd gcc4
+test `bk changes -r+ -nd:I:` = "1.5" || {
+	echo failed in gcc4
+	bk changes
+	exit 1
+}
+cd ..
+echo OK
+
+echo $N Test bk undo in an ensemble that renames a component ........$NL
+bk undo $Q -fsr+ || {
+	echo failed undo
+	exit 1
+}
+cp OUT "$HERE"
+grep -q "check: trying to fix names..." OUT && {
+	echo warning: should have fixed names before running check
+	cat OUT
+}
+bk $Q -e -r check -ac || {
+	echo failed check
+	exit 1
+}
+echo OK
+
+echo $N Test bk undo with extras ....................................$NL
+bk undo $Q -fsr1.4,1.3 2> OUT && {
+	echo should have failed undo
+	cat OUT
+	exit 1
+}
+grep -q "Changed/extra files in 'gcc'" OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Test bk undo in an ensemble that removes a component - list .$NL
+rm -f */GOT */OUT */WANT
+bk undo $Q -fsr1.4,1.3 || {
+	echo failed undo
+	exit 1
+}
+bk $Q -e -r check -ac || {
+	echo failed check
+	exit 1
+}
+echo OK
+
+cd "$HERE"
+rm -rf project
+tar xf TAR 
+cd project
+
+echo $N Test bk undo in an ensemble that removes a component - -a ...$NL
+rm -f */GOT */OUT */WANT
+echo y | bk undo -sa1.2 > OUT 2>&1  || {
+	echo failed undo
+	cat OUT
+	exit 1
+}
+bk -e -r check -ac > OUT 2>&1 || {
+	echo failed check
+	cat OUT
+	exit 1
+}
+echo OK
+
+cd "$HERE"
+rm -rf project
+tar xf TAR 
+cd project
+
+echo $N Test bk undo -r+ in a sparse ensemble .......................$NL
+# XXX really should use unpopulate (if it worked)
+rm -rf gcc4
+(cd gdb; bk id -S) > BitKeeper/log/HERE
+bk undo $Q -fsr+ || {
+	echo failed undo
+	exit 1
+}
+bk $Q -e -r check -ac || {
+	echo failed check
+	exit 1
+}
+echo OK
+
+cd "$HERE"
+rm -rf project
+tar xf TAR 
+cd project
+
+echo $N Test bk undo -r+ in where undo has been already done in gcc..$NL
+rm -rf gcc4
+cp -rp ../gcc4-save gcc4
+bk undo -fsr+ > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+
+# XXX - write a test to make sure that we can list only the repos that are
+# present w/ bk comps
+
+# ditto for one that has been moved but does not yet have the rename delta
+
+# ============================================================================
+# Aliases tests start here
+# ============================================================================
+
+cd "$HERE"
+rm -rf project
+tar xf TAR
+cd project
+
+echo $N Test simple alias addition ..................................$NL
+REV=`bk changes -r+ -d:REV:`
+bk alias new dev gcc4 gdb
+test $REV = `bk changes -r+ -d:REV:` && {
+	echo failed to commit change
+	bk cmdlog -a | tail -20
+	exit 1
+}
+(
+echo @dev 
+    (
+	(cd gcc4 && bk id -S) 
+	(cd gdb && bk id -S )
+    ) | bk _sort
+) > WANT
+bk cat BitKeeper/etc/aliases > GOT
+cmpfiles WANT GOT
+bk clean BitKeeper/etc/aliases
+echo OK
+
+echo $N Test simple alias expansion .................................$NL
+bk alias -e dev > GOT
+cat > WANT <<EOF
+./gcc4
+./gdb
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test simple directory expansion .............................$NL
+bk alias -e ./gcc4 > GOT
+cat > WANT <<EOF
+./gcc4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Combine the two .............................................$NL
+(echo dev; echo ./gcc4) | bk alias -e - > GOT
+cat > WANT <<EOF
+./gcc4
+./gdb
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Add an alias that names another alias .......................$NL
+bk alias new mydev dev
+(
+echo @dev 
+    (
+	(cd gcc4 && bk id -S ) 
+	(cd gdb && bk id -S )
+    ) | bk _sort
+echo @mydev
+echo dev
+) > WANT
+bk cat BitKeeper/etc/aliases > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test an alias that names another alias ......................$NL
+bk alias -e mydev > GOT
+cat > WANT <<EOF
+./gcc4
+./gdb
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test an alias that names another alias, 2 levels ............$NL
+REV=`bk changes -r+ -d:REV:`
+bk alias new -C B gcc4
+test $REV = `bk changes -r+ -d:REV:` || {
+	echo should not have commited change
+	bk cmdlog -a | tail -20
+	exit 1
+}
+bk alias new -C C gdb
+test $REV = `bk changes -r+ -d:REV:` || {
+	echo should not have commited change
+	bk cmdlog -a | tail -20
+	exit 1
+}
+bk alias new A B C
+test $REV = `bk changes -r+ -d:REV:` && {
+	echo should have commited change
+	bk cmdlog -a | tail -20
+	exit 1
+}
+bk alias -e A > GOT
+cat > WANT <<EOF
+./gcc4
+./gdb
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Make sure that the changeset got the alias create comments ..$NL
+bk changes -r+ -d'$each(:C:){(:C:)\n}' > GOT
+cat > WANT <<EOF
+Create alias "B" containing:
+	./gcc4
+Create alias "C" containing:
+	./gdb
+Create alias "A" containing:
+	B
+	C
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Make sure we can remove a component from an alias ...........$NL
+REV=`bk changes -r+ -d:REV:`
+bk alias rm A B
+echo ./gdb > WANT
+bk alias -e A > GOT
+cmpfiles WANT GOT
+test $REV = `bk changes -r+ -d:REV:` && {
+	echo should have commited change
+	bk cmdlog -a | tail -20
+	exit 1
+}
+echo OK
+
+echo $N Make sure we can add a component to an alias ................$NL
+REV=`bk changes -r+ -d:REV:`
+bk alias add A B
+echo ./gcc4 > WANT
+echo ./gdb >> WANT
+bk alias -e A > GOT
+cmpfiles WANT GOT
+test $REV = `bk changes -r+ -d:REV:` && {
+	echo should have commited change
+	bk cmdlog -a | tail -20
+	exit 1
+}
+echo OK
+
+echo $N Adding a component that is already there is a no-op .........$NL
+REV=`bk changes -r+ -d:REV:`
+bk alias add A B >OUT 2>&1
+test $REV = `bk changes -r+ -d:REV:` || {
+	echo should not have done anything
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N If we remove all components an alias should be empty ........$NL
+bk alias rm A B C
+bk changes -r+ -d'$each(:C:){(:C:)\n}' > GOT
+# LMXXX - shouldn't this be "Delete alias "A"" ?
+cat > WANT << EOF
+Delete from alias "A":
+	B
+	C
+EOF
+cmpfiles WANT GOT
+bk alias list A
+bk alias set A B C
+echo OK
+
+echo $N List all alias names ........................................$NL
+bk grep '^@' BitKeeper/etc/aliases | sed 's/^@//' | bk _sort > WANT
+bk alias > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N List only present components ................................$NL
+bk comps -h > GOT
+cat > WANT <<EOF
+./gcc4
+./gdb
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Adding a directory that does not exist is an error ..........$NL
+bk alias add A somedir/ 2>ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q 'somedir/ must be either a glob, key, alias, or component' ERR || {
+	echo bad error message
+	cat ERR
+	exit 1
+}
+mkdir somedir
+bk alias add A somedir/ >ERR 2>&1 && {
+	echo failed
+	cat ERR
+	exit 1
+}
+grep -q 'somedir/ must be either a glob, key, alias, or component' ERR || {
+	echo failed
+	echo wrong error message
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Test infinite loop in aliases ...............................$NL
+bk edit $Q BitKeeper/etc/aliases
+(
+echo @recursion
+echo see_recursion
+echo @see_recursion
+echo recursion
+) >> BitKeeper/etc/aliases
+bk delta $Q -ywhatever BitKeeper/etc/aliases
+bk alias -e recursion > OUT 2>&1 || test $? = 1 || {
+	echo should have failed
+	cat OUT
+	exit 1
+}
+grep -q "recursive alias definition" OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Try removing alias recursion ................................$NL
+bk alias rm -C recursion || fail
+bk diffs --no-unified -h -R+ BitKeeper/etc/aliases | grep '< ' > GOT
+(
+echo '< @recursion'
+echo '< see_recursion'
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Try removing alias see_recursion ............................$NL
+bk alias rm -C see_recursion || fail
+bk diffs --no-unified -h -R+ BitKeeper/etc/aliases | grep '< ' > GOT
+(
+echo '< @see_recursion'
+echo '< recursion'
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk components for clone -r+ but limited to -s./gcc4 .........$NL
+bk _nested -s./gcc4 -Plpd -r+ > GOT
+(
+bk changes -qnd".|:KEY:" -r+ .
+bk changes -Sqnd"gcc4|:KEY:" -r+ gcc4
+) > WANT
+cmpfiles WANT GOT
+echo OK
+
+# Deep nesting
+echo $N Test that we see a nested component .........................$NL
+cd "$HERE"
+for i in A B C
+do	bk clone -q gcc $i
+	# (cd $i && bk newroot -q)
+done
+cd project
+bk portal $Q .
+bk attach --force $Q ../A gdb/A
+test -f BitKeeper/log/deep-nests || {
+	echo failed to create hints file
+	exit 1
+}
+grep -q '^gdb/A$' BitKeeper/log/deep-nests || {
+	echo bad path
+	cat BitKeeper/log/deep-nests
+	exit 1
+}
+bk gfiles > GOT
+grep -q gdb/A/ChangeSet GOT || {
+	echo bk gfiles did not find nested ChangeSet
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test that we see a nested/nested component ..................$NL
+bk attach --force $Q ../B gdb/A/B
+test -f BitKeeper/log/deep-nests || {
+	echo failed to maintain hints file
+	exit 1
+}
+grep -q '^gdb/A$' BitKeeper/log/deep-nests || {
+	echo bad path
+	cat BitKeeper/log/deep-nests
+	exit 1
+}
+grep -q '^gdb/A/B$' BitKeeper/log/deep-nests || {
+	echo bad path
+	cat BitKeeper/log/deep-nests
+	exit 1
+}
+bk gfiles > GOT
+grep -q gdb/A/ChangeSet GOT || {
+	echo bk gfiles did not find nested A/ChangeSet
+	cat GOT
+	exit 1
+}
+grep -q gdb/A/B/ChangeSet GOT || {
+	echo bk gfiles did not find nested A/B/ChangeSet
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test that we see a nested/nested/nested extra repo ..........$NL
+bk clone $Q ../C gdb/A/B/C
+test -f BitKeeper/log/deep-nests || {
+	echo failed to maintain hints file
+	exit 1
+}
+grep -q '^gdb/A$' BitKeeper/log/deep-nests || {
+	echo bad path
+	cat BitKeeper/log/deep-nests
+	exit 1
+}
+grep -q '^gdb/A/B$' BitKeeper/log/deep-nests || {
+	echo bad path
+	cat BitKeeper/log/deep-nests
+	exit 1
+}
+grep -q '^gdb/A/B/C$' BitKeeper/log/deep-nests || {
+	echo bad path
+	cat BitKeeper/log/deep-nests
+	exit 1
+}
+bk gfiles > GOT
+grep -q gdb/A/ChangeSet GOT || {
+	echo bk gfiles did not find nested A/ChangeSet
+	cat GOT
+	exit 1
+}
+grep -q gdb/A/B/ChangeSet GOT || {
+	echo bk gfiles did not find nested A/B/ChangeSet
+	cat GOT
+	exit 1
+}
+bk gfiles -x > GOT
+grep -q gdb/A/B/C/ChangeSet GOT || {
+	echo bk gfiles did not find nested A/B/C/ChangeSet
+	cat GOT
+	exit 1
+}
+grep -q gdb/A/ChangeSet GOT && {
+	echo should not have found gdb/A/ChangeSet
+	cat GOT
+	exit 1
+}
+grep -q gdb/A/B/ChangeSet GOT && {
+	echo should not have found gdb/A/B/ChangeSet
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test that we see a nested/nested/nested extra repo from comp.$NL
+cd gdb
+# gfiles does NOT list sub-components when not in a product
+bk gfiles > GOT
+cat <<EOF > WANT
+ChangeSet
+name
+BitKeeper/etc/attr
+BitKeeper/etc/collapsed
+BitKeeper/etc/config
+BitKeeper/etc/gone
+BitKeeper/etc/ignore
+EOF
+cmpfiles GOT WANT
+bk gfiles -x > GOT
+test -s GOT || {
+	echo gfiles in a comp should not find extras
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test that deltakey is set to remote value ...................$NL
+cd "$HERE"
+nested remote
+cd ..
+bk clone $Q remote local
+cd remote
+cd gcc
+touch foo
+bk new $Q foo
+bk commit -S $Q -f
+cd ..
+bk commit -S $Q -f
+cd ../local/gdb
+touch foo
+bk new $Q foo
+bk commit -S $Q -f
+cd ..
+bk commit $Q -f
+bk pull $Q -R
+cd RESYNC
+bk _nested -Ha -r1.3 -ld > WANT
+# set it up like a pull
+echo 1.3 | bk _nested -p -Ha -ld - > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test that level works in nested .............................$NL
+cd "$HERE"
+bk clone $Q remote level10
+cd level10/gcc
+bk level 10
+cd ..
+test "`bk level`" = "Repository level is 10" || {
+	echo failed to set level in product
+	bk level
+	exit 1
+}
+bk push > OUT 2>&1 && {
+	echo push should have failed
+	cat OUT
+	exit 1
+}
+bk grep -q "push: cannot push to lower level repository" OUT || {
+	echo bad message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Test that bk root with -P gives the right answer.............$NL
+cd "$HERE/project"
+R=`bk root -P ../remote/gcc`
+test "$R" = "$HERE/remote" || fail $R
+echo OK
+
+echo $N Components in idcache .......................................$NL
+cd "$HERE/remote" || fail
+GDBKEY=`bk prs -r+ -hnd:KEY: gdb/ChangeSet`
+GCCKEY=`bk prs -r+ -hnd:KEY: gcc/ChangeSet`
+echo hi > gdb/foo
+bk new $Q gdb/foo
+mkdir -p a/b/c
+mvcomp gdb a/b/c/d
+cd a/b/c/d
+bk edit $Q foo
+echo hi2 > foo
+bk ci -y2 $Q foo
+bk commit -S $Q -y2
+cd ../../../..
+# nested_init() with no PENDING - sees gdb in a/b/c/d location
+bk _nested -ldphm -r+ > OUT
+cat << EOF > WANTOUT
+a/b/c/d|$GDBKEY|(present)
+gcc|$GCCKEY|(present)
+EOF
+cmpfiles WANTOUT OUT
+# nested_init() with PENDING - sees a/b/c/d in own right
+PENDKEY=`bk prs -r+ -hnd:KEY: a/b/c/d/ChangeSet`
+bk _nested -ldphm > OUT
+cat << EOF > WANTOUT
+a/b/c/d|$PENDKEY|(present)
+gcc|$GCCKEY|(present)
+EOF
+cmpfiles WANTOUT OUT
+# Now move component so old location is within new location
+# First, put current location into bk _nested -r+ (prod cset file)
+bk commit $Q -ymoved
+GDBKEY=`bk prs -r+ -hnd:KEY: a/b/c/d/ChangeSet`
+# Now move in two steps because of limitation of mvcomp in setup.
+mvcomp a/b/c/d x
+rm -fr a/b
+mvcomp x a/b
+# Now nested_init() with no PENDING - all is fine
+bk _nested -ldphm -r+ > OUT
+cat << EOF > WANTOUT
+a/b|$GDBKEY|(present)
+gcc|$GCCKEY|(present)
+EOF
+cmpfiles WANTOUT OUT
+test -d a/b/c/d && fail no dir present
+# show same with pending
+PENDKEY=`bk prs -r+ -hnd:KEY: a/b/ChangeSet`
+bk _nested -ldphm > OUT
+cat << EOF > WANTOUT
+a/b|$PENDKEY|(present)
+gcc|$GCCKEY|(present)
+EOF
+cmpfiles WANTOUT OUT
+echo OK
+
+echo $N Test nested rset with renamed components ....................$NL
+GDB3=`bk prs -hnd:MD5KEY: -r@1.3 a/b/ChangeSet`
+GDB4=`bk prs -hnd:MD5KEY: -r@1.4 a/b/ChangeSet`
+FOO4=`bk prs -hnd:MD5KEY: -r@1.4 a/b/foo`
+bk rset -hr1.3..1.4 > OUT || fail
+cat <<EOF > WANT
+ChangeSet|ChangeSet|1.3|ChangeSet|1.4
+a/b/ChangeSet|gdb/ChangeSet|$GDB3|a/b/c/d/ChangeSet|$GDB4
+a/b/foo|gdb/foo|1.0|a/b/c/d/foo|$FOO4
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N Demonstrate citool-mode in bk comps .........................$NL
+cd "$HERE/project/gdb"
+bk comps -c > GOT || fail
+cat <<EOF > WANT
+gdb
+.
+gcc4
+gdb/A
+gdb/A/B
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Demonstrate that bk -A check is not allowed .................$NL
+bk -A check > OUT 2>&1 && fail
+grep -q "bk: -A/-U option cannot be used with check" OUT || fail
+echo OK
+
+echo $N Test that newly created product is a portal and a gate ......$NL
+cd "$HERE"
+_commercial_config > config
+bk setup -P -fcconfig prod-empty
+cd prod-empty
+bk portal -q || fail should be a portal
+bk gate -q || fail should be a gate
+echo OK

@@ -1,0 +1,50 @@
+# Copyright 2010-2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+doFiles() {
+	touch an_extra extra a_cmt cmt an_edit edit a_pending pending
+	bk new $Q a_cmt cmt an_edit edit a_pending pending
+	bk edit $Q a_cmt cmt an_edit edit
+	for x in a_cmt cmt an_edit edit; do
+		echo new content > $x
+	done
+	echo comment | bk cfile save a_cmt
+	echo comment | bk cfile save cmt
+}
+
+echo $N 'Show sort order - do you like it? Press quit (save) .........'$NL
+nested project
+doFiles
+cd gcc
+doFiles
+cd ../gdb
+doFiles
+cd ..
+bk citool
+echo OK
+
+echo $N 'Show sort order with gdb first. Press quit (save) ...........'$NL
+cd gdb
+bk citool
+echo OK
+
+echo $N 'Show sort order with gdb unpopulated. Press quit (save) .....'$NL
+cd ..
+bk alias -e here | bk alias set here -
+bk gate $Q -r
+bk portal $Q -r
+bk here rm -qf gdb
+test -d gdb && fail
+bk citool
+echo OK

@@ -1,0 +1,321 @@
+# Copyright 1999-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# *IMPORTANT* This file should be kept small, it is called in the main loop
+#	      of doit.sh
+
+COMPAT4="--compat --sccsdirs --no-bk-sfile --no-bk-merge"
+
+cores()
+{
+	# Win32 have no core file
+	if [ "$PLATFORM" = "WIN32" ]; then return; fi
+
+	OUT="$BK_REGRESSION/cores"
+	find "$BK_REGRESSION" -name core -print > "$OUT"
+	test -n "$_BK_MAC_CORES" && {
+		# Add in any new MacOS cores
+		find /cores -type f -name 'core*' 2>$DEV_NULL \
+			| bk _sort > "$OUT".macos
+		comm -13 "$_BK_MAC_CORES" "$OUT".macos >> "$OUT"
+	}
+	if [ -s "$OUT" ]
+	then    ls -l "`cat "$OUT"`"
+		file "`cat "$OUT"`"
+		exit 10
+	fi
+}
+
+
+# Note: [ -w file ] always succeeds when you are root.
+writable() {
+	bk _test -w "$1" || return 1
+	return 0
+}
+
+checkLocks() {
+	if [ -d BitKeeper/readers ]
+	then	if [ `find BitKeeper/readers -type f -print | wc -l` -ne 0 ]
+		then	echo Failed to remove read lock in `pwd`
+			exit 1
+		fi
+	fi
+	if [ -d BitKeeper/writer ]
+	then	if [ `find BitKeeper/writer -type f -print | wc -l` -ne 0 ]
+		then	echo Failed to remove write lock in `pwd`
+			exit 1
+		fi
+	fi
+}
+
+# We need this because some proxy disallow proxy to localhost
+# some of our test do http push/pull/clone to localhost
+unsetHttpProxy() {
+	unset http_proxy HTTP_PROXY_HOST HTTP_PROXY_PORT
+	unset SOCKS_HOST SOCKS_PORT SOCKS_SERVER
+	unset HTTP_PROXY # workaround for cygwin
+}
+
+# Make a commercial config file
+_commercial_config() {
+        # one more item for nested repos
+	test "$1" && echo clone_default: DEFAULT
+	cat <<EOF
+description: BitKeeper Test repository
+email: nobody@nowhere.bk
+eoln: unix
+keyword: sccs
+BAM: 1
+lockwait: 0
+partial_check: off
+EOF
+}
+
+fresh_commercial() {
+	_commercial_config > .config
+	COMPAT=
+	test "X$1" = X--compat && {
+	     COMPAT=--compat
+	     shift
+	}
+	test "$_BKFILE_REGRESSIONS" = "no" && COMPAT=--compat
+	bk setup $COMPAT -f -c.config "$1" || fail
+	rm .config
+	cd "$1"
+	bk bam server -qfr
+	bk repos -qc.
+}
+
+commercial() {
+	fresh_commercial $*
+}
+
+fresh_nested() {
+	_commercial_config 1 > .config
+	COMPAT=
+	test "X$1" = X--compat && {
+	     COMPAT=--compat
+	     shift
+	}
+	test "$_BKFILE_REGRESSIONS" = "no" && COMPAT=--compat
+	bk setup $COMPAT -P -f -c.config "$1" || fail
+	rm .config
+	cd "$1"
+	bk setup -C -f gcc
+	bk setup -C -f gdb
+	bk alias set -C DEFAULT ALL
+	bk commit -q -y"attach gcc, gdb"
+	bk bam server -qfr
+	bk here set ALL PRODUCT
+}
+
+nested() {
+	fresh_nested $*
+}
+
+create_test_files() {
+	(
+	cd "$1"
+	for f in file1 file2 file3 file4 file5 ; do
+		echo "this is $f" > $f
+		bk ci $Q -i -y'new file' $f || exit 1
+	done
+	bk commit $Q -y'initial checkin' || exit 1
+	)
+}
+
+# move a nested component (helper)
+mvcomp() {
+	 test "BitKeeper/log/PRODUCT" || exit 1
+	 mv "$1" "$2"
+	 echo "$2" > "$2"/BitKeeper/log/COMPONENT
+	 bk edit $Q "$2"/ChangeSet || exit 2
+	 bk --cd="$2" commit $Q -S -Fy"Rename $1 -> $2" "$2"/ChangeSet - \
+	     < /dev/null || fail 3
+	 bk idcache -q
+}
+
+
+echon() {
+	echo $NX ${1+"$@"}$NXL
+}
+
+# Find an unused port for a bkd
+port() {
+	if [ "X$1" = X ]
+	then	_P=1234
+	else	_P=$1
+	fi
+	# Truncate it down if they pass in 50000
+	test $_P -gt 6550 && _P=`expr $_P / 10`
+	for i in 1 2 3 4 5 6 7 8 9
+	do	bk bkd -cqp$_P$i && {
+			_P=$_P$i
+			break
+		}
+	done
+	test X$_P = X && exit 1
+	echo $_P
+}
+
+# args: GOT WANT
+cmpfiles() {
+	OUTPUT=`bk diff -q --ignore-trailing-cr "$1" "$2"` && return
+	case "X$BASH_VERSION" in
+	    X[234]*) eval 'echo failed in line $((${BASH_LINENO[0]} - $BOS))';;
+	    *) echo failed ;;
+	esac
+	echo $OUTPUT
+	bk diff -u "$1" "$2"
+	exit 1
+}
+
+# args: GOT WANT
+cmpsfiles() {
+	a="$BK_TMP/`basename \"$1\"`.$$"
+	b="$BK_TMP/`basename \"$2\"`.$$"
+	bk _cat "$1" > "$a"
+	bk _cat "$2" > "$b"
+	bk diff -q --ignore-trailing-cr "$a" "$b" || {
+		bk diff -u "$a" "$b"
+		exit 1
+	}
+	rm -f "$a" "$b"
+}
+
+# args: GOT WANT, does a byte for byte comparison
+checkfiles() {
+	cmp -s "$1" "$2" || {
+		echo "$1" and "$2" don\'t match
+		bk diff -u "$1" "$2"
+		exit 1
+	}
+}
+
+verbose() {
+	test -z "$Q" && echo ${1+"$@"}
+}
+
+islink() {
+	# test -L is not portable - freebsd[34] and mac102 do not support
+	perl -e "exit ((-l '$1') ? 0 : 1)"
+}
+
+_mtime() {
+	bk _stat "$1" | awk -F\| '{print $10}'
+}
+
+cd "$HERE" || exit 1
+
+# We need this because ksh on Solaris override $PATH from .profile
+PATH="$BK_PATH"
+
+fail() {
+	test x$1 = x-f && {
+		__outfile=$2
+		shift;shift;
+	}
+	case "X$BASH_VERSION" in
+	    X[234]*) eval 'echo failed in line $((${BASH_LINENO[0]} - $BOS))';;
+	    *) echo failed ;;
+	esac
+	test "$*" && echo $*
+	test "$__outfile" && {
+		echo ----------
+		cat "$__outfile"
+		echo ----------
+	}
+	test x$BK_REGRESSION_WAIT != x && {
+		echo "pausing -- type ctrl-C to exit"
+		echo "pwd is `pwd`"
+		sleep 100000
+	}
+	test x$BK_REGRESSION_NOFAIL == x && exit 1
+}
+
+# longpath "/prefix/" total_length
+# where prefix can be "" for relative path, or "`/bin/pwd`/" for abs path
+# and total length is the length of the made up path including prefix
+# path is a deep nest of 15 char dirs separated by / and a "xxx..." file
+# name at the end to get the right total size.
+longpath() {
+	PROG='	$x = $ARGV[1] - length($ARGV[0]);
+		$y = int(($x-1)/16);
+		print "$ARGV[0]",
+		    "abcdefg12345679/" x $y, "x" x ($x - 16*$y), "\n";'
+	perl -e "$PROG" "$1" $2
+}
+
+test_gui_result() {
+	rc_got=$1
+	rc_expect=$2
+	OUT="$3"
+
+	test $rc_got -ne $rc_expect -o -s "$OUT" && {
+		echo "failed"
+		test $rc_got -ne $rc_expect && {
+			echo "exited $rc_got; expected $rc_expect"
+		}
+		test -s "$OUT" && {
+			cat "$OUT"
+		}
+		exit 1
+	}
+	echo "OK"
+}
+
+# Ask and wait for the uniq daemon running in <dir> to exit.
+kill_uniq() {
+	dir=$1; shift
+	test -d "$dir" || return
+	db=`ls "$dir"`
+	test -n "$db" -a -d "$dir/$db" || return
+	bk uniq_server $Q --dir="$dir/$db" --quit
+}
+
+# Remove the uniqdb(s). Normally you want to call kill_uniq first
+# or else the files will reappear when the uniq_daemon exits.
+rm_uniq() {
+	rm -f "`bk dotbk`/bk-keys/`bk gethost -r`"
+	rm -f "/tmp/.bk-keys-$USER"
+}
+
+# Return 1 iff <key> exists in the on-disk uniqdb.
+# Normally you want to call kill_uniq first.
+key_exists()
+{
+	key=$1; shift
+	echo "get .*$key.*" | bk info_shell --uniqdb | grep -q $key
+}
+
+# make $BIN1 $BIN2 & $BIN3 example binary files
+mkBINs() {
+	EXE=""
+	if [ "$PLATFORM" = "WIN32" ]; then EXE=.exe; fi
+
+	B=`bk bin`
+	# Make the binaries not too large, sco hangs on large diffs.
+	DOTBIN="$TST_DIR/.bin"
+	mkdir -p "$DOTBIN"
+	perl -e '$s=102400;sysread(STDIN, $buf, $s);syswrite(STDOUT, $buf, $s)' < "$B"/bk$EXE > "$DOTBIN/binary1"
+	perl -e '$s=204900;sysread(STDIN, $buf, $s);syswrite(STDOUT, $buf, $s)' < "$B"/gnu/bin/diff$EXE > "$DOTBIN/binary2"
+	perl -e '$s=307200;sysread(STDIN, $buf, $s);syswrite(STDOUT, $buf, $s)' < "$B"/gnu/bin/diff3$EXE > "$DOTBIN/binary3"
+	BIN1="$DOTBIN/binary1"
+	BIN2="$DOTBIN/binary2"
+	BIN3="$DOTBIN/binary3"
+	export BIN1 BIN2 BIN3
+}
+
+# this next line needs to be last, it's line zero of the script (see doit)
+BOS=$LINENO

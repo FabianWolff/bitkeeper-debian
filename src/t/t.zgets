@@ -1,0 +1,47 @@
+# Copyright 2007 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#
+
+# Tests for storing sfile compressed.
+echo $N Tickle an internal corner case in peek ......................$NL
+commercial project
+
+# stores in uncompressed sfile as 4 byte lines: ^A^Ax\n
+# string of 4 lines
+printf "\001a\n\001b\n\001c\n\001d\n" > foo	# stored as 16 chars, 2^^2 lin
+cat foo foo foo foo foo foo foo foo > bar	# 2^^5
+cat bar bar bar bar bar bar bar bar > foo	# 2^^8
+cat foo foo foo foo foo foo foo foo > bar	# 2^^11
+echo x | cat - bar > foo		# slide two bytes in under the wire
+expect=`tail -1 foo`
+bk new $Q foo
+bk admin $Q -Zgzip foo
+bk edit $Q foo
+rm foo
+# File is 2049 lines long.  Delete a byte to tickle a bug.
+# Intend to delete next to last line. (contains a 'c')
+# Instead it will delete last line.
+cat - <<EOF > diff
+d2048 1
+EOF
+#					echo undone; exit 1
+bk delta $Q -Ddiff -y'none' foo
+bk get $Q foo
+last=`tail -1 foo`
+test "$last" = "$expect" || {
+	echo Fail
+	exit 1
+}
+echo OK

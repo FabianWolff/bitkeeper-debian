@@ -1,0 +1,1051 @@
+# Copyright 2009-2013,2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -e
+
+URLINFO="`bk dotbk`"/urlinfo/`bk gethost -r`
+
+echo $N Setup .......................................................$NL
+cd "$HERE"
+nested product
+cd "$HERE"
+bk bkd -q -aPORT -ikill || fail
+P=`cat PORT`
+trap "bk _kill bk://localhost:$P" 0
+echo OK
+
+echo $N Check that component cset prunes urllist.....................$NL
+bk clone $Q product clone || fail
+cd clone
+bk here check ./gcc | grep -q "$HERE/product" || fail 2
+cd gcc
+echo new > new-file
+bk new $Q new-file || fail 3
+bk commit -S $Q -y'add new-file' || fail 4
+bk -P commit $Q -y'add new-file' || fail 5
+cd ..
+bk here check -q ./gcc 2>ERR && fail -f ERR 7
+echo 'gcc: no valid urls found (present)' > WANT
+cmpfiles WANT ERR
+cd ..
+rm -rf clone
+echo OK
+
+echo $N Local clone propagates urllist for cloned components ........$NL
+cd "$HERE/product"
+# product urllist should be empty
+bk here check -q ./gcc 2>ERR && fail -f ERR 7
+echo 'gcc: no valid urls found (present)' > WANT
+cmpfiles WANT ERR
+cd ..
+bk clone $Q product clone1 || fail 2
+cd clone1
+# clone1 urllist should have product
+bk comps -h | sort >GOT
+cat <<EOF >WANT
+./gcc
+./gdb
+EOF
+cmpfiles GOT WANT
+bk here check ./gcc | grep -q "$HERE/product" || fail 3
+bk here check ./gdb | grep -q "$HERE/product" || fail 4
+cd ..
+bk clone $Q clone1 clone2 || fail 10
+cd clone2
+# clone2 urllist should have product and clone1
+bk comps -h | sort >GOT
+cat <<EOF >WANT
+./gcc
+./gdb
+EOF
+cmpfiles GOT WANT
+bk here check -a --sort ALL > OUT
+cat <<EOF > WANT
+gcc:
+	$HERE/clone1
+	$HERE/product
+gdb:
+	$HERE/clone1
+	$HERE/product
+EOF
+cmpfiles OUT WANT
+cd ..
+echo OK
+
+echo $N Component rm fails if component not found in urllist ........$NL
+bk clone $Q clone1 cloneA || fail
+# Make a cset in cloneA/gcc to remove gcc from cloneA's urllist.
+cd cloneA/gcc
+echo new >new
+bk new $Q new || fail 2
+bk commit -S $Q -y'add new' || fail 3
+cd ..
+bk here check -q ./gcc 2>ERR && fail -f ERR shouldnt find gcc
+echo 'gcc: no valid urls found (present)' > WANT
+cmpfiles WANT ERR
+cd "$HERE"
+# After this, for gcc only cloneA is in cloneB's urllist.
+bk clone $Q cloneA cloneB || fail 5
+cd cloneB
+bk here check -a ./gcc > OUT
+cat <<EOF > WANT
+gcc:
+	$HERE/cloneA
+EOF
+cmpfiles OUT WANT
+cd ..
+# Remove cloneA/gcc and then try to remove cloneB/gcc (it should fail).
+rm -rf cloneA/gcc
+cd cloneB
+bk alias set $Q HERE `bk comps -h` || fail 7
+bk parent -qr
+bk here rm $Q gcc 2>ERR && fail 8
+cat <<EOF > WANT
+here: ./gcc cannot be found at a gate
+here: unable to remove ./gcc
+EOF
+cmpfiles ERR WANT
+cd ..
+rm -rf cloneA cloneB
+echo OK
+
+echo $N Component rm prunes url if repo lacks component .............$NL
+cd "$HERE"
+bk clone $Q product cloneA || fail
+# Make a cset in cloneA/gcc to remove gcc from its urllist.
+cd cloneA/gcc
+echo new >new
+bk new $Q new || fail 2
+bk commit -S $Q -y'add new' || fail 3
+bk -P commit $Q -y'add new' || fail 4
+cd ../..
+bk clone $Q cloneA cloneB || fail 5
+# Remove gcc from cloneB.
+cd cloneB
+bk here check ./gcc | grep -q "$HERE/cloneA" || fail 6
+bk alias set $Q HERE `bk comps -h` || fail 7
+bk here rm $Q -f gcc || fail 8
+bk here check ./gcc | grep -q "$HERE/cloneA" || fail 9
+cd ..
+# Force remove gcc from cloneA.
+cd cloneA
+bk alias set $Q HERE `bk comps -h` || fail 10
+bk here rm $Q -f gcc || fail 11
+cd ..
+# An add of gcc to cloneB should fail and remove cloneA from cloneB's urllist.
+cd cloneB
+bk here check -q ./gcc 2>ERR && fail -f ERR shouldnt find gcc
+echo 'gcc: no valid urls found (missing)' > WANT
+cmpfiles WANT ERR
+bk here add $Q gcc 2>ERR && fail 13
+grep -q 'No other sources for ./gcc known' ERR || fail -f ERR
+cd ..
+rm -rf cloneA cloneB
+echo OK
+
+echo $N Component rm prunes url if repo lacks needed rev ............$NL
+cd "$HERE"
+bk clone $Q product cloneA || fail
+# Make a cset in cloneA/gcc.  We will roll it back after cloning to cloneB.
+cd cloneA/gcc
+echo new >new
+bk new $Q new || fail 3
+bk commit -S $Q -y'add new' || fail 4
+bk -P commit $Q -y'add new' || fail 5
+cd ../..
+bk clone $Q cloneA cloneB || fail 6
+# Roll back the cset.  Now cloneB/gcc can't be populated from cloneA.
+cd cloneA
+bk undo $Q -r+ -f || fail 7
+cd ..
+# Remove gcc from cloneB, then try to re-add which should fail and
+# remove cloneA from cloneB's urllist.
+cd cloneB
+bk alias set $Q HERE `bk comps -h` || fail 8
+bk here rm $Q -f gcc || fail 9
+bk here check -qva ./gcc 2> OUT && fail
+cat <<EOF > WANT
+here: searching $HERE/cloneA...ok
+gcc:
+	no valid urls found (missing)
+EOF
+cmpfiles WANT OUT
+bk here add $Q gcc 2>ERR && fail 11
+grep -q 'No other sources for ./gcc known' ERR || fail -f ERR
+cd ..
+rm -rf cloneA cloneB
+echo OK
+
+echo $N Component rm does not prune url if dest repo unreachable ....$NL
+cd "$HERE"
+bk bkd -q -aPORT -ikill || fail
+P2=`cat PORT`
+bk clone $Q bk://localhost:$P2/product cloneA || fail 2
+bk _kill bk://localhost:$P2
+# Force remove gcc from cloneA.
+cd cloneA
+bk here check -v ./gcc 2>&1 | grep -q "bk://.*:$P2/product" || fail 3
+bk alias set $Q HERE `bk comps -h` || fail 4
+bk here rm $Q -f gcc || fail 5
+bk here check -v ./gcc 2>&1 | grep -q "bk://.*:$P2/product" || fail 6
+# Attempt to populate cloneA/gcc from the now-now-existent bkd.
+# This should fail and NOT prune cloneA's urllist.
+bk here add gcc 2>ERR && fail 7
+grep -q "connect failure" ERR || fail -f ERR
+bk here check -v ./gcc 2>&1 | grep -q "bk://.*:$P2/product" || fail 9
+cd ..
+rm -rf cloneA
+echo OK
+
+echo $N Check component rm with -@ ..................................$NL
+# Like above but use -@ in the bk here rm to make it succeed.
+cd "$HERE"
+bk clone $Q clone1 cloneA || fail
+cd cloneA/gcc
+echo new >new
+bk new $Q new || fail 2
+bk commit -S $Q -y'add new' || fail 3
+cd "$HERE"
+bk clone $Q cloneA cloneB || fail 4
+rm -rf cloneA/gcc
+cd cloneB
+bk alias set $Q HERE `bk comps -h` || fail 5
+bk here rm $Q -@"$HERE/product" ./gcc || fail 6
+bk here check ./gcc | grep -q "$HERE/product" || fail 7
+cd ..
+rm -rf cloneA cloneB
+echo OK
+
+echo $N Check component add with -@ .................................$NL
+cd "$HERE"
+nested product2
+cd ..
+bk clone $Q product2 cloneA || fail
+bk clone $Q product2 cloneB || fail 2
+# Remove gcc from cloneA.  This succeeds b/c product2 has it.
+cd cloneA
+bk alias set $Q HERE `bk comps -h` || fail 3
+bk here rm $Q gcc || fail 4
+bk here check ./gcc | grep -q "$HERE/product2" || fail 5
+# Remove product2 and try to add gcc (this should fail).
+rm -rf ../product2
+bk here add $Q gcc 2>ERR && fail 6
+grep -q 'here: No other sources for ./gcc known' ERR || fail -f ERR
+# Now try to add gcc with -@ from cloneB (this should work).
+bk here add $Q -@../cloneB gcc || fail 8
+bk here check ./gcc | grep -q "$HERE/cloneB" || fail 9
+cd ..
+rm -rf cloneA cloneB
+echo OK
+
+echo $N Local clone propagates urllist for unwanted components ......$NL
+cd "$HERE"
+bk clone $Q -sgcc clone1 clone3 || fail
+cd clone3
+# clone3 urllist should have product and clone1
+bk comps -h | sort >GOT
+cat <<EOF >WANT
+./gcc
+EOF
+cmpfiles GOT WANT
+bk here check --sort -a ALL > OUT
+cat <<EOF > WANT
+gcc:
+	$HERE/clone1
+	$HERE/product
+gdb:
+	$HERE/clone1
+	$HERE/product
+EOF
+cmpfiles OUT WANT	
+cd ..
+echo OK
+
+echo $N Push adds dest to urllist for all pushed components .........$NL
+cd "$HERE"
+bk clone $Q clone1 clone7 || fail
+bk clone $Q clone1 clone8 || fail 2
+# Make a cset in clone7/gcc.
+cd clone7/gcc
+echo new >new
+bk new $Q new || fail 3
+bk commit -S $Q -y'add new' || fail 4
+bk -P commit $Q -y'add new' || fail 5
+# This cset removes gcc from clone7's urllist.
+cd "$HERE/clone7"
+bk here check -q ./gcc 2>ERR && fail -f shouldnt find gcc
+echo 'gcc: no valid urls found (present)' > WANT
+cmpfiles WANT ERR
+bk here check -a ./gdb | grep -q "$HERE/clone1" || fail 7
+# clone8 should still have clone1 for gcc and gdb.
+cd "$HERE/clone8"
+bk here check -a ./gcc | grep -q "$HERE/clone1" || fail 8
+bk here check -a ./gdb | grep -q "$HERE/clone1" || fail 9
+# The clone7->clone8 push should add clone8 to clone7's urllist for
+# all components.
+cd "$HERE/clone7"
+bk push $Q "$HERE/clone8" || fail 10
+bk here check --sort -a ALL > OUT || fail
+cat <<EOF > WANT
+gcc:
+	$HERE/clone8
+gdb:
+	$HERE/clone1
+	$HERE/clone8
+	$HERE/product
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N Show that gates are kept in urllist .........................$NL
+# we only keep 3 URLs, but if the first 3 are not gates then we will
+# add a gate as #4
+bk clone $Q -sALL ../product ../extra1 || fail
+bk clone $Q -sALL ../product ../extra2 || fail
+ENC=$(echo $HERE | sed 's/ /%20/')
+# urlinfo saves 'time_t, isa_gate, repoid' in 3 lines
+# we setup these repos so only product is a gate and everything is old
+cat <<EOF > "$URLINFO"
+@$ENC/clone1
+1
+0
+@$ENC/clone8
+2
+0
+@$ENC/product
+3
+1
+@$ENC/extra1
+4
+0
+@$ENC/extra2
+5
+0
+EOF
+cp "$URLINFO" save
+bk here check -@../extra1 --sort -ac gdb > OUT || fail
+# we read clone1, clone8 & product and added extra1
+# afterwards clone8 was dropped since it was the oldest
+# (clone1 was saved since it is the parent)
+cat <<EOF > WANT
+gdb:
+	$HERE/clone1
+	$HERE/clone8
+	$HERE/extra1
+	$HERE/product
+EOF
+cmpfiles OUT WANT
+cp save "$URLINFO"
+bk here check -@../extra2 --sort -ac gdb > OUT || fail
+# we read clone1, extra1 & product and added extra2
+# we keep product since it is a gate
+cat <<EOF > WANT
+gdb:
+	$HERE/clone1
+	$HERE/extra1
+	$HERE/extra2
+	$HERE/product
+EOF
+cmpfiles OUT WANT
+cp save "$URLINFO"
+bk here check --sort -ac gdb > OUT || fail
+# we show that 4 URLs are saved to make sure we have a product
+cat <<EOF > WANT
+gdb:
+	$HERE/clone1
+	$HERE/extra1
+	$HERE/extra2
+	$HERE/product
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N Push does not add dest for non-present components ...........$NL
+cd "$HERE"
+bk clone $Q clone1 clone9 || fail
+bk clone $Q -sgcc clone1 cloneA || fail 2
+cd clone9/gcc
+echo new >new
+bk new $Q new || fail 4
+bk commit -S $Q -y'add new' || fail 5
+bk -P commit $Q -y'add new' || fail 6
+# This cset removes gcc from clone9's urllist.
+cd ..
+bk here check -q ./gcc 2>ERR && fail -f ERR shouldnt find gcc
+echo 'gcc: no valid urls found (present)' > WANT
+cmpfiles WANT ERR
+bk here check -a ./gdb | grep -q "$HERE/clone1" || fail 8
+# The clone9->cloneA push should add cloneA to clone9's urllist only for
+# the components present in cloneA, so gdb should not be added.
+cd "$HERE/clone9"
+bk push $Q "$HERE/cloneA" || fail 10
+bk here check --sort -ac ALL > OUT || fail
+cat <<EOF > WANT
+gcc:
+	$HERE/clone1
+	$HERE/cloneA
+gdb:
+	$HERE/clone1
+	$HERE/product
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N Pull with merge does not add component to urllist ...........$NL
+cd "$HERE"
+bk clone $Q clone1 cloneB || fail
+cd clone1/gcc
+echo new1 >new1
+bk new $Q new1 || fail 2
+bk commit -S $Q -y'add new1' || fail 3
+bk -P commit $Q -y'add new1' || fail 4
+cd ../../cloneB/gcc
+echo new2 >new2
+bk new $Q new2 || fail 5
+bk commit -S $Q -y'add new2' || fail 6
+bk -P commit $Q -y'add new2' || fail 7
+# This pull has a merge in gcc so gcc should not be re-added to
+# cloneB's urllist.
+cd ..
+bk here check -q ./gcc 2>ERR && fail -f ERR shouldnt find gcc
+echo 'gcc: no valid urls found (present)' > WANT
+cmpfiles WANT ERR
+bk pull $Q ../clone1 || fail 9
+bk here check -q ./gcc 2>ERR && fail -f ERR shouldnt find gcc
+cmpfiles WANT ERR
+echo OK
+
+echo $N Pull without merge updates present component in urllist .....$NL
+cd "$HERE"
+bk clone $Q clone1 cloneC || fail
+bk clone $Q clone1 cloneD || fail 2
+bk clone $Q clone1 cloneE || fail 3
+# Add cloneD to cloneC's urllist (gcc and gdb).
+cd cloneC
+bk here check -@../cloneD $Q || fail
+cd ..
+# Create a cset in cloneE/gcc.
+cd cloneE/gcc
+echo new2 >new2
+bk new $Q new2 || fail 4
+bk commit -S $Q -y'add new2' || fail 5
+bk -P commit $Q -y'add new2' || fail 6
+# Pull cloneE->cloneC.  This is an update-only pull of the gcc
+# component so the sources on from the remote side should be kept
+cd ../../cloneC
+bk here check -a gcc | grep -q "$HERE/clone1" || fail 7
+bk here check -a gcc | grep -q "$HERE/cloneD" || fail 8
+bk pull $Q ../cloneE || fail 9
+bk here check -ac ./gcc | grep -q "$HERE/cloneE" || fail 10
+bk here check -ac ./gcc | grep -q "$HERE/cloneD" || fail 11
+bk here check -ac ./gcc | grep -q "$HERE/clone1" || fail 12
+cd "$HERE"
+rm -rf cloneC cloneD cloneE
+echo OK
+
+echo $N Pull without merge updates missing component in urllist .....$NL
+cd "$HERE"
+bk clone $Q -sgcc clone1 cloneC || fail
+bk clone $Q clone1 cloneD || fail 2
+bk clone $Q clone1 cloneE || fail 3
+# Add cloneD to cloneC's urllist (gcc and gdb).
+cd cloneC
+bk here check -@../cloneD $Q || fail
+cd ..
+# Create a cset in cloneE/gcc.
+cd cloneE/gcc
+echo new2 >new2
+bk new $Q new2 || fail 4
+bk commit -S $Q -y'add new2' || fail 5
+bk -P commit $Q -y'add new2' || fail 6
+# Pull cloneE->cloneC.  The pull should add cloneE for gdb.
+# we don't have gdb.
+cd ../../cloneC
+bk here check -a ./gdb | grep -q "$HERE/clone1" || fail 7
+bk here check -a ./gdb | grep -q "$HERE/cloneD" || fail 8
+bk pull --unsafe $Q ../cloneE || fail 9
+bk here check -a ./gdb | grep -q "$HERE/cloneE" || fail 10
+#bk here check -a ./gdb | grep -q "$HERE/cloneD" || fail 11
+bk here check -a ./gdb | grep -q "$HERE/clone1" || fail 12
+cd "$HERE"
+rm -rf cloneC cloneD cloneE
+echo OK
+
+echo $N Same but with present component not involved in merge .......$NL
+cd "$HERE"
+bk clone $Q clone1 cloneC || fail
+bk clone $Q clone1 cloneD || fail 2
+bk clone $Q clone1 cloneE || fail 3
+# Add cloneD to cloneC's urllist (gcc and gdb).
+cd cloneC
+bk here check -@../cloneD $Q || fail
+cd ..
+# Create a cset in cloneE/gcc.
+cd cloneE/gcc
+echo new2 >new2
+bk new $Q new2 || fail 4
+bk commit -S $Q -y'add new2' || fail 5
+bk -P commit $Q -y'add new2' || fail 6
+# Pull cloneE->cloneC.  The pull should add cloneE for gdb even though
+# we don't have gdb.
+cd ../../cloneC
+bk here check -a ./gdb | grep -q "$HERE/clone1" || fail 7
+bk here check -a ./gdb | grep -q "$HERE/cloneD" || fail 8
+bk pull $Q ../cloneE || fail 9
+bk here check -a ./gdb | grep -q "$HERE/cloneE" || fail 10
+#bk here check -a ./gdb | grep -q "$HERE/cloneD" || fail 11
+bk here check -a ./gdb | grep -q "$HERE/clone1" || fail 12
+cd "$HERE"
+rm -rf cloneC cloneD cloneE
+echo OK
+
+echo $N Same but with local changes in component ....................$NL
+cd "$HERE"
+bk clone $Q clone1 cloneC || fail
+bk clone $Q clone1 cloneD || fail 2
+bk clone $Q clone1 cloneE || fail 3
+# Add cloneD to cloneC's urllist (gcc and gdb).
+cd cloneC
+bk here check -@../cloneD $Q || fail
+cd ..
+# Create a cset in cloneE/gcc.
+cd "$HERE/cloneE/gcc"
+echo new2 >new2
+bk new $Q new2 || fail 4
+bk commit -S $Q -y'add new2' || fail 5
+bk -P commit $Q -y'add new2' || fail 6
+# Create a cset in cloneC/gdb.
+cd "$HERE/cloneC/gdb"
+echo new >new
+bk new $Q new || fail 7
+bk commit $Q -y'add new' || fail 8
+# Pull cloneE->cloneC.  The pull should add nothing for gdb since
+# it has local changes.
+cd "$HERE/cloneC"
+bk here check -q ./gdb 2> ERR && fail -f ERR shouldnt find gdb
+echo 'gdb: no valid urls found (present)' > WANT
+cmpfiles WANT ERR
+bk pull $Q ../cloneE || fail 11
+bk here check -q ./gdb 2> ERR && fail -f ERR shouldnt find gdb
+cmpfiles WANT ERR
+cd "$HERE"
+rm -rf cloneC cloneD cloneE
+echo OK
+
+echo $N Remote clone propagates urllist for cloned components .......$NL
+cd "$HERE"
+bk clone $Q product clone4 || fail
+bk clone $Q clone4 bk://localhost:$P/clone5 || fail 2
+cd clone5 || fail 3
+bk comps -h | sort >GOT
+cat <<EOF >WANT
+./gcc
+./gdb
+EOF
+cmpfiles GOT WANT
+# clone5 should inherit clone4's urllist.
+bk here check ./gcc | grep -q "$HERE/product" || fail 4
+bk here check ./gdb | grep -q "$HERE/product" || fail 5
+cd ..
+echo OK
+
+echo $N Remote clone propagates urllist for unwanted components .....$NL
+cd "$HERE"
+bk clone $Q -sgcc clone4 bk://localhost:$P/clone6 || fail
+cd clone6
+bk comps -h | sort >GOT
+cat <<EOF >WANT
+./gcc
+EOF
+cmpfiles GOT WANT
+# clone6 should inherit clone4's urllist.
+bk here check -a ./gcc | tee ERR | grep -q "$HERE/product" || fail -f ERR
+bk here check -a ./gdb | tee ERR | grep -q "$HERE/product" || fail -f ERR
+cd ..
+echo OK
+
+echo $N Urllist check: stand-alone repo .............................$NL
+cd "$HERE"
+commercial standalone
+bk here check -q 2>ERR && fail -f ERR
+grep -q "must be in a nested" ERR || fail 2
+echo OK
+
+echo $N Urllist check: repo with no components ......................$NL
+cd "$HERE"
+_commercial_config > .config
+bk setup -P -fc".config" prod-empty || fail
+bk clone $Q prod-empty clone-empty
+cd clone-empty
+bk here check $Q || fail 2
+cd ..
+echo OK
+
+echo $N Urllist check: url of deleted repo ..........................$NL
+cd "$HERE"
+rm -rf clone clone2
+bk clone $Q product clone || fail
+# Clear out clone's urllist.
+cd clone
+rm BitKeeper/log/urllist
+cd ..
+bk clone $Q clone clone2 || fail 3
+cd clone2
+bk here check ./gcc | grep -q "$HERE/clone" || fail 4
+bk here check ./gdb | grep -q "$HERE/clone" || fail 5
+cd ..
+# Delete clone, then check the urllist of clone2 and verify that
+# clone gets removed from clone2's urllist (leaving it empty).
+rm -rf clone
+cd clone2
+bk here check -a $Q || fail 6
+bk here check -q ./gcc 2> ERR && fail -f ERR shouldnt find gcc
+echo 'gcc: no valid urls found (present)' > WANT
+cmpfiles WANT ERR
+echo OK
+
+echo $N Urllist check: url of missing component .....................$NL
+cd "$HERE"
+rm -rf clone clone2
+bk clone $Q product clone || fail
+# Clear out clone's urllist.
+cd clone
+rm BitKeeper/log/urllist
+cd ..
+bk clone $Q clone clone2 || fail 3
+cd clone2
+bk here check ./gcc | grep -q "$HERE/clone" || fail 4
+bk here check ./gdb | grep -q "$HERE/clone" || fail 5
+cd ..
+# Remove clone/gcc, then check the urllist of clone2 and verify that
+# clone gets removed from clone2's urllist for gcc.
+cd clone
+bk alias set $Q HERE `bk comps -h` || fail 6
+bk here rm $Q -f gcc || fail 7
+cd ../clone2
+bk here check -a $Q || fail 8
+bk here check -q ./gcc 2> ERR && fail -f ERR shouldnt find gcc
+echo 'gcc: no valid urls found (present)' > WANT
+cmpfiles WANT ERR
+bk here check ./gdb | grep -q "$HERE/clone" || fail 10
+echo OK
+
+echo $N Urllist check: url of non-existent bkd ......................$NL
+cd "$HERE"
+rm -rf clone clone2
+bk bkd -q -aPORT -ikill || fail
+P2=`cat PORT`
+bk clone $Q bk://localhost:$P2/product clone || fail 2
+bk _kill bk://localhost:$P2
+# Force remove gcc from clone.
+cd clone
+bk here check -ac ./gcc | grep -q "bk://.*:$P2/product" || fail 3
+bk alias set $Q HERE `bk comps -h` || fail 4
+bk here rm $Q -f gcc || fail 5
+bk here check -ac ./gcc | grep -q "bk://.*:$P2/product" || fail 6
+# Check clone's urllist.  Should get error msgs but urllist
+# should not be pruned.
+bk here check -avq ALL 2>ERR && fail -f ERR  7
+grep -q "connect failure" ERR || fail -f ERR 8
+grep -q "no valid urls found" ERR || fail -f ERR 9
+bk here check -ac ./gcc | grep -q "bk://.*:$P2/product" || fail 10
+bk here check -ac ./gdb | grep -q "bk://.*:$P2/product" || fail 11
+echo OK
+
+echo $N Urllist check -C: url of non-existent bkd ...................$NL
+cd "$HERE"
+rm -rf clone clone2
+bk bkd -q -aPORT -ikill || fail
+P2=`cat PORT`
+bk clone $Q bk://localhost:$P2/product clone || fail 2
+bk _kill bk://localhost:$P2
+# Force remove gcc from clone.
+cd clone
+bk here check -ac ./gcc | grep -q "bk://.*:$P2/product" || fail 3
+bk alias set $Q HERE `bk comps -h` || fail 4
+bk here rm $Q -f gcc || fail 5
+bk here check -ac ./gcc | grep -q "bk://.*:$P2/product" || fail 6
+# Check -c clone's urllist.  Should get error msgs and urllist
+# should be pruned.
+bk here check -qaCv ALL 2>ERR && fail 7
+grep -q "connect failure" ERR || fail -f ERR
+grep -q "no valid urls found" ERR || fail -f ERR
+bk here check -q ALL 2>ERR && fail -f ERR11
+grep -q "no valid urls found" ERR || fail -f ERR
+echo OK
+
+echo $N Demonstrate component named rm problem.......................$NL
+cd "$HERE"
+cd product
+bk setup -f rm || fail
+RM_RK=`cd rm; bk id -S`
+bk comps -h | grep -q rm || fail
+cd "$HERE"
+bk clone $Q product clone-rm
+echo OK
+
+echo $N Test ordering of multiple URLS in populate ..................$NL
+cd "$HERE"
+bk clone $Q product bkd_parent
+bk clone $Q product locked
+cd locked
+L=`bk lock -Swt`
+cd "$HERE"/product
+bk alias new TRACK ./gcc
+bk clone $Q -s. . ../copy4 || fail
+bk clone $Q -s./gdb . ../copy5 || fail
+RK=`(cd gdb; bk id -S)`
+bk portal $Q -r
+bk gate $Q -r
+bk here set -f $Q TRACK || fail
+
+cat <<EOF > BitKeeper/log/urllist
+@$RK
+rsh://bad.bitkeeper.com:1/
+ssh://localhost:1/
+http://localhost:1/
+bk://localhost:1/
+bk://!junkurl:1/
+$HERE/junk
+$HERE/locked
+bk://bad1.bitkeeper.com:1/
+bk://bad2.bitkeeper.com:1/
+bk://bad3.bitkeeper.com:1/
+http://bad.bitkeeper.com:1/
+EOF
+ENC=$(echo $HERE | sed 's/ /%20/')
+cat <<EOF >> "$URLINFO"
+@$ENC/junk
+120
+@rsh://bad.bitkeeper.com:1/
+110
+@bk://localhost:1/
+100
+@http://localhost:1/
+90
+@bk://bad1.bitkeeper.com:1/
+80
+@ssh://bad2.bitkeeper.com:1/
+70
+@$ENC/locked
+60
+@bk://bad3.bitkeeper.com:1/
+50
+@bk://bad2.bitkeeper.com:1/
+40
+@http://bad.bitkeeper.com:1/
+30
+@ssh://localhost:1/
+20
+@bk://!junkurl:1/
+10
+EOF
+cp BitKeeper/log/urllist SAVE
+bk here add -@ssh://bad2.bitkeeper.com:1/ ./gdb 2> ERR && {
+   fail -f ERR should have failed
+}
+bk _kill $L
+cat <<EOF > WANT
+here: searching ssh://bad2.bitkeeper.com:1/...connect failure
+here: searching $HERE/junk...repo gone
+here: searching rsh://bad.bitkeeper.com:1/...connect failure
+here: searching bk://localhost:1/...connect failure
+here: searching http://localhost:1/...connect failure
+here: searching bk://bad1.bitkeeper.com:1/...connect failure
+here: searching $HERE/locked...repo locked
+here: searching bk://bad3.bitkeeper.com:1/...connect failure
+here: searching bk://bad2.bitkeeper.com:1/...connect failure
+here: searching http://bad.bitkeeper.com:1/...connect failure
+here: searching ssh://localhost:1/...connect failure
+here: searching bk://!junkurl:1/...invalid url
+here: No other sources for ./gdb known
+EOF
+cmpfiles WANT ERR
+bk _rm -rf "$HERE"/locked
+echo OK
+
+########################################################################
+IP_ADDR=`bk gethost -rn`
+SKIP=NO
+case X$IP_ADDR in
+    X127.0.0.1|X127.0.1.1)
+	SKIP=YES
+    	;;
+esac
+
+test $SKIP = YES || {
+set +e
+
+echo $N Show that we search the parent first on regular pull ........$NL
+cd ../bkd_parent
+bk gate $Q .
+bk bkd -d -aPORT -ikill
+PORT=`cat PORT`
+URL=bk://$IP_ADDR:$PORT
+cd "$HERE"
+bk clone $Q -sPRODUCT $URL bkd_clone
+cd bkd_clone
+bk here set ALL > OUT 2>&1
+head -2 < OUT | tail -1 > GOT
+echo "Source $URL" > WANT
+cmp -s WANT GOT || {
+	bk _kill $URL
+	cmpfiles WANT GOT
+}
+echo OK
+
+echo $N Show that we search the source first on sideways pull .......$NL
+#
+# So what I am doing is
+# make bkd_clone a gate, populate everything, kill the the old bkd,
+# start a new one here, set up a COMPS->product (from rick),
+# clone this bkd_clone to bkd_clone2,
+# come back here and add to COMPS,
+# go back to child, set the parent to something else,
+# then do a sideways pull from bkd_clone.
+cd "$HERE/bkd_clone"
+bk gate $Q .
+bk here set ALL > OUT 2>&1 || {
+	cat OUT
+	exit 1
+}
+bk _kill $URL
+bk alias set $Q COMPS product
+bk bkd -d -aPORT -ikill
+PORT=`cat PORT`
+URL=bk://$IP_ADDR:$PORT
+cd ..
+bk clone $Q -sCOMPS $URL bkd_clone2
+cd bkd_clone
+bk alias add $Q COMPS ./gcc
+cd ../bkd_clone2
+bk parent $Q ../bkd_parent
+bk pull $URL > OUT 2>&1 
+# Here we expect no changing of the source so look for it and complain
+grep -q "Source" OUT && {
+	bk _kill $URL
+	echo failed
+	cat OUT
+	exit 1
+}
+bk _kill $URL
+echo OK
+
+set -e
+}
+########################################################################
+
+echo $N Show pull searching for gate can probe url twice ............$NL
+cd ../copy5
+bk here add $Q -@../clone-rm ./rm || fail
+bk gate $Q .
+cd ../copy4
+bk here add $Q -@../copy5 ./gdb || fail
+bk alias set TRACK ./gcc ./rm
+rm BitKeeper/log/urllist
+cd "$HERE"/product
+bk portal $Q -r
+bk gate $Q -r
+cat SAVE > BitKeeper/log/urllist
+echo "bk://localhost:$P/copy5" >> BitKeeper/log/urllist
+echo "@$RM_RK" >> BitKeeper/log/urllist
+echo "bk://localhost:$P/copy5" >> BitKeeper/log/urllist
+cat <<EOF >> "$URLINFO"
+@bk://localhost:$P/copy5
+3333
+1
+EOF
+bk pull ../copy4 >OUT 2>&1 || fail -f OUT
+cat <<EOF > WANT
+Pull file://$HERE/copy4
+  -> file://$HERE/product
+.                                  100% |==============================| OK
+pull: searching bk://localhost:$P/copy5...ok (gate)
+Source bk://localhost:$P/copy5
+1/2 rm                             100% |==============================| OK
+2/2 .                                1 changeset,   no merges in   3 files
+EOF
+perl -pe "s/.*\r//" < OUT > OUT2
+cmpfiles WANT OUT2
+echo OK
+
+echo $N Demonstrate pull from a repo with no urllist ................$NL
+cd "$HERE"
+nested project2
+rm -f BitKeeper/log/urllist
+cd "$HERE"
+bk clone $Q project2 project2-clone
+cd project2
+touch gcc/foo gdb/bar
+bk new $Q gcc/foo gdb/bar
+bk commit $Q -y'added files' || fail
+cd "$HERE"
+bk bkd -q -aPORT -ikill || fail
+P2=`cat PORT`
+cd project2-clone
+bk pull $Q bk://localhost:$P2/project2 >ERR 2>&1 || fail
+# echo 'failed (bug: empty urllist)'
+bk _kill bk://localhost:$P2
+echo OK
+
+## safe pull tests
+set -e
+
+echo $N Set up pull safe tests ......................................$NL
+cd "$HERE"
+# This builds a setup where task1 and task2 both have work on gdb, so
+# pulling one into the other would require a merge. Then the next test
+# pull with gdb unpopulated, which means that we'd need to first
+# populate gdb, at some revision, then pull (to create the merge
+# delta).
+bk clone $Q -s./gcc -s./gdb project2-clone task1
+bk clone $Q -s./gcc -s./gdb project2 task2
+cd task2
+touch gdb/foosafe
+bk new $Q gdb/foosafe
+bk commit $Q -ygdb/foosafe
+bk push $Q
+bk parent $Q -r
+cd ../task1
+# bk clone $Q . ../non-gate
+# bk clone $Q ../non-gate ../other
+# cd ../other
+touch gcc/foosafe
+bk new $Q gcc/foosafe
+bk commit $Q -ygcc
+bk push $Q ../project2-clone
+touch foosafe gdb/barsafe
+bk new $Q foosafe gdb/barsafe
+bk commit $Q -yfoo
+echo OK
+
+echo $N Pull auto-populates missing local comps......................$NL
+cd ../task2
+bk pull $Q ../project2-clone || fail
+bk unpopulate $Q -f gdb gcc || fail
+bk pull ../task1 > OUT 2>&1 && fail -f OUT
+perl -pe "s/.*\r//;s,$HERE,ROOT," < OUT | grep -v 'connect failure' > OUT2
+cat >WANT <<EOF
+Pull file://ROOT/task1
+  -> file://ROOT/task2
+.                                  100% |==============================| OK
+pull: searching ROOT/project2...ok (gate)
+
+The following components are present in the remote, were not
+found in any gates, and will need to be populated to make
+the pull safe:
+	gcc
+
+The following components need to be merged, are not present in this
+repository, and will need to be populated to complete the pull:
+	gdb
+Please re-run the pull using the --auto-populate option in order
+to get them automatically.
+EOF
+cmpfiles WANT OUT2
+bk pull --auto-populate ../task1 > OUT 2>&1 || fail -f OUT
+perl -pe "s/.*\r//;s,$HERE,ROOT,;s/.*connect failure\n//;" < OUT > OUT2
+cat >WANT <<EOF
+Pull file://ROOT/task1
+  -> file://ROOT/task2
+.                                  100% |==============================| OK
+pull: searching ROOT/project2...ok (gate)
+
+The following components are present in the remote, were not
+found in any gates, and will need to be populated to make
+the pull safe:
+	gcc
+
+The following components need to be merged, are not present in this
+repository, and will need to be populated to complete the pull:
+	gdb
+Adding the following aliases/components:
+	gcc
+	gdb
+pull: searching ROOT/task1...ok
+1/4 gcc                            100% |==============================| OK
+pull: searching ROOT/project2-clone...ok
+pull: searching ROOT/project2...ok (gate)
+Source ROOT/project2
+2/4 gdb                            100% |==============================| OK
+pull: searching ROOT/task1...ok
+3/4 gdb                              1 changeset,    1 merge  in   2 files
+4/4 .                                1 changeset,    1 merge  in   2 files
+EOF
+cmpfiles WANT OUT2
+echo OK
+
+echo $N Redo the pull, but with missing components found at gates....$NL
+cd "$HERE"
+bk clone -sALL $Q task1 gate
+bk --cd=gate gate $Q .
+cd task2
+bk unpull -qf
+bk here check $Q -@../gate
+cd gdb/
+echo FOO > some_file
+bk new $Q some_file
+bk -P commit $Q -ysome_file
+cd ..
+bk unpopulate $Q -f gdb gcc
+bk here | grep gdb && fail
+bk pull --auto-populate ../gate > OUT 2>&1 && fail -f OUT should have failed
+bk repocheck $Q || fail repo borked
+echo OK
+
+
+echo $N Demo pull with updated component from 3rd repo ..............$NL
+nested source
+bk setup -f comp || fail
+cd ..
+bk clone $Q source dest || fail
+bk clone -s. $Q source mid || fail
+cd source/comp
+echo hi > file
+bk new $Q file || fail
+bk commit $Q -yup || fail
+cd ..
+bk commit $Q -yupP || fail
+cd ../mid
+bk pull $Q || fail
+cd ../dest
+bk pull $Q ../mid || fail
+bk changes -qRL >GOT
+test -s GOT && fail -f GOT did not pull
+bk unpull -qf || fail
+echo OK
+
+echo $N Demo push with updated component from 3rd repo ..............$NL
+cd ../mid
+bk push $Q ../dest 2>ERR && fail -f ERR
+grep -q "push: comp is needed to push to .*/dest" ERR || fail -f ERR
+echo failed \(bug push should find source for comp\)
+
+echo $N Demo pull with new component from 3rd repo ..................$NL
+cd ../source
+bk setup -f newcomp || fail
+cd ../mid
+bk pull $Q || fail
+cd ../dest
+bk pull $Q ../mid || fail
+bk changes -qRL >GOT
+test -s GOT && fail -f GOT did not pull
+bk unpull -qf
+echo OK
+
+echo $N Demo push with new component from 3rd repo ..................$NL
+cd ../mid
+bk push $Q ../dest 2>ERR && fail -f ERR
+grep -q "push: newcomp is needed to push to .*/dest" ERR || fail -f ERR
+echo failed \(bug push should find source for newcomp\)

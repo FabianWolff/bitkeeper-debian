@@ -1,0 +1,273 @@
+# Copyright 2008-2010,2014-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+_commercial_config > c
+echo $N Create a new standalone component............................$NL
+bk setup -fcc standalone >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	pwd
+	exit 1
+}
+test -f standalone/BitKeeper/log/PRODUCT && {
+	echo failed
+	exit 1
+}
+test -f standalone/BitKeeper/log/COMPONENT && {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Create a new product.........................................$NL
+_commercial_config > c
+bk setup -fcc -P product >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+test -f product/BitKeeper/log/PRODUCT || {
+	echo failed
+	echo "Did not create product marker"
+	exit 1
+}
+bk _test -f product/BitKeeper/etc/SCCS/s.attr || {
+	echo failed
+	echo "Did not create attributes"
+	exit 1
+}
+cd product
+bk get $Q BitKeeper/etc/config
+cmpfiles "$HERE"/c BitKeeper/etc/config
+echo OK
+
+echo $N Create a new product inside the product......................$NL
+cd "$HERE"/product
+bk setup -fc"$HERE"/c -P product2 >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+test -f product2/BitKeeper/log/PRODUCT || {
+	echo failed
+	echo "Did not create product marker"
+	exit 1
+}
+test -f product2/BitKeeper/log/COMPONENT && {
+	echo failed
+	echo "Created unwanted component marker"
+	exit 1
+}
+echo OK
+
+echo $N Attach a component by hand...................................$NL
+cd "$HERE"
+commercial manual_component
+cd "$HERE"
+mv manual_component product
+cd product
+bk portal $Q . || fail
+bk attach -N manual_component >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+cat <<EOF > WANT
+manual_component
+EOF
+bk _nested > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Re-attaching the same component should fail..................$NL
+cd "$HERE"/product
+bk attach --force -q -N manual_component >GOT 2>&1 && {
+	echo failed
+	cat GOT
+	exit 1
+}
+cat <<EOF > WANT
+attach -N: source repo must be standalone
+EOF
+cmpfiles GOT WANT
+echo OK
+
+
+echo $N Create a new component with no config file...................$NL
+cd "$HERE"/product
+bk setup -Cf component >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+cd component
+test -f BitKeeper/log/COMPONENT || {
+	echo failed
+	echo "Did not create component marker"
+	exit 1
+}
+bk cat BitKeeper/etc/config > XXX || {
+	echo failed
+	echo Did not create empty config file
+	exit 1
+}
+test -z "`cat XXX`" || {
+	echo failed
+	echo Config file not empty
+	exit 1
+}
+cd "$HERE"/product
+cat <<EOF > WANT
+component/ChangeSet
+EOF
+bk gfiles -cP > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Create a new component and give it a config file.............$NL
+cd "$HERE"/product
+bk setup -Cfc"$HERE"/c component2 >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+test -f component2/BitKeeper/log/COMPONENT || {
+	echo failed
+	echo "Did not create component marker"
+	exit 1
+}
+bk cat component2/BitKeeper/etc/config > GOT
+cmpfiles "$HERE"/c GOT
+cat <<EOF > WANT
+component/ChangeSet
+component2/ChangeSet
+EOF
+bk sfiles -cP > GOT
+echo OK
+
+echo $N Attach in a nested product...................................$NL
+cd "$HERE"
+printf "" > empty
+nested p1
+bk setup -fc"$HERE/empty" -P p2 || fail
+cd p2
+bk setup -fc"$HERE/empty" gcc || fail
+# pending should be empty
+bk pending
+echo 'gcc' > WANT
+bk _nested > GOT
+cmpfiles WANT GOT
+cd "$HERE"/p1
+cat <<EOF >WANT
+gcc
+gdb
+EOF
+bk _nested > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Attach in a deep nested product .............................$NL
+cd "$HERE"/p1/gcc
+bk setup -fc"$HERE/empty" closures || {
+	echo failed
+	exit 1
+}
+cd ..
+cat <<EOF >WANT
+gcc
+gcc/closures
+gdb
+EOF
+bk _nested > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Attach in a existing repo running in checkout edit ..........$NL
+cd "$HERE"
+commercial s-expr
+BK_CONFIG="checkout: edit! "
+export BK_CONFIG
+touch foo
+bk new $Q foo
+bk commit $Q -f
+cd "$HERE"/p1/gcc
+mv "$HERE/s-expr" .
+bk attach $Q -N s-expr || fail
+cd s-expr
+bk -cpr
+cd ../..
+cat <<EOF >WANT
+gcc
+gcc/closures
+gcc/s-expr
+gdb
+EOF
+bk _nested > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check that component setup works from outside the product ...$NL
+cd "$HERE"
+bk setup -fc"$HERE/empty" p1/comp1 || fail
+echo OK
+
+echo $N Check that attach in a non-portal fails .....................$NL
+cd "$HERE/p1"
+bk portal $Q -r
+bk setup -fc"$HERE/empty" comp2 > GOT 2>&1 && fail -f GOT
+cat > WANT <<EOF
+New components can only be created in a portal. See 'bk help portal'.
+EOF
+cmpfiles WANT GOT
+test -d comp2 && fail
+echo OK
+
+echo $N Check that comp setup outside product fails in non-portal ...$NL
+cd "$HERE"
+bk setup -fc"$HERE/empty" p1/comp3 > GOT 2>&1 && fail -f GOT
+cat > WANT <<EOF
+New components can only be created in a portal. See 'bk help portal'.
+EOF
+cmpfiles WANT GOT
+test -d p1/comp3 && fail
+echo OK
+
+echo $N Check that standalone setup inside a product works ..........$NL
+cd product
+bk setup -fc"$HERE/empty" ../sa3 || fail
+cd ../sa3
+test `bk repotype` = "traditional" || fail
+echo OK
+
+echo $N Check that bk setup works as long as sfiles not masked ......$NL
+SHALLOW=a/b
+DEEP=$SHALLOW/c/d
+DEEPER=$DEEP/e/f
+nested proj123
+cd gcc
+bk setup $DEEPER || fail
+# sfile in dir where we want component
+touch $SHALLOW/foo
+bk new $Q $SHALLOW/foo
+bk setup $SHALLOW 2>ERR && fail -f ERR file in new comp root
+grep -q "existing version control files" ERR || fail -f ERR wrong one
+# put the file under where new componet is going
+bk mv $SHALLOW/foo $DEEP/foo
+bk setup $SHALLOW 2>ERR && fail -f ERR file under new comp
+grep -q "existing version control files" ERR || fail -f ERR wrong two
+# remove blockage, and component can get created
+bk rm $DEEP/foo
+bk setup $SHALLOW || fail
+bk repocheck -q || fail repocheck failed
+echo OK

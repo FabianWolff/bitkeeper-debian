@@ -1,0 +1,98 @@
+# Copyright 2013 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Check nfiles on a standalone repo ...........................$NL
+commercial proj
+bk sfiles >$DEV_NULL
+CNT=`bk nfiles`
+test $CNT -eq 6 || fail wrong count
+echo OK
+
+echo $N Check nfiles on a nested collection .........................$NL
+cd "$HERE"
+nested prod
+CNT=`bk nfiles`
+test $CNT -eq 19|| fail wrong count $CNT
+echo OK
+
+echo $N Check nfiles -S .............................................$NL
+CNT=`bk nfiles -S`
+test $CNT -eq 7 || fail wrong count $CNT
+echo OK
+
+echo $N Check nfiles -sgcc ..........................................$NL
+CNT=`bk nfiles -sgcc`
+test $CNT -eq 6 || fail wrong count
+echo OK
+
+echo $N Check nfiles -sgcc -sgdb ....................................$NL
+CNT=`bk nfiles -sgcc -sgdb`
+test $CNT -eq 12 || fail wrong count
+echo OK
+
+echo $N Check nfiles -sBOGUS ........................................$NL
+bk nfiles -sBOGUS > OUT 2>&1 || fail -f OUT should not have failed
+echo OK
+
+echo $N Check that nfiles works with no NFILES_PRODUCT ..............$NL
+rm BitKeeper/log/NFILES_PRODUCT
+CNT=`bk nfiles`
+test $CNT -eq 19 || fail wrong count $CNT
+echo OK
+
+echo $N Make sure repocheck recreates NFILES_PRODUCT ................$NL
+bk repocheck $Q
+test -f BitKeeper/log/NFILES_PRODUCT || fail
+echo OK
+
+echo $N Make sure that nfiles are accurate after new files ..........$NL
+cd "$HERE/prod"
+WANT=`bk nfiles`
+WANT=`expr $WANT + 2`
+touch foo bar
+bk new $Q foo bar
+bk commit $Q -f
+GOT=`bk nfiles`
+test $WANT -eq $GOT && fail fix test
+echo "failed (bug - commit does not update nfiles cache)"
+
+echo $N Make sure that nfiles are accurate after a clone ............$NL
+cd "$HERE/prod"
+bk -e sfiles > $DEV_NULL # fix nfiles cache
+WANT=`bk nfiles`
+bk clone $Q . ../prod-clone
+cd ../prod-clone
+GOT=`bk nfiles`
+test $WANT -eq $GOT || fail clone had $GOT, expected $WANT
+echo OK
+
+echo $N Make sure that nfiles are accurate after a pull .............$NL
+cd "$HERE/prod"
+touch baz
+bk new $Q baz
+bk commit $Q -f
+bk -e sfiles > $DEV_NULL # fix nfiles cache
+WANT=`bk nfiles`
+cd "$HERE/prod-clone"
+bk pull $Q
+GOT=`bk nfiles`
+test $WANT -eq $GOT || fail pull had $GOT, expected $WANT
+echo OK
+
+echo $N Make sure that nfiles are accurate after an undo ............$NL
+bk unpull $Q -f
+WANT=`expr $WANT - 1`
+GOT=`bk nfiles`
+test $WANT -eq $GOT || fail unpull had $GOT, expected $WANT
+echo OK

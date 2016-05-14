@@ -1,0 +1,90 @@
+.so ../bk-macros
+.TH "bk receive" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk receive \- receive a \*(BK patch
+.SH SYNOPSIS
+.B bk receive 
+.[ARG] takepatch_options
+.[ARG] repository
+.SH DESCRIPTION
+Use when applying a \*[BK] patch you received via email.  You can
+take a \*[BK] patch and pipe the whole email message through
+.BR "bk receive" .
+Headers and footers are stripped automatically.
+.LP
+When someone sends you a patch with the following command:
+.DS
+$ bk send -rbeta.. you@your.host.com
+.DE
+You will receive an email message which needs to be saved so you can
+feed it to the
+.B bk receive
+command:
+.DS
+$ bk receive ~/mypackage < patch
+.DE
+Many Unix email programs (pine, elm, etc) will allow you to pipe a
+message directly to a program. For example, when you are reading a
+message in pine, you can hit the '|' key, and you will be prompted
+with a message asking you for a program name where the message should
+be piped.
+.LP
+Remember that if you are getting the very first patch, you need to create
+a new repository by adding the 
+.B \-i
+option.
+\*(BK does not create repositories by default.
+.LP
+Specifying the repository is optional; if it is unspecified,
+.B bk receive
+tries to use the current working directory.
+.LP
+Patches may be wrapped. If they are you will see something like
+.DS
+## Wrapped with uu ##
+.DE
+near the top of the patch.  \*(BK knows how to unwrap patches which
+it wrapped.  We currently support only uuencoded wrappers, but it is
+trivial to create different ones, see
+.B bk wrap
+for more information.
+.LP
+Once a patch is run through
+.BR "bk receive" ,
+run
+.B bk resolve
+to apply the changes.
+.SH OPTIONS
+All options are passed through to
+.BR "bk takepatch" . 
+With no options,
+.B bk takepatch
+is completely silent.
+If you want to see the progress reports you
+see with
+.BR "bk pull" ,
+add
+.B \-vv
+to the options.
+.TP
+.B \-a
+Apply the changes (call 
+.BR bk\ resolve .)
+.tp
+.B \-c
+Do not accept conflicts with this patch.
+.tp
+.B \-i
+Initial patch, create a new repository.
+.tp
+.B \-v
+Verbose level, more is more verbose,
+.B \-vv
+is suggested.
+.SH "SEE ALSO"
+.SA range
+.SA send
+.SA takepatch
+.SA wrap
+.SH CATEGORY
+.B File

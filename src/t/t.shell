@@ -1,0 +1,311 @@
+# Copyright 2000-2001,2004-2008,2011-2012,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Because we use tar xmf we don't check for timestamp errors here.
+unset _BK_DEVELOPER
+
+mkBINs
+
+echo $N Test our popen/system commands ..............................$NL
+cat > trigger <<EOF
+#!/bin/sh
+
+exit 7
+EOF
+chmod +x trigger
+bk _popensystem ./trigger 2>ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+#
+# This test is not portable to WIN32;
+# In the test, if we redirect stdin, we will lost it (stdin) after we spawn
+# the cygwin shell.
+# The shell escape feature itself seems to work, however. We just cannot
+# test it in a test script on WIN32.
+#
+if [ X$PLATFORM = X"WIN32" ]
+then
+	echo "For non win32 only ..........................................skipped"
+	exit 0;
+fi
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+echo OK
+echo $N Create some data ............................................$NL
+cat > file <<EOF
+1
+2
+3
+4
+5
+6
+7
+8
+9
+EOF
+bk ci $Q -i file
+if bk _test ! -f SCCS/s.file; then echo failed to create history; exit 1; fi
+cp /bin/sh binary
+chmod +w binary
+bk new $Q -b binary
+bk prs -hr+ binary | grep -q binary || {
+	echo bad encoding
+	bk prs -hr+ binary
+	exit 1
+}
+bk commit $Q -ywhatever 
+echo OK
+echo $N Clone it, modify it in both, and resync it ..................$NL
+cd "$HERE"
+bk clone $Q project copy
+for i in copy project
+do	cd "$HERE"/$i
+	bk get -e -g $Q file
+	bk get -kp $Q file | sed -e s/2/2-$i/ -e s/3/3-$i/ > file
+	bk delta $Q -y$i
+	bk commit -y$i $Q
+done
+cd "$HERE/copy"
+bk pull -R $Q
+cd ..
+tar cf TAR copy
+cd copy
+echo OK
+
+test "X`uname -s`" = XDarwin -o "X`uname -s`" = "XHP-UX" || {
+echo $N Make sure shell escapes to an interactive shell work ........$NL
+# XXX WIN32 note: the following construct does not work on WIN32
+# If we redirect stdin, we will lost it after we spawn the cygwin shell
+# Must be some type of fd conflict...
+( echo '!'
+  echo echo ESCAPE_FROM_NEW_YORK
+  echo exit
+  echo q ) > IN
+bk resolve $Q < IN > OUT 2>/dev/null
+grep -q ESCAPE_FROM_NEW_YORK OUT || { 
+	echo failed to escape
+	cat OUT
+	exit 1
+}
+echo OK
+}
+
+echo $N Make sure shell escapes to run a command work ...............$NL
+cd ..
+rm -rf copy
+tar xmf TAR
+cd copy
+( echo '!diff $BK_LOCAL $BK_REMOTE'
+  echo q ) > IN
+bk resolve $Q < IN > OUT 2>/dev/null
+cat > DIFFS <<EOF
+2,3c2,3
+< 2-copy
+< 3-copy
+---
+> 2-project
+> 3-project
+EOF
+cmp -s DIFFS OUT || {
+	echo failed to run diffs on local/remote files
+	exit 1
+}
+echo OK
+
+echo $N Modify the binary in both, resync it, check merge ...........$NL
+cd "$HERE"
+rm -rf */RESYNC */PENDING
+bk edit $Q copy/binary project/binary || fail
+cp -f "$BIN2" copy/binary
+cp -f "$BIN3" project/binary
+for i in copy project
+do	cd "$HERE"/$i
+	chmod +w binary
+	bk delta $Q -y$i
+	bk commit -y$i $Q
+done
+cd "$HERE/copy"
+bk pull -R $Q
+cd ..
+tar cf TAR copy
+cd copy
+echo OK
+
+echo $N Make sure ul works ..........................................$NL
+cd "$HERE"
+rm -rf copy
+tar xmf TAR
+cd copy
+# First one is for the binary and the second one is for the file.
+( echo ''
+  echo ul
+  echo Use local binary
+  echo .
+  echo ul
+  echo Use local file
+  echo .
+  echo q ) > IN
+bk resolve $Q -ywhatever < IN > OUT 2>&1
+test -d RESYNC && {
+	echo failed to complete resolve
+	cat OUT
+	exit 1
+}
+bk cat binary | cmp - "$BIN2" || {
+	echo failed to use local version of binary
+	exit 1
+}
+bk cat file | grep -q copy || {
+	echo failed to use local version of file
+	bk cat file
+	exit 1
+}
+test "`bk prs -r+ -hnd:C: binary`" != "Use local binary" && fail
+test "`bk prs -r+ -hnd:C: file`" != "Use local file" && fail
+echo OK
+
+echo $N Make sure ur works ..........................................$NL
+cd "$HERE"
+rm -rf copy
+tar xmf TAR
+cd copy
+# First one is for the binary and the second one is for the file.
+( echo ''
+  echo ur
+  echo Use remote binary
+  echo .
+  echo ur
+  echo Use remote file
+  echo .
+  echo q ) > IN
+bk resolve $Q -ywhatever < IN > OUT 2>&1
+test -d RESYNC && {
+	echo failed to complete resolve
+	cat OUT
+	exit 1
+}
+bk cat binary | cmp - "$BIN3" || {
+	echo failed to use remote version
+	exit 1
+}
+bk cat file | grep -q project || {
+	echo failed to use remote version of file
+	bk cat file
+	exit 1
+}
+test "`bk prs -r+ -hnd:C: binary`" != "Use remote binary" && fail
+test "`bk prs -r+ -hnd:C: file`" != "Use remote file" && fail
+echo OK
+
+echo $N Make sure shell escapes to use local works ..................$NL
+cd "$HERE"
+rm -rf copy
+tar xmf TAR
+cd copy
+( echo '!cp $BK_LOCAL $BK_MERGE'
+  echo C
+  echo Use local binary
+  echo .
+  echo '!cp $BK_LOCAL $BK_MERGE'
+  echo C
+  echo Use local file
+  echo .
+  echo q ) > IN
+bk resolve $Q -ywhatever < IN > OUT 2>&1
+test -d RESYNC && {
+	echo failed to complete resolve
+	exit 1
+}
+bk cat binary | cmp - "$BIN2" || {
+	echo failed to use local version
+	exit 1
+}
+bk cat file | grep -q copy || {
+	echo failed to use local version of file
+	bk cat file
+	exit 1
+}
+test "`bk prs -r+ -hnd:C: binary`" != "Use local binary" && fail
+test "`bk prs -r+ -hnd:C: file`" != "Use local file" && fail
+echo OK
+
+echo $N Make sure shell escapes to use remote works .................$NL
+cd "$HERE"
+rm -rf copy
+tar xmf TAR
+cd copy
+( echo '!cp $BK_REMOTE $BK_MERGE'
+  echo C
+  echo Use remote binary
+  echo .
+  echo '!cp $BK_REMOTE $BK_MERGE'
+  echo C
+  echo Use remote file
+  echo .
+  echo q ) > IN
+bk resolve $Q -ywhatever < IN > OUT 2>&1
+test -d RESYNC && {
+	echo failed to complete resolve
+	exit 1
+}
+bk cat binary | cmp - "$BIN3" || {
+	echo failed to use remote version
+	exit 1
+}
+bk cat file | grep -q project || {
+	echo failed to use remote version of file
+	bk cat file
+	exit 1
+}
+test "`bk prs -r+ -hnd:C: binary`" != "Use remote binary" && fail
+test "`bk prs -r+ -hnd:C: file`" != "Use remote file" && fail
+echo OK
+
+echo $N Make sure we can force text resolution ......................$NL
+cd "$HERE"
+rm -rf copy
+tar xmf TAR
+cd copy
+# First one is for the binary and the second one is for the file.
+( echo t
+  echo ur
+  echo use remote
+  echo .
+  echo ur
+  echo use remote
+  echo .
+  echo q ) > IN
+bk resolve $Q -ywhatever < IN > OUT 2>&1
+test -d RESYNC && {
+	echo failed to complete resolve
+	cat OUT
+	exit 1
+}
+bk cat binary | cmp - "$BIN3" || {
+	echo failed to use remote version
+	exit 1
+}
+bk cat file | grep -q project || {
+	echo failed to use remote version of file
+	bk cat file
+	exit 1
+}
+echo OK

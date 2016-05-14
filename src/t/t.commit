@@ -1,0 +1,467 @@
+# Copyright 2003,2006,2012,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+commercial project
+echo $N Test commit with a long file name ...........................$NL
+len=1000
+test "$PLATFORM" = WIN32 && len=240
+file=`longpath "$HERE/project/" $len`
+mkdir -p "`dirname "$file"`"
+echo hi there > "$file"
+bk new $Q "$file" || fail
+# The error was in the commit code which generates comments
+bk commit $Q -f || fail
+echo OK
+
+echo $N Test commit -y with multiline comments ......................$NL
+echo hi there > file
+bk new $Q file
+bk commit $Q -y'this
+is
+
+a
+
+test
+
+' || fail
+bk prs -r+ -hd':COMMENTS:' ChangeSet > GOT
+bk undos <<EOF > WANT
+C this
+C is
+C 
+C a
+C 
+C test
+C 
+EOF
+cmp -s WANT GOT || { echo failed; diff -u WANT GOT; exit 1; }
+echo OK
+
+echo $N Verify commit metadata ......................................$NL
+bk _heapdump ChangeSet | egrep '^([PS]|a/|serial|mode|flags|xflags)' > GOT
+cat <<EOF > WANT
+serial: 4 (1.3)
+PARENT: 3 (1.2)
+a/d/s: 1/0/1
+xflags: 1061 (BITKEEPER,CSETMARKED,HASH)
+flags: 1001 (CSET)
+PATHNAME: ChangeSet
+SORTPATH: ChangeSet
+serial: 3 (1.2)
+PARENT: 2 (1.1)
+a/d/s: 1/0/1
+xflags: 1061 (BITKEEPER,CSETMARKED,HASH)
+flags: 1001 (CSET)
+PATHNAME: ChangeSet
+SORTPATH: ChangeSet
+serial: 2 (1.1)
+PARENT: 1 (1.0)
+a/d/s: 5/0/1
+xflags: 1061 (BITKEEPER,CSETMARKED,HASH)
+flags: 1001 (CSET)
+PATHNAME: ChangeSet
+SORTPATH: ChangeSet
+serial: 1 (1.0)
+a/d/s: 0/0/0
+xflags: 1061 (BITKEEPER,CSETMARKED,HASH)
+flags: 1 ()
+PATHNAME: ChangeSet
+SORTPATH: ChangeSet
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test commit with revs on stdin ..............................$NL
+for i in 2 3 4 5
+do	bk edit $Q file
+	bk delta -fywhatever $Q file
+done
+bk sfiles -pA > BEFORE
+echo 'SCCS/s.file|1.4' | bk commit $Q -ywhatever -
+bk sfiles -pA > AFTER
+bk pending > LEFT
+grep -q 1.5 LEFT || fail
+cmp -s BEFORE AFTER && {
+	echo failed
+	cat BEFORE
+	cat AFTER
+	exit 1
+}
+echo OK
+
+echo $N Commit in bogus nested alias ................................$NL
+mkdir subdir
+cd subdir
+test 1.4 = `bk prs -r+ -hnd:I: ../ChangeSet` || fail
+bk commit $Q -sTCLTK -yfile-leftover 2>ERR && fail -f ERR should fail
+echo 'commit: -sALIAS only allowed in product' > WANT
+cmpfiles ERR WANT
+bk commit $Q -sHERE -yfile-leftover || fail
+test 1.5 = `bk prs -r+ -hnd:I: ../ChangeSet` || fail
+echo OK
+
+echo $N Commit using -S in a standalone repo to see that it works ...$NL
+bk edit $Q ../file
+bk delta -fywhatever $Q ../file
+bk commit $Q -S -yfile-leftover || fail
+echo OK
+
+test "$PLATFORM" != WIN32 && {
+echo $N Commit should fail if cset marking fails.....................$NL
+cd "$HERE"
+commercial markcset
+mkdir F
+touch F/foo bar goo
+bk new $Q F/foo bar goo
+bk commit $Q -ybase
+bk edit $Q F/foo
+bk delta $Q -fynull F/foo
+bk _cp F/SCCS/s.foo precommit
+chmod 555 .bk/F/SCCS
+bk commit -q -y"Foo" 2> OUT
+RC=$?
+chmod 755 .bk/F/SCCS
+grep -q 'Could not mark F/foo. Perhaps it is locked' OUT || fail -f OUT
+test `bk changes -d:C: -r+` = Foo && fail cset not reverted
+test -f "SCCS/x.foo" && fail left xfile behind
+bk repocheck $Q || fail should be fine
+echo OK
+}
+
+echo $N Test gone file not gone and colliding on a cset boundary ....$NL
+cd "$HERE/project"
+bk clone $Q . ../copy
+bk _rm SCCS/s.file
+bk -r check -aggg | bk gone $Q -
+touch file
+bk new $Q file
+bk commit $Q -ynewfoo
+cd ../copy
+bk mv file bar
+bk pull -q 2> GOT && fail -f GOT expected failure
+cat <<EOF > WANT
+A path-conflict was found in existing csets
+  ./bar|1.6
+  with pending rename from ./file
+conflicts with existing:
+  ./file|1.1
+Must include other renames in commit.
+Check failed.  Resolve not completed.
+Your repository should be restored to its previous state.
+We are running a full consistency check to verify this, please wait.
+check passed.
+resolve: RESYNC directory left intact.
+====================================================
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Setup a failing commit that updates the attr file ...........$NL
+bk abort -f
+bk edit $Q BitKeeper/etc/collapsed
+echo hi >> BitKeeper/etc/collapsed
+bk ci $Q -yy BitKeeper/etc/collapsed
+bk _mv BitKeeper/etc/SCCS/s.collapsed BitKeeper/etc/SCCS/s.collapsed3
+bk _mv BitKeeper/etc/SCCS/d.collapsed BitKeeper/etc/SCCS/d.collapsed3
+# force an attr file update to show it gets reverted
+_BK_ATTR_TEST=foo bk --config=autofix:off commit $Q -yy > ERR 2>&1 && fail -f ERR should fail
+bk _mv BitKeeper/etc/SCCS/s.collapsed3 BitKeeper/etc/SCCS/s.collapsed
+bk _mv BitKeeper/etc/SCCS/d.collapsed3 BitKeeper/etc/SCCS/d.collapsed
+bk repocheck $Q || fail
+bk sfiles -p > GOT
+cat <<EOF > WANT
+SCCS/s.bar
+BitKeeper/etc/SCCS/s.collapsed
+EOF
+cmpfiles WANT GOT
+# check again that all pending are marked
+bk sfiles -P > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test out broken merge detection .............................$NL
+# Setup this and next test for bad merge detection
+cd "$HERE"
+commercial base
+touch foo bar
+bk new $Q -l foo bar
+bk commit $Q -f
+bk clone $Q --checkout=edit . ../merge
+bk delta $Q -lfynull foo bar
+bk commit $Q -f
+cd ../merge
+echo content > bar
+bk delta $Q -fynull foo bar
+bk commit $Q -f
+bk _rm SCCS/s.foo
+bk -r check -ag | bk gone $Q -
+bk commit $Q -f
+cd ../base
+bk delta $Q -fynull foo bar
+bk commit $Q -f
+bk _rm SCCS/s.foo
+bk -r check -ag | bk gone $Q -
+bk commit $Q -f
+bk clone $Q . ../stuff
+cd ../stuff
+touch zoo
+bk new $Q zoo
+bk commit $Q -f
+cd ../merge
+bk pull $Q -Ri
+# The gone file is in place, so the resolve would normally work.
+# Reach in through the resolve and zero it.
+# A conflict was set up in meaningless file 'bar'. Just sccs merge it.
+bk resolve <<EOF 2> ERR && fail -f ERR
+!bk edit -q BitKeeper/etc/gone
+!echo > BitKeeper/etc/gone
+!bk delta -q -ygone BitKeeper/etc/gone
+s
+C
+EOF
+grep -q "commit: ChangeSet is a merge but is missing" ERR || fail -f ERR
+# restore gone, it commits!
+bk edit $Q -x+ RESYNC/BitKeeper/etc/gone
+bk resolve $Q || fail
+echo OK
+
+echo $N Test out broken merge in the past does not break things .....$NL
+bk pull $Q ../stuff || fail
+echo OK
+
+echo $N Show new files are created with 1.1 marks ...................$NL
+# in merge
+bk clone $Q . ../side
+# need to make a merge
+echo h > ff
+bk new $Q ff
+bk commit $Q -yff || fail
+cd ../side
+echo hi > newfile
+bk new $Q newfile
+bk commit $Q -yn1 || fail
+# show new file has 1.1 mark
+bk _heapdump -e ChangeSet | grep -q newfile || fail missing mark
+# recreate cset where rootkey is not unique
+bk fix -c -d || fail
+bk commit $Q -yn2 || fail
+# the file still has mark from different code
+bk _heapdump -e ChangeSet | grep -q newfile || fail missing mark
+echo OK
+
+echo $N Show new files in merge get 1.1 marks added .................$NL
+bk edit $Q newfile
+echo h >> newfile
+bk ci $Q -y2 newfile
+bk commit $Q -y2 || fail
+bk clone --compat $Q . ../side.ascii
+
+# ascii files don't have 1.1 marks
+cd ../merge
+bk pull $Q ../side.ascii
+# but we added the mark during the merge
+bk _heapdump -e ChangeSet | grep -q newfile || fail missing mark
+echo OK
+
+echo $N Test that delta/new are implied with stdin ..................$NL
+cd "$HERE"
+commercial proj-cm
+touch foo bar
+# Only foo, bar is a new file that commit should bk new
+bk new $Q foo
+bk edit $Q foo
+echo foo >> foo
+cat <<EOF > list
+SCCS/s.foo
+bar
+EOF
+bk commit $Q -ystuff - < list >OUT 2>&1 || fail -f OUT
+cat <<EOF > WANT
+1.2
+1.1
+EOF
+bk prs -hnd:REV: -r+ foo bar > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test with gfiles on stdin ...................................$NL
+bk edit $Q foo bar
+echo foo >> foo
+echo bar >> bar
+echo baz >> baz
+cat <<EOF > list
+foo
+bar
+baz
+EOF
+bk commit $Q -ystuff - < list >OUT 2>&1 || fail -f OUT
+cat <<EOF > WANT
+1.3
+1.2
+1.1
+EOF
+bk prs -hnd:REV: -r+ foo bar baz > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test --ci with -l ...........................................$NL
+bk edit $Q foo bar
+echo foo >> foo
+echo bar >> bar
+bk ci $Q -ystuff bar
+cat <<EOF > list
+SCCS/s.foo
+SCCS/s.bar|1.3
+EOF
+bk commit $Q -ystuff --ci -llist >OUT 2>&1 || fail -f OUT
+cat <<EOF > WANT
+1.4
+1.3
+EOF
+bk prs -hnd:REV: -r+ foo bar > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test --ci ...................................................$NL
+bk edit $Q foo bar
+echo foo >> foo
+echo bar >> bar
+bk ci $Q -ystuff bar
+bk commit $Q -ystuff --ci >OUT 2>&1 || fail -f OUT
+cat <<EOF > WANT
+1.5
+1.4
+EOF
+bk prs -hnd:REV: -r+ foo bar > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test that --ci honors c-files ...............................$NL
+bk edit $Q foo bar
+echo foo >> foo
+echo bar >> bar
+echo "cfile comment" | bk cfile save foo
+bk commit $Q -ystuff --ci >OUT 2>&1 || fail -f OUT
+cat <<EOF > WANT
+C cfile comment
+C stuff
+EOF
+bk prs -r+ -hd:COMMENTS: foo bar > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test bk commit --ci in nested................................$NL
+cd "$HERE"
+BK_CONFIG=checkout:edit\!
+export BK_CONFIG
+nested product
+for f in file gcc/file gdb/file
+do
+	echo $f > $f
+	bk new $Q $f
+done
+bk commit $Q -yfirst
+## XXX
+## 
+## Having 'pe' at this point is a probably a bug
+## and the presence of the p flag hides the
+## bug this test was written to illustrate.
+## When this block starts failing, perhaps
+## the bug was fixed and this block needs
+## to be removed or adjusted.
+cat BitKeeper/log/scancomps > "$HERE/GOT"
+cat <<EOF > "$HERE/WANT"
+@.
+e
+@gcc
+pe
+@gdb
+pe
+EOF
+cmpfiles "$HERE/WANT" "$HERE/GOT"
+cd gcc
+echo stuff > file
+cd ..
+# Fix scancomps file
+bk -e sfiles -C -P > "$HERE/junk"
+# Make sure
+cat BitKeeper/log/scancomps > "$HERE/GOT"
+cat <<EOF > "$HERE/WANT"
+@.
+e
+@gcc
+e
+@gdb
+e
+EOF
+cmpfiles "$HERE/WANT" "$HERE/GOT"
+##
+## End of XXX block
+# Ensure bk -Uc sees the modified file
+bk -Uc > "$HERE/GOT"
+cat <<EOF > "$HERE/WANT"
+gcc/file
+EOF
+bk commit $Q --ci -ytop ||  fail
+bk changes -d'$each(:C:){(:C:)\n}' -r+ > "$HERE/GOT"
+cat <<EOF > "$HERE/WANT"
+top
+EOF
+cmpfiles "$HERE/WANT" "$HERE/GOT"
+echo OK
+unset BK_CONFIG
+
+echo $N Commit with duplicate s.attr file on stdin ..................$NL
+
+bk edit $Q BitKeeper/etc/attr
+echo junk >> BitKeeper/etc/attr
+bk ci -yjunk $Q BitKeeper/etc/attr
+
+echo hi > newfile
+bk new $Q newfile
+cat <<EOF > FILES
+SCCS/s.newfile|+
+BitKeeper/etc/SCCS/s.attr|+
+EOF
+_BK_ATTR_TEST=foo2 bk commit $Q -S -yattr - < FILES || fail
+bk rset -ar+ | grep -q attr || fail
+bk cat BitKeeper/etc/attr | grep junk && fail
+echo OK
+
+echo $N Catch duplicates in commit earlier and without assert .......$NL
+# The previous attr failure was a duplicate rk in a commit.
+# Having an assert fail in rset is hard to follow.  Put in msg.
+bk edit $Q newfile
+bk delta $Q -fynull newfile
+touch newfile2
+bk new $Q newfile2
+# different mechanism for seeing dups
+cat <<EOF > FILES
+SCCS/s.newfile|+
+SCCS/s.newfile2|+
+SCCS/s.newfile|+
+SCCS/s.newfile2|+
+EOF
+bk commit $Q -S -ydups - < FILES 2> ERR && fail -f ERR
+sed 's/[^|]*|\([^|]*\).*/\1/' < ERR > GOT
+cat <<'EOF' > WANT
+ERROR: same rootkey appears twice:
+newfile
+ERROR: same rootkey appears twice:
+newfile2
+The commit is aborted.
+EOF
+cmpfiles WANT GOT
+echo OK

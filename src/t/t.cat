@@ -1,0 +1,81 @@
+# Copyright 2006 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create some data ............................................$NL
+commercial project
+echo hi > ascii
+cp ascii ascii_sfile
+cp ascii WANT_ASCII
+perl -e 'print "abc\001\000\r\t\n\0aa"' > binary
+cp binary binary_sfile
+cp binary WANT_BINARY
+bk new $Q -b binary_sfile
+bk new $Q ascii_sfile
+test -f ascii_sfile && fail
+test -f binary_sfile && fail
+echo OK
+
+echo $N Cat ASCII file not under version control ....................$NL
+bk cat ascii > GOT
+cmpfiles WANT_ASCII GOT
+echo OK
+
+echo $N Cat ASCII file under version control ........................$NL
+bk cat ascii_sfile > GOT
+cmpfiles WANT_ASCII GOT
+echo OK
+
+echo $N Cat bin file not under version control ......................$NL
+bk cat binary > GOT
+cmpfiles WANT_BINARY GOT
+echo OK
+
+echo $N Cat bin file under version control ..........................$NL
+bk cat binary_sfile > GOT
+cmpfiles WANT_BINARY GOT
+echo OK
+
+echo $N Cat ASCII gfile under version control edited ................$NL
+bk edit $Q ascii_sfile
+cat ascii ascii > ascii_sfile
+cp ascii_sfile WANT_ASCII_EDIT
+bk cat ascii_sfile > GOT
+# See that it gets the gfile and not the sfile
+cmpfiles WANT_ASCII_EDIT GOT
+echo OK
+
+echo $N Cat bin gfile under version control edited ..................$NL
+bk edit $Q binary_sfile
+cat binary binary > binary_sfile
+cp binary_sfile WANT_BINARY_EDIT
+bk cat binary_sfile > GOT
+# See that it gets the gfile and not the sfile
+cmpfiles WANT_BINARY_EDIT GOT
+echo OK
+
+echo $N Cat ASCII and binary file with -B: only output ASCII ........$NL
+bk cat -B ascii binary > GOT
+cmpfiles WANT_ASCII GOT
+echo OK
+
+echo $N Cat ASCII and binary sfile with -B: only output ASCII .......$NL
+bk cat -B ascii_sfile binary_sfile > GOT
+cmpfiles WANT_ASCII_EDIT GOT
+echo OK
+
+echo $N Cat ASCII file with binary data with -B: binary data ........$NL
+cp binary ascii_sfile
+bk cat -B ascii_sfile > GOT
+cmpfiles WANT_BINARY GOT
+echo OK

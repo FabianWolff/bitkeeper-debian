@@ -1,0 +1,39 @@
+# Copyright 2003-2005,2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+fresh_commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+kill_uniq "$HERE/.bk/bk-keys-db"
+echo 'get .*' | bk info_shell --uniqdb | grep '^@.' >KEYS
+test `cat KEYS | wc -l` -gt 1 || fail failed to add keys
+echo OK
+
+echo $N Add a delta to be sure there are pending deltas .............$NL
+bk edit $Q BitKeeper/etc/config
+echo 'No No No No No' >> BitKeeper/etc/config
+bk delta $Q -ywhatever BitKeeper/etc/config
+echo OK
+
+echo $N Make sure that get -kpr@+ does not get pending data .........$NL
+bk get $Q -kpr@+ BitKeeper/etc/config > XXX
+grep -q 'No No No No No' XXX && {
+	echo whoops, we lose
+	cat XXX
+	exit 1
+}
+echo OK

@@ -1,0 +1,173 @@
+# Copyright 2009-2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+OUT="$HERE/out"
+RC="`bk dotbk`/ci.rc"
+
+echo $N Create a non-nested repo ....................................$NL
+commercial project
+mkdir src
+cd src
+for f in file1 file2 file3 file4 file5 ; do
+	echo "this is $f" > $f
+	bk ci $Q -i -y'new file' $f
+done
+bk commit $Q -y'initial checkin'
+echo OK
+
+echo $N Simple commit ...............................................$NL
+bk get $Q -e file1
+echo "this is the new file1" > file1
+OLD=`bk -R prs -hd:REV: -r+ ChangeSet`
+bk guitest citool >"$OUT" 2>&1 <<'EOF'
+	# select first file, enter comments
+	# we click on line end to make sure we don't click on icon...
+	test_selectFile src/file1
+	test_inputComment "comments for file1"
+	test_selectFile ChangeSet
+	test_inputComment "This is the cset comment"
+	test_buttonPress "Commit"
+	test_buttonPress "Commit"
+EOF
+test $? -ne 0 && { echo failed; echo "exited $err; expected 0"; exit 1; }
+test -s "$OUT" && { echo failed; cat "$OUT"; exit 1; }
+NEW=`bk -R prs -hd:REV: -r+ ChangeSet`
+test "$NEW" = "$OLD" && {
+	echo failed
+	echo "changeset wasn't created"
+	exit 1
+}
+CMTS=`bk -R prs -hd:C: -r+ ChangeSet`
+test "$CMTS" = "This is the cset comment" || {
+	echo failed
+	echo "unexpected comments: $CMTS"
+	exit 1
+}
+echo OK
+
+echo $N "Commit, where ChangeSet file isn't selected..................$NL"
+cd "$HERE/project/src"
+bk get $Q -e file1
+echo "a gratuitous change" > file1
+OLD=`bk -R prs -hd:REV: -r+ ChangeSet`
+bk guitest citool >"$OUT" 2>&1 <<'EOF'
+	global w
+	# select first file, enter comments
+	# we click on line end to make sure we don't click on icon...
+	test_selectFile src/file1
+	test_inputComment "comments for file1"
+	test_selectFile ChangeSet
+	test_inputComment "New Cset"
+	test_selectFile src/file1
+	test_buttonPress "Commit"
+	test_buttonPress "Commit"
+EOF
+test $? -ne 0 && { echo failed; echo "exited $err; expected 0"; exit 1; }
+test -s "$OUT" && { echo failed; cat "$OUT"; exit 1; }
+NEW=`bk -R prs -hd:REV: -r+ ChangeSet`
+test "$NEW" = "$OLD" && {
+	echo failed
+	echo "changeset wasn't created"
+	exit 1
+}
+CMTS=`bk -R prs -hd:C: -r+ ChangeSet`
+test "$CMTS" = "New Cset" || {
+	echo failed
+	echo "unexpected comments: $CMTS"
+	exit 1
+}
+echo OK
+
+echo $N "Commit, after saving comments and restarting.................$NL"
+cd "$HERE/project/src"
+bk get $Q -e file1
+echo "another gratuitous change" > file1
+OLD=`bk -R prs -hd:REV: -r+ ChangeSet`
+bk guitest citool >"$OUT" 2>&1 <<'EOF'
+	global w
+	# select first file, enter comments
+	# we click on line end to make sure we don't click on icon...
+	test_selectFile src/file1
+	test_inputComment "comments for file1"
+	test_selectFile ChangeSet
+	test_inputComment "A Gratuitous Change"
+	test_buttonPress "Quit" then "Quit but save*"
+EOF
+test $? -ne 0 && { echo failed; echo "exited $err; expected 0"; exit 1; }
+test -s "$OUT" && { echo failed; cat "$OUT"; exit 1; }
+files=`bk _find "$HERE/project" -name 'c.*' | wc -l`
+test $files -ne 2 && {
+	echo failed
+	echo "comments weren't saved. Weird."
+	exit 1
+}
+bk guitest citool  >"$OUT" 2>&1 <<'EOF'
+	test_buttonPress "Commit"
+	test_buttonPress "Commit"
+EOF
+test $? -ne 0 && { echo failed; echo "exited $err; expected 0"; exit 1; }
+test -s "$OUT" && { echo failed; cat "$OUT"; exit 1; }
+NEW=`bk -R prs -hd:REV: -r+ ChangeSet`
+test "$NEW" = "$OLD" && {
+	echo failed
+	echo "changeset wasn't created"
+	exit 1
+}
+CMTS=`bk -R prs -hd:C: -r+ ChangeSet`
+test "$CMTS" = "A Gratuitous Change" || {
+	echo failed
+	echo "unexpected comments: $CMTS"
+	exit 1
+}
+echo OK
+
+echo $N "Commit, after saving and restarting with new file............$NL"
+cd "$HERE/project/src"
+echo "this is a new file" > file6
+bk guitest citool >"$OUT" 2>&1 <<'EOF'
+	test_selectFile src/file6
+	test_inputComment "comments for file6"
+	test_selectFile ChangeSet
+	test_inputComment "New file cset"
+	test_buttonPress "Quit" then "Quit but save*"
+EOF
+test $? -ne 0 && { echo failed; echo "exited $err; expected 0"; exit 1; }
+test -s "$OUT" && { echo failed; cat "$OUT"; exit 1; }
+files=`bk _find "$HERE/project" -name 'c.*' | wc -l`
+test $files -ne 2 && {
+	echo failed
+	echo "comments weren't saved. Weird."
+	exit 1
+}
+bk guitest citool  >"$OUT" 2>&1 <<'EOF'
+	test_buttonPress "Commit"
+	test_buttonPress "Commit"
+EOF
+test $? -ne 0 && { echo failed; echo "exited $err; expected 0"; exit 1; }
+test -s "$OUT" && { echo failed; cat "$OUT"; exit 1; }
+CMTS=`bk -R prs -hd:C: -r+ ChangeSet`
+test "$CMTS" = "New file cset" || {
+	echo failed
+	echo "unexpected comments: $CMTS"
+	exit 1
+}
+CMTS=`bk -R prs -hd:C: -r+ src/file6`
+test "$CMTS" = "comments for file6" || {
+	echo failed
+	echo "unexpected comments for new file: $CMTS"
+	exit 1
+}
+echo OK

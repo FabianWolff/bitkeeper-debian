@@ -1,0 +1,1011 @@
+# Copyright 1999-2011,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Because we use tar xmf we don't check for timestamp errors here.
+unset _BK_DEVELOPER
+
+export BK_YEAR2=YES
+export _BK_SHUTUP=YES
+
+echo $N Test import of a plain file .................................$NL
+commercial project
+cd "$HERE"
+mkdir -p import_dir/src
+echo foo > X
+bk undos X > import_dir/src/foo.c
+rm -f X
+touch import_dir/src/boo.c
+( echo plain; echo no ) | bk import import_dir project > import.out 2>&1 || {
+	echo Failed
+	cat "$HERE/import.out"
+	exit 1
+}
+grep -q "Please answer yes or no" import.out && {
+	echo Failed
+	exit 1
+}
+cd "$HERE/project/src"
+bk _test -f SCCS/s.foo.c || fail
+bk get $Q foo.c
+cmp -s foo.c "$HERE/import_dir/src/foo.c"
+bk _test -f SCCS/s.boo.c || fail
+bk get $Q boo.c
+cmp boo.c "$HERE/import_dir/src/boo.c" || fail
+echo OK
+
+echo $N Check prompts to edit files .................................$NL
+cd "$HERE/project"
+bk undo $Q -sfr+
+cd "$HERE"
+bk import -tplain import_dir project \
+    > import.out 2>&1 <<EOF 
+vi
+no
+EOF
+grep -q "Please answer yes or no" import.out || {
+	echo Failed
+	exit 1
+}
+echo OK
+
+echo $N Test import of a patch into a tree with edited BK files .....$NL
+cd "$HERE"
+commercial EDIT
+cat > foo <<EOF
+A
+B
+C
+D
+EOF
+cat > bar <<EOF
+A
+B
+C
+D
+EOF
+bk new $Q foo bar
+bk commit $Q -ywhatever foo
+cd "$HERE"
+tar cf TAR EDIT
+cd EDIT
+bk edit $Q foo bar
+cat >> foo <<EOF
+E
+F
+G
+EOF
+bk diffs -u > BitKeeper/tmp/P
+bk unedit $Q foo
+bk edit $Q foo
+bk import $Q -tpatch BitKeeper/tmp/P . || fail
+echo OK
+
+echo $N Test import of a patch with p0 ..............................$NL
+cd "$HERE"
+rm -rf EDIT
+tar xmf TAR
+cd EDIT
+cat >> BitKeeper/tmp/foo <<EOF
+A
+C
+E
+G
+EOF
+bk get $Q foo
+bk diff -ruN foo BitKeeper/tmp/foo > BitKeeper/tmp/P
+bk import $Q -tpatch -p0 BitKeeper/tmp/P . || fail
+echo OK
+
+echo $N Make sure an import does not commit unrelated deltas ........$NL
+cd "$HERE"
+rm -rf EDIT
+tar xmf TAR
+cd EDIT
+bk edit $Q foo bar
+cat >> foo <<EOF
+E
+F
+G
+EOF
+bk diffs -u > BitKeeper/tmp/P
+bk unedit $Q foo
+echo hi mom >> bar
+bk delta -ywhatever $Q bar
+bk pending > BitKeeper/tmp/pending
+bk import -tpatch BitKeeper/tmp/P . > BitKeeper/tmp/PLOG 2>&1 || {
+	echo Patch failed
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+bk pending > BitKeeper/tmp/pending2
+cmp -s BitKeeper/tmp/pending BitKeeper/tmp/pending2 || {
+	echo failed to leave pending delta
+	diff BitKeeper/tmp/pending BitKeeper/tmp/pending2
+	exit 1
+}
+echo OK
+
+echo $N Test import of a patch into a tree with modified BK files ...$NL
+cd "$HERE"
+rm -rf EDIT
+tar xmf TAR
+cd EDIT
+bk edit $Q foo bar
+cat >> foo <<EOF
+E
+F
+G
+EOF
+bk diffs -u > BitKeeper/tmp/P
+bk unedit $Q foo
+bk edit $Q foo
+echo hi mom >> foo
+cp foo BitKeeper/tmp
+bk import -tpatch BitKeeper/tmp/P . > BitKeeper/tmp/PLOG 2>&1 && {
+	echo Patch should have failed because the file was modified
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+grep -q 'Cannot import to modified file:' BitKeeper/tmp/PLOG || {
+	echo Failed to flag that foo was modified
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+test -w foo || {
+	echo Failed to leave foo writeable
+	exit 1
+}
+cmp -s foo BitKeeper/tmp/foo || {
+	echo failed to leave foo contents
+	diff foo BitKeeper/tmp/foo
+	echo PATCH
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+echo OK
+
+echo $N Make sure a patch creating a file does not overwrite ........$NL
+cd "$HERE/EDIT"
+mkdir a b
+echo 'I am the patch file being imported.' > a/extra
+bk diff -Nur a b > BitKeeper/tmp/P
+rm -rf a b
+echo hi mom > extra
+cp extra BitKeeper/tmp
+bk import -tpatch BitKeeper/tmp/P . > BitKeeper/tmp/PLOG 2>&1 && {
+	echo Patch should have failed because the file exists
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+grep -q 'Cannot import to existing extra file' BitKeeper/tmp/PLOG || {
+	echo Failed to flag that extra is not a BK file
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+test -w extra || {
+	echo Failed to leave extra writeable
+	exit 1
+}
+cmp -s extra BitKeeper/tmp/extra || {
+	echo failed to leave extra contents
+	diff extra BitKeeper/tmp/extra
+	echo PATCH
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+echo OK
+rm -f extra
+bk unedit $Q foo
+
+echo $N Make sure a patch undoes a patch delete when patch fails ....$NL
+# make a patch
+cd "$HERE"
+bk export -tplain -r+ "$HERE/EDIT" "$HERE/A"
+bk export -tplain -r+ "$HERE/EDIT" "$HERE/B"
+chmod +w "$HERE/A/bar"
+cat > "$HERE/A/bar" <<EOF
+1
+2
+3
+4
+EOF
+chmod +w "$HERE/B/bar"
+cat > "$HERE/B/bar" <<EOF
+1
+4
+EOF
+# force a delete event for "foo"
+rm -f "$HERE/B/foo"
+bk diff -Nur A B > "$HERE/patch"
+cd "$HERE/EDIT"
+bk get $Q -r+ -p foo > foo.ref
+bk import $Q -tpatch -R "$HERE/patch" "$HERE/EDIT" \
+    > BitKeeper/tmp/PLOG 2>&1 < /dev/null
+test $? -eq 0 && {
+	echo failed to reject bad patch
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+grep -q 'hunk FAILED -- saving rejects to file bar.rej' BitKeeper/tmp/PLOG || {
+	echo failed to reject bad patch, no hunk FAILED
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+bk get $Q -r+ -p foo > foo.now
+cmp -s foo.now foo.ref || { echo failed; exit 1; }
+rm -f foo.now foo.ref bar.ref
+if [ -f bar ]; then echo failed; exit 1; fi
+if bk _test -f SCCS/p.foo; then echo failed to unlock foo; exit 1; fi
+echo OK
+
+rm -rf "$HERE/A" "$HERE/B" "$HERE/EDIT"/*.rej
+echo $N Make sure we allow a file to be patched multiple times ......$NL
+# make a patch
+cd "$HERE"
+bk export -tplain -r+ "$HERE/EDIT" "$HERE/A"
+bk export -tplain -r+ "$HERE/EDIT" "$HERE/B"
+chmod +w "$HERE/A/bar" "$HERE/B/bar" "$HERE/B/foo"
+echo E >> "$HERE/B/bar"
+bk diff -Nur A B > "$HERE/patch"
+echo E >> "$HERE/A/bar"
+cat >"$HERE/B/bar" <<EOF
+B
+C
+D
+E
+EOF
+bk diff -Nur A B >> "$HERE/patch"
+cd "$HERE/EDIT"
+bk import $Q -tpatch  "$HERE/patch"  "$HERE/EDIT" || fail
+cat > bar.ref <<EOF
+B
+C
+D
+E
+EOF
+bk get $Q bar
+cmp -s bar bar.ref || { echo failed; exit 1; }
+echo OK
+
+echo $N Test import of an email patch ...............................$NL
+cd "$HERE"
+rm -rf EDIT
+tar xmf TAR
+cd EDIT
+bk edit $Q foo bar
+cat >> foo <<EOF
+E
+F
+G
+EOF
+bk diffs -hu > BitKeeper/tmp/P
+bk unedit foo
+cat > BitKeeper/tmp/E <<EOF
+From akushner@bitmover.com  Fri May 25 13:48:55 2001
+Delivery-Date: Fri May 25 10:23:31 2001
+Return-Path: <akushner@bitmover.com>
+Received: from adsl-63-193-121-233.dsl.snfc21.pacbell.net (adsl-63-193-121-233.dsl.snfc21.pacbell.net [63.193.121.233])
+        by bitmover.com (8.8.7/8.8.7) with ESMTP id KAA01840
+        for <lm@bitmover.com>; Fri, 25 May 2001 10:18:34 -0700
+Received: from localhost (localhost [127.0.0.1])
+        by adsl-63-193-121-233.dsl.snfc21.pacbell.net (Postfix) with ESMTP id EA417400E
+        for <lm@bitmover.com>; Fri, 25 May 2001 10:18:34 -0700 (PDT)
+Date: Fri, 25 May 2001 10:18:34 -0700 (PDT)
+From: Aaron Kushner <akushner@bitmover.com>
+X-X-Sender:  <akushner@vermin.dsl.snfc21.pacbell.net>
+To: Larry McVoy <lm@bitmover.com>
+Subject: citool cursor fix
+Message-ID: <Pine.LNX.4.33.0105251015230.3751-100004@vermin.dsl.snfc21.pacbell.net>
+MIME-Version: 1.0
+
+Comment line 1
+Comment line 2
+Comment line 3
+Comment line 4
+EOF
+cat BitKeeper/tmp/P >> BitKeeper/tmp/E
+bk import -temail < BitKeeper/tmp/E > BitKeeper/tmp/PLOG 2>&1 || {
+	echo import failed
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+bk get $Q foo
+grep -q G foo || {
+	echo failed to apply patch
+	cat BitKeeper/tmp/PLOG
+	exit 1
+}
+U=akushner@bitmover.com+`bk getuser -r`
+test "`bk prs -hr+ -nd:P:@:HOST:+:IMPORTER: foo`" = "$U" || {
+	echo did not pick up email address, wanted $U
+	bk prs -r+ -nd':P:@:HOST:+:IMPORTER:' foo
+	exit 1
+}
+test "`bk prs -hr+ -nd:P:@:HOST:+:IMPORTER: ChangeSet`" = "$U" || {
+	echo did not pick up email address, wanted $U
+	bk prs -r+ -nd':P:@:HOST:+:IMPORTER:' ChangeSet
+	exit 1
+}
+bk changes -r+ > C
+grep -q 'citool cursor fix' C || {
+	echo Did not pick up subject line
+	cat C
+	exit 1
+}
+for i in 1 2 3 4
+do	grep -q "Comment line $i" C || {
+		echo did not pick up line $i
+		cat C
+		exit 1
+	}
+done
+echo OK
+
+# XXX - we do not test for links pointing outside the tree
+if [ $PLATFORM != "WIN32" ]
+then
+#----------------------------------------------------
+echo $N Test import of a symbolic link ..............................$NL
+cd "$HERE"
+commercial symlink
+cd "$HERE"
+mkdir -p symlink/src
+echo foo > import_dir/src/foo.c
+touch import_dir/src/boo.c
+cd import_dir/src
+ln -s foo.c link
+cd "$HERE"
+trap 'echo some command failed to exit 0; cat "$HERE/import.out"' 0
+set -e
+( echo plain; echo no ) | bk import import_dir symlink > import.out 2>&1
+cd "$HERE/symlink/src"
+bk _test -f SCCS/s.foo.c
+bk get $Q foo.c
+cmp -s foo.c "$HERE/import_dir/src/foo.c"
+bk _test -f SCCS/s.boo.c
+bk get $Q boo.c
+cmp -s boo.c "$HERE/import_dir/src/boo.c"
+bk _test -f SCCS/s.link
+bk get $Q link
+cmp -s link "$HERE/import_dir/src/foo.c"
+echo OK
+
+echo $N Test import of a patch which modifies a file ................$NL
+cd "$HERE"
+mkdir -p import_new/src
+echo "foo-new" > X
+bk undos X >  "$HERE/import_new/src/foo.c"
+rm import_dir/src/link
+bk diff -Nru import_dir import_new > test_patch || : # legitimately exits 1
+( echo patch; echo no ) | bk import test_patch project > import.out 2>&1
+cd "$HERE/project/src"
+bk get $Q foo.c
+bk diff -u foo.c "$HERE/import_new/src/foo.c"
+cmp -s foo.c "$HERE/import_new/src/foo.c"
+U=`bk prs -r+ -h -d:P: foo.c`
+if [ X$U != Xpatch -a X$U != Xbk ] 
+then
+	echo "failed: bad user: $U"
+	exit 1
+fi
+echo OK
+
+echo $N Test import of a patch file which deletes a file ............$NL
+cd "$HERE/project"
+bk export ../export
+cd ..
+cp -rp export export2
+rm -f export2/src/foo.c
+bk diff -Nru export export2 > test_patch || : # legitimately exits 1
+( echo patch; echo no ) | bk import test_patch project > import.out 2>&1
+cd project
+if bk _test -f src/SCCS/s.foo
+then	echo Failed to remove file
+	exit 1
+fi
+bk sfiles BitKeeper/deleted | grep -q "s.foo.c~"
+if [ $? -ne 0 ]
+then	echo Can not find deleted file
+	exit 1
+fi
+echo OK
+
+#----------------------------------------------------
+fi	# Win32
+
+echo $N Verify checkout:get with plain import .......................$NL
+cd "$HERE"
+commercial projc
+bk edit $Q BitKeeper/etc/config
+echo "checkout:get!" >> BitKeeper/etc/config
+cd "$HERE"
+mkdir -p import1/src
+echo foo > import1/src/foo.c
+bk import -tplain $Q -f import1 projc || fail
+test -f projc/src/foo.c || fail
+echo OK
+
+echo $N Verify checkout:get with patch import .......................$NL
+cd "$HERE"
+cp -rp import1 import2
+echo bar >> import2/src/foo.c
+echo baz > import2/src/baz.c
+bk diff -Nur import1 import2 > patch || : # legitimately exits 1
+bk clean $Q projc/src/foo.c || fail
+bk import -tpatch $Q -f patch projc || fail
+test -f projc/src/foo.c || fail
+test -f projc/src/baz.c || fail
+rm -rf import1 import2 projc
+echo OK
+
+echo $N Test import of an sccs file .................................$NL
+cd "$HERE"
+echo "description: BitKeeper Test repository" > c
+echo "email: nobody@nowhere.bk" >> c
+echo "eoln: unix" >> c
+echo "keyword: sccs" >> c
+echo "checkout: get" >> c
+bk setup -f -cc co_get || { echo "Setup failed!"; exit 1; }
+# These are for later tests
+bk clone $Q co_get nonconform
+bk clone $Q co_get metachar
+bk clone $Q co_get linked
+mkdir -p import_sccs/src
+cd "$HERE/import_sccs/src"
+echo bar > bar.c
+bk ci $Q -i -l bar.c
+echo "bar-new" > bar.c
+bk ci $Q -y bar.c
+cd "$HERE"
+( echo SCCS; echo no ) | bk import -k -v import_sccs co_get > import.out 2>&1 || {
+	echo Failed
+	cat import.out
+	exit 1
+}
+cd "$HERE/co_get/src"
+test -f bar.c || fail
+bk get $Q bar.c "$HERE/import_sccs/src/bar.c"
+bk undos bar.c > X
+bk undos "$HERE/import_sccs/src/bar.c" > Y
+cmp -s X Y
+echo OK
+
+if [ $PLATFORM != "WIN32" ]
+then
+echo $N Test import of an symlinked sccs directory ..................$NL
+cd "$HERE"
+# Simulate problem had by customer doing SCCS import
+# Need to import directories, one linking the SCCS dir of the other
+# also need the gfiles checked out, that was causes sfiles_first()
+# to cd into the customers SCCS repos.
+# Finally, there can be no sfiles in the bk _find list, just gfiles and 
+# symlinks of SCCS dirs.  This bypasses a non-sccs file stripper in
+# import.sh:validate_SCCS()
+cp -r import_sccs import_sccs_linked
+cd import_sccs_linked/src
+test -d SCCS || { echo fix blobbed test; exit 1; }
+rm -fr SCCS
+ln -s ../../import_sccs/src/SCCS SCCS
+bk get $Q
+test -f bar.c || fail
+cd "$HERE"
+# auto-exit-on-fail is active, so turn off for a command
+set +e
+bk import -ftSCCS import_sccs_linked linked > import.out 2>&1 && {
+	echo Failed
+	exit 1
+}
+set -e
+grep -q "No SCCS files found to import" import.out || {
+	echo failed
+	exit 1
+}
+echo OK
+fi
+
+echo $N Test import of non conforming SCCS files ....................$NL
+cd "$HERE/import_sccs/src"
+# test fakes, removed delta, backward time, and duplicate revisions
+touch u
+cat - <<EOF > INIT
+D 1.1 70/01/01 00:00:00 a@bk
+c Fake 1
+EOF
+bk delta $Q -i -IINIT u
+bk edit $Q u
+cat - <<EOF > INIT
+D 1.2 70/01/01 00:00:00 b@bk
+c Fake 2
+EOF
+bk delta $Q -IINIT u
+bk edit $Q u
+cat - <<EOF > INIT
+D 1.3 80/01/01 00:00:02 removed@bk
+c Removed
+EOF
+bk delta $Q -IINIT u
+bk rmdel -r+ u
+bk edit $Q u
+cat - <<EOF > INIT
+D 1.3 80/01/01 00:00:10 realuser@bk
+c Real
+EOF
+bk delta $Q -IINIT u
+bk edit $Q u
+cat - <<EOF > INIT
+D 1.4 80/01/01 00:00:05 another@bk
+c Backwards in time
+EOF
+bk delta $Q -IINIT u
+bk edit $Q u
+cat - <<EOF > INIT
+D 1.5 80/01/01 00:00:20 realuser@bk
+c First 1.5
+EOF
+bk delta $Q -IINIT u
+bk edit $Q u
+cat - <<EOF > INIT
+D 1.5 80/01/01 00:00:30 realuser@bk
+c Another using 1.5
+EOF
+bk delta $Q -IINIT u
+# Want to have INIT_SHUTUP passed in, but no hooks, so just divert stderr
+bk prs -r.. -ahnd':DT: :I: :D: :T: :FUDGE: :P:' u > PRE 2> WARN || {
+	echo Fail
+	echo Error message:
+	cat WARN
+	exit 1
+}
+cat - <<EOF > WANTPRE
+D 1.5 80/01/01 00:00:30 0 realuser
+D 1.5 80/01/01 00:00:20 0 realuser
+D 1.4 80/01/01 00:00:05 0 another
+D 1.3 80/01/01 00:00:10 0 realuser
+R 1.3 80/01/01 00:00:02 0 removed
+D 1.2 70/01/01 00:00:00 0 b
+D 1.1 70/01/01 00:00:00 0 a
+EOF
+cmp WANTPRE PRE || {
+	echo FAIL
+	echo The PRE u test failed with this difference in desired and actual:
+	diff -u WANTPRE PRE
+	exit 1
+}
+# Collapse : 1.1 is parent of 1.1.1.1 and 1.2 and 1.1.1.1 is merge of 1.2
+# Want it to become a straight line: all on trunk
+touch x
+cat - <<EOF > INIT
+D 1.1 80/01/01 00:00:00 bk@bk
+c base
+EOF
+bk delta $Q -i -IINIT x
+bk edit $Q x
+cat - <<EOF > INIT
+D 1.1.1.1 80/01/01 00:00:01 bk@bk
+c branch
+EOF
+bk delta $Q -IINIT x
+bk _get $Q -e -r1.1.1.1 -M1.1 x
+cat - <<EOF > INIT
+D 1.2 80/01/01 00:00:02 bk@bk
+c trunk
+EOF
+bk delta $Q -IINIT x
+bk prs -r.. -hnd':DT: :I: :D: :T: :FUDGE: :P:' x > PRE
+cat - <<EOF > WANTPRE
+D 1.2 80/01/01 00:00:02 0 bk
+D 1.1.1.1 80/01/01 00:00:01 0 bk
+D 1.1 80/01/01 00:00:00 0 bk
+EOF
+cmp WANTPRE PRE || {
+	echo FAIL
+	echo The PRE x test failed with this difference in desired and actual:
+	diff WANTPRE PRE
+	exit 1
+}
+# branch earlier than trunk: should swap so branch becomes trunk etc.
+touch z
+cat - <<EOF > INIT
+D 1.1 80/01/01 00:00:00 bk@bk
+c base
+EOF
+bk delta $Q -i -IINIT z
+bk edit $Q z
+cat - <<EOF > INIT
+D 1.1.1.1 80/01/01 00:00:01 bk@bk
+c branch younger than trunk
+EOF
+bk delta $Q -IINIT z
+bk _get $Q -e -r1.1 z
+cat - <<EOF > INIT
+D 1.2 80/01/01 00:00:02 bk@bk
+c trunk older than branch
+EOF
+bk delta $Q -IINIT z
+bk _get $Q -e -r1.2 -M1.1.1.1 z
+cat - <<EOF > INIT
+D 1.3 80/01/01 00:00:03 bk@bk
+c merge on trunk
+EOF
+bk delta $Q -IINIT z
+bk prs -r.. -hnd':DT: :I: :D: :T: :FUDGE: :P:' z > PRE
+cat - <<EOF > WANTPRE
+D 1.3 80/01/01 00:00:03 0 bk
+D 1.2 80/01/01 00:00:02 0 bk
+D 1.1.1.1 80/01/01 00:00:01 0 bk
+D 1.1 80/01/01 00:00:00 0 bk
+EOF
+cmp WANTPRE PRE || {
+	echo FAIL
+	echo The PRE z test failed with this difference in desired and actual:
+	diff WANTPRE PRE
+	exit 1
+}
+# import
+cd "$HERE"
+echo src/SCCS/s.u > flist
+echo src/SCCS/s.x >> flist
+echo src/SCCS/s.z >> flist
+bk import -v -tSCCS -lflist -f import_sccs nonconform  > import.out 2>&1 || {
+	echo Failed
+	cat import.out
+	exit 1
+}
+cd nonconform/src
+bk prs -r.. -hnd':DT: :I: :D: :T: :FUDGE: :P:' u > POST
+cat - <<EOF > WANTPOST
+D 1.6 80/01/01 00:00:30 0 realuser
+D 1.5 80/01/01 00:00:20 0 realuser
+D 1.4 80/01/01 00:00:05 6 another
+D 1.3 80/01/01 00:00:10 0 realuser
+D 1.2 80/01/01 00:00:09 0 realuser
+D 1.1 80/01/01 00:00:08 0 realuser
+D 1.0 80/01/01 00:00:07 0 realuser
+EOF
+cmp WANTPOST POST || {
+	echo FAIL
+	echo The POST u test failed with this difference in desired and actual:
+	diff WANTPOST POST
+	exit 1
+}
+bk prs -r.. -hnd':DT: :I: :D: :T: :FUDGE: :P:' x > POST
+cat - <<EOF > WANTPOST
+D 1.3 80/01/01 00:00:02 0 bk
+D 1.2 80/01/01 00:00:01 0 bk
+D 1.1 80/01/01 00:00:00 0 bk
+D 1.0 79/12/31 23:59:59 0 bk
+EOF
+cmp WANTPOST POST || {
+	echo FAIL
+	echo The POST x test failed with this difference in desired and actual:
+	diff WANTPOST POST
+	exit 1
+}
+bk prs -r.. -hnd':DT: :I: :D: :T: :FUDGE: :P:' z > POST
+cat - <<EOF > WANTPOST
+D 1.3 80/01/01 00:00:03 0 bk
+D 1.1.1.1 80/01/01 00:00:02 0 bk
+D 1.2 80/01/01 00:00:01 0 bk
+D 1.1 80/01/01 00:00:00 0 bk
+D 1.0 79/12/31 23:59:59 0 bk
+EOF
+cmp WANTPOST POST || {
+	echo FAIL
+	cat POST
+	echo The POST z test failed with this difference in desired and actual:
+	diff WANTPOST POST
+	exit 1
+}
+echo OK
+
+echo $N Import SCCS file under checkout:edit ........................$NL
+cd "$HERE"
+echo hi > co_edit_foo
+bk new $Q co_edit_foo
+bk edit $Q co_edit_foo
+echo again >> co_edit_foo
+bk delta $Q -yagain co_edit_foo
+# checkout: edit repo
+echo "description: BitKeeper Test repository" > c
+echo "email: nobody@nowhere.bk" >> c
+echo "eoln: unix" >> c
+echo "keyword: sccs" >> c
+echo "checkout: edit" >> c
+bk setup -f -cc co_edit || { echo "Setup failed!"; exit 1; }
+bk _mkdir co_edit/SCCS
+bk _cp SCCS/s.co_edit_foo co_edit/SCCS/s.co_edit_foo
+cd co_edit
+bk sccs2bk -cx co_edit_foo >OUT 2>ERR || {
+	echo FAILED
+	echo STDOUT
+	cat OUT
+	echo
+	echo STDERR
+	cat ERR
+	exit 1
+}
+T_OLD=`bk prs -r+ -hnd:UTC: "$HERE/co_edit_foo"`
+T_NEW=`bk prs -r+ -hnd:UTC-FUDGE: co_edit_foo`
+FT_NEW=`bk prs -r+ -hnd:UTC: co_edit_foo`
+test "$T_OLD" = "$T_NEW" || fail "$T_OLD not matching $T_NEW"
+echo "$BK_USER/`bk getuser -r`@`bk gethost`|co_edit_foo|$FT_NEW|00741" > WANT
+bk prs -r+ -hnd:KEY: co_edit_foo > GOT
+checkfiles WANT GOT
+echo OK
+
+echo $N Import SCCS binary file with null in 1.2 ....................$NL
+echo hi > co_edit_bar
+bk new $Q -b co_edit_bar
+perl -e 'printf "a line with a \000 in it\n"' >> co_edit_bar
+bk delta $Q -ywithnull co_edit_bar
+bk clean co_edit_bar
+bk _unbk --I-know-this-destroys-my-bk-repo co_edit_bar
+bk sccs2bk -cx co_edit_bar >OUT 2>ERR || {
+	echo FAILED
+	echo STDOUT
+	cat OUT
+	echo
+	echo STDERR
+	cat ERR
+	exit 1
+}
+echo OK
+
+if [ $PLATFORM != "WIN32" ]
+then #----------------------------------------------------------------
+
+echo $N Test import of an sccs file with meta char in file name .....$NL
+cd "$HERE"
+mkdir -p import_sccs2/src
+cd "$HERE/import_sccs2/src"
+echo star > '*.c'
+bk ci $Q -i -l './*.c'
+echo "bar-new" > './*.c'
+bk ci $Q -y '*.c'
+cd "$HERE"
+( echo SCCS; echo no ) | bk import -k import_sccs2 metachar > import.out 2>&1 || {
+	echo Failed
+	cat import.out
+	exit 1
+}
+cd "$HERE/metachar/src"
+bk get $Q './*.c' "$HERE/import_sccs2/src/"'*.c'
+cmp -s '*.c' "$HERE/import_sccs2/src/"'*.c'
+echo OK
+fi   #----------------------------------------------------------------
+
+unset BK_CONFIG
+
+set +e
+trap '' 0
+
+cd "$HERE"
+rm -rf project A B
+echo $N Create initial repository ...................................$NL
+commercial project
+ls > LS
+bk new $Q LS
+bk commit $Q -ywhatever 
+echo OK
+
+echo $N Import a patch into a tree with versioned .rej files ........$NL
+cd "$HERE"
+commercial rej
+ls > foo.rej
+cat > data <<EOF
+A
+B
+C
+D
+EOF
+bk new $Q foo.rej data
+bk commit $Q -ywah
+cat > "$HERE/patch" <<EOF
+bk diff -Nru a/data b/data
+--- a/data   Sun Mar  3 21:37:06 2002
++++ b/data   Sun Mar  3 21:37:17 2002
+@@ -1,4 +1,4 @@
+ A
+ B
+-C
++XYZ
+ D
+EOF
+bk import -tpatch "$HERE/patch" . < /dev/null > "$HERE/OUT" 2>&1
+cat > WANT <<EOF
+A
+B
+XYZ
+D
+EOF
+bk co $Q data
+cmpfiles WANT data
+echo OK
+
+echo $N Make sure that patch rejects are still caught ...............$NL
+cat > "$HERE/patch" <<EOF
+bk diff -Nru a/data b/data
+--- a/data   Sun Mar  3 21:37:06 2002
++++ b/data   Sun Mar  3 21:37:17 2002
+@@ -1,4 +1,4 @@
+ A
+ B
+-C
++This should fail!
+ D
+EOF
+bk import -R -tpatch "$HERE/patch" . < /dev/null > "$HERE/OUT" 2>&1 && {
+	echo failed to exit with an error
+	cat "$HERE/OUT"
+	exit 1
+}
+bk cat data | grep -q 'This should fail!' && {
+	echo failed to reject patch
+	cat "$HERE/OUT"
+	exit 1
+}
+echo OK
+
+echo $N Catch read only destinations ................................$NL
+cd "$HERE"
+commercial dest
+chmod 555 "$HERE/dest"
+mkdir "$HERE/data"
+cd "$HERE/data"
+for i in 1 2 3 4 5 6
+do	echo hi mom > data$i
+done
+bk import -tplain "$HERE/data" "$HERE/dest" >OUT 2>&1 && {
+	echo failed to exit with an error
+	cat OUT
+	exit 1
+}
+grep -q 'not writable' OUT || {
+	echo failed to warn about write permission
+	cat OUT
+	exit 1
+}
+chmod 777 "$HERE/dest"
+echo OK
+
+test -d $TESTDATA/lmbench && {
+echo $N Make sure that traditional RCS imports works ................$NL
+cd "$HERE"
+commercial import-lmbench
+bk import $Q -ftRCS $TESTDATA/lmbench . || fail
+bk _test -f results/SCCS/s.Makefile || fail
+echo OK
+}
+
+# Note: There is no "execute bit" in win32 File system
+if [ $PLATFORM != "WIN32" ]
+then #-----------------------------------------------------------------
+test -d $TESTDATA/import-RCS+x && {
+echo $N Make import w/ undos does not lose execute bits .............$NL
+cd "$HERE"
+commercial import-RCS+x
+bk import -quftRCS $TESTDATA/import-RCS+x . || fail
+bk get -q 
+test -x ixadm.cgi || {
+	echo lost execute bits on ixadm.cgi
+	exit 1
+}
+test -x ixupdate.pl || {
+	echo lost execute bits on ixupdate.pl
+	exit 1
+}
+echo OK
+
+echo $N Make sure RCS/CVS imports set RCS flag ......................$NL
+bk flags ixupdate.pl > F
+grep -q RCS F || {
+	echo bad flags
+	cat F
+	exit 1
+}
+echo OK
+}
+fi #-------------------------------------------------------------------
+
+test -d $TESTDATA/import-CVS.1 && {
+
+echo $N Make sure that import handles Attic files ...................$NL
+cd "$HERE"
+commercial import-CVS.1
+bk import -quftCVS $TESTDATA/import-CVS.1 . || fail
+bk get -q
+P1=`bk sfiles BitKeeper/deleted | grep "s.pkginfo~"`
+bk _test -f "$P1" || {
+	echo failed to get pkginfo from the Attic
+	exit 1
+}
+P1=`echo $P1 | sed 's,SCCS/s.,,'`
+P2=`bk prs -hnd:DPN: -r+ $P1`
+test "$P1" != "$P2" && {
+	echo pathname not stored correctly
+	echo $P1 vs $P2
+	exit 1
+}
+test -d Attic && {
+	echo Failed to remove Attic
+	exit 1
+}
+test -f COPYING || {
+	echo failed to import COPYING
+	exit 1
+}
+grep -q 'GNU General Public License' COPYING && {
+	echo the Attic one overwrote the existing one
+	cat COPYING
+	exit 1
+}
+echo OK
+
+echo $N Make sure that import -tCVS works with checkout:get .........$NL
+cd "$HERE"
+commercial import-CVS.2
+bk edit $Q BitKeeper/etc/config
+echo "checkout:get!" >> BitKeeper/etc/config
+bk import -quftCVS $TESTDATA/import-CVS.1 . || fail
+test -f COPYING || {
+	echo failed to get COPYING after import
+	exit 1
+}
+echo OK
+
+}
+
+test -d $TESTDATA/import_data && {
+echo $N Multiple parallel imports ...................................$NL
+cd "$HERE"
+cp -rp $TESTDATA/import_data import_data
+commercial import
+cd ..
+test `bk gethost -r` = freebsd.bitkeeper.com && ulimit -u 128
+test `bk gethost -r` = openbsd.bitkeeper.com && ulimit -p 128
+LIST="1 2 3 4 5 6"
+for i in $LIST
+do	cp -rp import import$i
+done
+mv import import0
+for i in 0 $LIST
+do	( cd import$i && bk import -tplain -f $Q "$HERE/import_data" . ) &
+done; wait
+cd import0
+bk sfiles | sort > ../LIST
+cd ..
+for i in $LIST
+do	cd import$i
+	bk sfiles | sort > ../MINE
+	bk -r prs -r1.2.. -hnd:KEY: >> ../KEYS
+	bk -Ur prs -r1.0,1.1 -hnd:KEY: >> ../KEYS
+	cmp -s ../LIST ../MINE || {
+		echo different lists of files in import$i
+		diff ../LIST ../MINE
+		exit 1
+	}
+	cd ..
+done
+ALL=`wc -l < KEYS`
+UNIQ=`sort -u < KEYS | wc -l`
+test $ALL -eq $UNIQ || {
+	echo failed to create all uniq keys
+	exit 1
+}
+echo OK
+}
+
+# In win, the failed test above means this returns 1 even though there is
+# no error, so set it to 0
+exit 0

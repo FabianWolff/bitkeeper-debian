@@ -1,0 +1,143 @@
+# Copyright 2013,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo parallel:2 >> .bk/config
+
+echo $N Reproduce marked delta is missing problem ...................$NL
+nested prod
+cd "$HERE"
+bk clone $Q prod prod-clone
+cd prod-clone
+rm -rf gdb
+cd gcc
+touch foo
+bk new $Q foo
+bk commit -S -d $Q -y'stuff'
+cd ..
+bk commit -S -d $Q -y'stuff' 2>OUT && fail -f OUT
+bk populate $Q gdb
+# the check in the commit should have cleaned up the
+# cset mark in the gcc component
+bk repocheck >OUT 2>&1 || fail -f OUT
+echo OK
+
+echo $N Test turning off parallel in repocheck works ................$NL
+# Hack: using that parallel does not print = and serial does
+for j in 0 1
+do	bk repocheck -j$j > OUT 2>&1
+	grep -q = OUT || fail -f OUT
+	bk --config=parallel:$j repocheck > OUT 2>&1
+	grep -q = OUT || fail -f OUT
+done
+# Test assumption that parallel prints no =
+bk repocheck -j2 > OUT 2>&1
+grep -q = OUT && fail -f OUT
+echo OK
+
+# White box test to test other return/cleanup paths
+echo $N Mess up HERE file, and try commit ...........................$NL
+rm -rf gdb
+echo "BOGUS" > BitKeeper/log/HERE-new
+cat BitKeeper/log/HERE >> BitKeeper/log/HERE-new
+mv BitKeeper/log/HERE BitKeeper/log/HERE-sav
+mv BitKeeper/log/HERE-new BitKeeper/log/HERE
+cd gcc
+bk edit $Q foo
+echo foo >> foo
+bk ci $Q -y'added foo' foo
+bk commit -S -d $Q -y'added foo'
+cd ..
+bk commit -S -d $Q -y'added foo' 2>OUT && fail -f OUT
+# the check in the commit should have cleaned up the
+# cset mark in the gcc component but we still need
+# to fix HERE file or else populate will not work
+mv BitKeeper/log/HERE-sav BitKeeper/log/HERE
+bk populate $Q gdb 2>OUT || fail -f OUT
+HOWMANY=`bk repocheck -S 2>&1 | perl -ne '$x++; sub END {print "$x\n"}'`
+test "$HOWMANY" -eq 1 || fail Expected 1, got "$HOWMANY" components
+bk repocheck >OUT 2>&1 || fail -f OUT
+echo OK
+
+echo $N Check a component without a product fails a check ...........$NL
+cd "$HERE"
+cp -r prod/gcc gcc-comp-no-prod
+# hack to cut out all the bad format messages
+cp prod/BitKeeper/log/features gcc-comp-no-prod/BitKeeper/log/features
+cd gcc-comp-no-prod
+bk -r check 2>GOT && fail -f GOT expected to fail
+echo "Component gcc not inside a product" > WANT
+cmpfiles WANT GOT
+bk -r check 2>GOT && fail -f GOT expected to fail
+cmpfiles WANT GOT
+echo OK
+
+echo $N Manually populate component and try commit ..................$NL
+cd "$HERE"
+# compat so the s.ChangeSet file can be hacked in
+bk clone $Q --compat -sPRODUCT prod prod-clone2
+cd prod-clone2
+bk populate $Q gcc
+# Manually populate
+cp -r ../prod/gdb .
+cd gcc
+touch bar
+bk new $Q bar
+bk commit -S -d $Q -y'added bar'
+cd ..
+bk commit -S -d $Q -y'added bar' 2>OUT && fail -f OUT
+# Manually unpopulate
+rm -rf gdb
+# the check in the commit should have cleaned up the
+# cset mark in the gcc component
+bk repocheck >OUT 2>&1 || fail -f OUT
+echo OK
+
+echo $N Have a two-tipped component cset file in the prod RESYNC ....$NL
+cd "$HERE"/prod-clone
+bk commit $Q -ymake-cset
+cd ../prod-clone2
+bk edit $Q gcc/bar
+bk delta $Q -fyempty gcc/bar
+bk commit $Q -y'local work'
+bk pull $Q -R ../prod-clone
+cd gcc
+bk _cp RESYNC/SCCS/s.ChangeSet twoTip
+bk resolve $Q -S
+bk _cp SCCS/s.ChangeSet oneTip
+bk _cp twoTip SCCS/s.ChangeSet
+bk _cp twoTip ../RESYNC/gcc/SCCS/s.ChangeSet
+cd ..
+bk resolve $Q 2> GOT && fail -f GOT
+cat <<EOF > WANT
+check: component cset file not single tipped: 1.3 not under 1.1.1.2
+{bk} {-?BK_NO_REPO_LOCK=YES} {-r} {check} {-acR} failed.  Resolve not even started.
+resolve: RESYNC directory left intact.
+====================================================
+EOF
+cmpfiles WANT GOT
+cd gcc
+bk _cp oneTip SCCS/s.ChangeSet
+bk _cp oneTip ../RESYNC/gcc/SCCS/s.ChangeSet
+rm BitKeeper/log/TIP
+cd ..
+bk resolve $Q || fail
+echo OK
+
+echo $N Check for duplicates ........................................$NL
+cd ../prod-clone
+bk repocheck $Q --check-opts=--check-dup || fail
+bk cset $Q -i+ || fail
+bk repocheck $Q --check-opts=--check-dup 2> ERR && fail -f ERR
+grep -q 'duplicate include' ERR || fail -f ERR
+echo OK

@@ -1,0 +1,31 @@
+.so ../bk-macros
+.TH "bk cp" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk cp \- create a copy of a file preserving its revision history
+.SH SYNOPSIS
+.B bk cp 
+.ARG oldfile
+.ARG newfile
+.SH DESCRIPTION
+.LP
+Use
+.B bk cp
+to copy an existing file and its revision history to a new file.
+The new file will have a changed root identifier so that it is managed
+as a new object under \*(BK control.
+There is no linkage between 
+.ARG oldfile
+and
+.ARG newfile ,
+i.e., updates to
+.ARG oldfile
+will
+.B not
+be applied to 
+.ARG newfile
+as well.
+.SH "SEE ALSO"
+.SA mv
+.\" help://copy
+.SH CATEGORY
+.B File

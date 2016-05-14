@@ -1,0 +1,715 @@
+# Copyright 2008-2011,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Theory of operation: start out with a clean single repository
+# and chop it up a number of times into a nested collection and
+# see if it has all the properities we want.
+# 
+#   src - a b c
+#   doc - a b c
+# 
+# With the understanding that src and doc will be components,
+# do some moves between src and doc and src and repo root.
+# Then make src and doc a component.
+
+set -e
+
+echo $N Try to partition a product ..................................$NL
+nested nest
+cd ..
+echo gdb > nest.map
+bk partition $Q -Cnest.map nest nest.part 2> ERR && fail -f ERR
+grep -q "partition: only works on standalone repositories" ERR || fail -f ERR
+echo OK
+
+echo $N Try to partition a component ................................$NL
+bk partition $Q -Cnest.map nest/gcc nest.comp 2> ERR && fail -f ERR
+grep -q "clone of a component is not allowed" ERR || fail -f ERR
+test -d nest.comp && fail
+# done with nest
+rm -fr nest
+echo OK
+
+echo $N Create initial repository ...................................$NL
+commercial seed
+cd ..
+bk clone $Q seed project
+cd project
+mkdir src doc BitKeeper/www
+# BitKeeper/* get mapped to product -- should it be a component?
+touch BitKeeper/www/index.html
+bk new $Q BitKeeper/www/index.html
+cd src
+mkdir -p deep/prune/path/starts/here
+touch a b c del deep/prune/path/starts/here/a
+bk new $Q a b c del deep/prune/path/starts/here/a
+bk commit $Q -yone
+bk mv a ../a
+bk mv ../a a
+# Make a cset which only exists in the orig comp of a xcomp move
+bk commit $Q --tag=POOF -ytwo
+bk rm del
+bk commit $Q --tag=DELTAG -ydel
+DELKEY=`bk changes -kr+`
+cd ../doc
+# Make an non-cset delta on a file doc/collide-dk, to collide with comp
+touch a c
+bk new $Q a c
+bk mv c collide-dk
+bk mv collide-dk c
+# Make an non-cset rootkey on a file doc/collide-dk, to collide with comp
+touch collide-rk
+bk new $Q collide-rk
+bk mv collide-rk d
+# binary data
+echo bam > b
+bk new $Q -b b
+cd ..
+bk commit $Q --tag=ROOT -ybaseline
+bk mv src/a a
+touch src/a
+bk new $Q src/a
+bk commit $Q -ymoveit
+# two files each originally src/a, each moved out of component
+# should be not deleted in simple
+bk mv src/a doc/fromsrc
+touch doc/tip
+bk new $Q doc/tip
+bk commit $Q -ydoc-tip
+bk tag $Q TIP
+cd ..
+fresh_commercial comp1
+cd ..
+fresh_commercial comp2
+cd ..
+cat <<EOF > mapfile.noattach
+# The source component
+src
+
+# The doc component
+doc
+
+# The deep component
+src/deep/prune/path
+src/deep/prune/path/starts/here
+EOF
+cp mapfile.noattach mapfile
+cat <<EOF >> mapfile
+
+# Attach these when done
+path/to/attachfoo|$HERE/comp1
+path/to/newbar|$HERE/comp2
+EOF
+# collide with file paths in cset file
+cat <<EOF > badmap.cset
+src/a
+EOF
+# collide with file paths in cset file in a tipkey
+cat <<EOF > badmap.tip
+a/b/c
+EOF
+# collide with file paths inbetween csets, so only in file.
+cat <<EOF > badmap.file
+doc
+doc/collide-dk/on/down/the/road
+EOF
+# collide with rootkey paths inbetween csets, so only in file.
+cat <<EOF > badmap.rootkey
+doc
+doc/collide-rk/on/down/the/road
+EOF
+echo OK
+
+echo $N Test out command line .......................................$NL
+bk partition 2> ERR && fail
+grep -q "partition: must list source and destination" ERR || fail -f ERR
+bk partition a b 2> ERR && fail
+grep -q "partition: Must use -C or -@" ERR || fail -f ERR
+bk partition -Cnotthere a b 2> ERR && fail
+grep -q "partition: (-C) No notthere file found" ERR || fail -f ERR
+bk partition -q -Cmapfile notthere b 2> ERR && fail
+grep -q "clone: can't find repository" ERR || fail -f ERR
+bk partition -Cmapfile project project 2> ERR && fail
+grep -q "partition: destination 'project' exists" ERR || fail -f ERR
+# collide file namespace with component namespace in different ways
+bk partition $Q -Cbadmap.cset project copy-bad.cset 2> ERR && fail -f ERR
+grep -q "csetprune: path collides with component" ERR || fail -f ERR
+bk partition $Q -Cbadmap.tip project copy-bad.tip 2> ERR && fail -f ERR
+grep -q "csetprune: path collides with component" ERR || fail -f ERR
+bk partition $Q -Cbadmap.file project copy-bad.file 2> ERR && fail -f ERR
+grep -q "delta 1.2 matches a component path 'doc/collide-dk'" ERR || fail -f ERR
+bk partition $Q -Cbadmap.rootkey project copy-bad.rootkey 2> ERR && fail -f ERR
+grep -q "path collides with component" ERR || fail -f ERR
+echo OK
+
+echo $N Run a comparison test to see no environmental influences ....$NL
+umask 000
+BK_CONFIG="eoln: native!; compression: gzip! " \
+    bk partition $Q -Cmapfile.noattach project config.one || fail
+umask 077
+BK_CONFIG="eoln: unix!; keyword:sccs, rcs, expand1!; compress: none! " \
+    bk partition $Q -@config.one project config.two || fail
+bk diff -ar -ux'log' config.one config.two > DIFF || fail -f DIFF diff failed
+test -s DIFF && fail -f DIFF
+umask 000
+echo OK
+
+echo $N Run a simple test ...........................................$NL
+bk partition $Q -Cmapfile project copy || fail
+cd copy
+TOP=`bk changes -r+ -nd:DS:`
+COMP=`bk --cd=doc changes -S -r+ -nd:DS:`
+test "$TOP" -gt "$COMP" || {
+	echo failed partition $TOP $COMP
+	exit 1
+}
+bk _test -f BitKeeper/www/SCCS/s.index.html || fail no web in product
+bk _test -f doc/BitKeeper/www/SCCS/s.index.html && fail web in comp
+cd BitKeeper/etc
+bk get $Q -S config
+test -s config || echo empty config
+cd ../../src/BitKeeper/etc
+bk get $Q -S config
+test -s config && echo non-empty config
+# Check idache
+cd "$HERE"/copy/src/deep/prune/path/starts/here
+bk log -r+ -nd:ROOTKEY: ChangeSet > "$HERE"/dnrk
+# See that there are no deleted, because all moved were pruned
+cd "$HERE"/copy/src
+bk sfiles BitKeeper/deleted > deleted
+test -s deleted && fail -f deleted "no files should be deleted"
+cd "$HERE"/project
+bk gfiles BitKeeper/etc > ../ETCFILES.project
+cd "$HERE"/copy
+test -d "BitKeeper/tmp/partition.d" && fail work area left
+bk _getkv BitKeeper/log/partition COMPPRUNE > ../ETCFILES.comp
+echo >> ../ETCFILES.comp
+cmpfiles ../ETCFILES.comp ../ETCFILES.project
+test "`bk changes -rDELTAG -nd:SORTKEY:`" != "$DELKEY" || fail
+cat ../dnrk | bk key2path > GOT
+echo src/deep/prune/path/starts/here/ChangeSet > WANT
+checkfiles WANT GOT
+bk comps -h > GOT
+cat <<'EOF' > WANT
+./doc
+./path/to/attachfoo
+./path/to/newbar
+./src
+./src/deep/prune/path/starts/here
+EOF
+checkfiles WANT GOT
+# .bk/partition/<orig md5key>/<random>
+DBKPART="`sed -ne '2p' "$HERE/project/BitKeeper/log/ROOTKEY"`"
+RAND="`head -1 BitKeeper/log/ROOTKEY | sed 's/.*|//'`"
+DBKPART="$BK_DOTBK/partition/$DBKPART/$RAND"
+test -f "$DBKPART" || fail no dotbk partition "$DBKPART"
+cd "$HERE"
+echo OK
+
+echo $N See that ID matches ATTACH_ID for native partition ..........$NL
+cd "$HERE/copy/src"
+bk changes -Snd'$if(:ID:=:ATTACHED_ID:){:I:}' > GOT
+cat <<EOF > WANT
+1.2
+1.1
+1.0
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N See that ID different from ATTACH_ID for attaches ...........$NL
+cd "$HERE/copy/path/to/attachfoo"
+bk changes -Snd'$if(:ID:=:ATTACHED_ID:){:I:}' > GOT
+test -s GOT && fail -f GOT
+cd "$HERE"
+echo OK
+
+echo $N See that bk names removes empty directories .................$NL
+test -d copy/src/src && {
+	echo failed
+	find copy/src/src
+	exit 1
+}
+echo OK
+
+echo $N See that tags only happen in the product repo ...............$NL
+cd copy/src
+test 0 -eq `bk changes -Sr+ -nd'$if(:TAG:){tagged}' | wc -l` || {
+	echo failed tags in component
+	exit 1
+}
+cd ../doc
+test 0 -eq `bk changes -Sr+ -nd'$if(:TAG:){tagged}' | wc -l` || {
+	echo failed tags in component
+	exit 1
+}
+cd ..
+test 3 -eq `bk changes -Snd'$if(:TAG:){tagged}' | wc -l` || {
+	echo failed wrong number of tags in product
+	exit 1
+}
+cd ..
+echo OK
+
+echo $N Test that files are checked out according to checkout .......$NL
+test -f copy/src/b && {
+	echo failed
+	echo file checked out when none expected
+	exit 1
+}
+rm -fr copy
+BK_CONFIG="checkout: get! " \
+    bk partition $Q -Cmapfile project copy || fail
+test -f copy/src/b || {
+	echo failed
+	echo no file checked out when one expected
+	exit 1
+}
+echo OK
+
+echo $N Again, but not using BK_CONFIG ..............................$NL
+rm -fr copy
+test -f "$BK_DOTBK"/config && fail fix test to save and restore config
+echo checkout: get >> "$BK_DOTBK"/config
+bk partition $Q -Cmapfile project copy || fail
+rm "$BK_DOTBK"/config
+test -f copy/src/b || {
+	echo failed
+	echo no file checked out when one expected
+	exit 1
+}
+echo OK
+
+echo $N Test bisect warning about partition..........................$NL
+cd "$HERE"
+bk partition $Q -Cmapfile project bisect-test
+cd bisect-test
+cat <<EOF > bisect.sh
+#!/bin/sh
+exit 0
+EOF
+chmod +x bisect.sh
+bk bisect --search --cmd=bisect.sh > OUT 2> ERR && fail
+grep -q "Warning: this is a partitioned tree" ERR || fail -f ERR no warning
+grep -q "where the script returns zero" ERR || fail -f ERR wrong error
+cd ..
+echo OK
+
+echo $N Test rollback generating an error ...........................$NL
+bk partition $Q -Cmapfile project xcomps || fail
+cd xcomps
+bk undo $Q -sfaROOT 2> WARN && fail -f WARN
+grep -q "undo is rolling back before the partition" WARN || fail -f WARN
+echo OK
+
+echo $N Test again with override and see src/a is not there .........$NL
+_BK_UNDO_OK=1 bk undo $Q -sfaROOT 2> WARN || fail
+bk _test -f src/SCCS/s.a && {
+	echo there
+	exit 1
+}
+grep -q "undo is rolling back before the partition" WARN || fail -f WARN
+cd ..
+echo OK
+
+echo $N Add a cset, run again, pull from first partition ............$NL
+cd project
+bk edit $Q a
+bk delta $Q -fynull a
+bk commit $Q -ya
+cd ..
+bk partition $Q -@copy project copy2 || fail
+cd copy2
+bk pull $Q ../copy 2> ERR || {
+   echo push failed
+   cat ERR
+   exit 1
+}
+echo OK
+
+echo $N Move a file between components and pull again -- fail .......$NL
+cd "$HERE/project"
+bk tag $Q ROLLBACK
+bk mv src/b doc/was-src-b
+bk commit $Q -ya
+cd ..
+bk partition $Q -@copy project copymv 2>ERR && fail -f ERR
+grep -q "csetprune: At least one file moved between comp" ERR || fail -f ERR
+echo OK
+
+echo $N Move a file back and pull again -- this works ...............$NL
+cd "$HERE/project"
+bk mv doc/was-src-b src/back-in-src
+bk commit $Q -yget-it-back
+cd ..
+bk partition $Q -@copy project copymv2
+# put it back
+cd project
+echo OK
+
+echo $N Try to undo to illegal state -- fails .......................$NL
+cd ../copymv2
+bk undo -qfr+ 2> ERR && fail -f ERR
+grep -q "illegal to leave file in the BitKeeper/moved dir" ERR || fail -f ERR
+echo OK
+
+echo $N Try to undo to illegal state with secret override -- works ..$NL
+# still puts out error message; just not an error
+_BK_UNDO_OK=1 bk undo $Q -fr+ 2> ERR || fail
+grep -q "illegal to leave file in the BitKeeper/moved dir" ERR || fail -f ERR
+test `bk _find src/BitKeeper/moved -type f | wc -l` -gt 0 || {
+	echo failed
+	bk _find src/BitKeeper/moved -type f
+	fail expected at least 1 file
+}
+echo OK
+
+echo $N Try to undo further back to a legal state -- works ..........$NL
+bk undo $Q -sfaROLLBACK || fail
+echo OK
+
+echo $N Delete as a component .......................................$NL
+cd "$HERE"
+cp mapfile mapfile.delete
+echo BitKeeper/delcomp >> mapfile.delete
+bk partition $Q -Cmapfile.delete project copy.delete || fail
+cd copy.delete || fail
+test "`bk changes -rDELTAG -nd:SORTKEY:`" = "$DELKEY" || fail
+cd BitKeeper/delcomp || fail
+test "`bk pwd -P`" = BitKeeper/delcomp || fail
+echo OK
+
+echo $N Do partition with -j4 .......................................$NL
+cd "$HERE"
+BK_LIMITPATH= bk partition $Q -j4 -@copy project copymv3 2>ERR || fail -f ERR
+cat ERR | grep -v 'partition: no GNU make found, -j4 ignored' || true
+cd copymv3
+bk pull $Q
+echo OK
+
+echo $N Remove empty components .....................................$NL
+cd "$HERE"
+echo empty/repo > emptymap
+bk partition $Q -Cemptymap project empty || fail
+test -d empty/empty && {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Make a diamond graph moving a file into comp on trunk .......$NL
+# This core dumped without accompanying fix
+# The trick is to have a file born out of the component (in root)
+# then move to the component, then have a newer cset change the
+# file in its original out of component place.  In filterWeave()
+# this will test parent and merge and both will be false.
+cd "$HERE"
+commercial trunk
+touch foo
+bk new $Q foo
+bk commit $Q -yfoo
+bk clone $Q . ../branch
+mkdir src
+bk mv foo src
+bk commit $Q -yfoo
+cd ../branch
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q -yfoo
+bk pull $Q
+cd ..
+echo src > map
+bk partition $Q -Cmap branch parted
+echo OK
+
+echo $N Verify different command line map and gone lead to diff .....$NL
+cd "$HERE"
+mv project project.orig
+bk clone $Q seed project
+cd project
+cat <<EOF > x
+#!/bin/sh
+exit 0
+EOF
+chmod +x x
+mkdir -p BitKeeper/triggers
+mv x BitKeeper/triggers/post-incoming
+bk new $Q BitKeeper/triggers/post-incoming
+mkdir src doc
+cd src
+touch newfile mvfile
+bk new $Q newfile mvfile
+cd ../doc
+touch newfile
+bk new $Q newfile
+cd ..
+bk commit $Q -ynewfiles
+bk mv src/mvfile mvfile
+bk commit $Q -ymvfile
+cd ..
+echo src > map
+bk partition $Q -Cmap project one
+echo doc >> map
+bk partition $Q -Cmap project two
+cd one
+test -d BitKeeper/triggers \
+    -a -d src/BitKeeper -a ! -d src/BitKeeper/triggers || fail triggers
+bk pull -q ../two 2>ERR && fail -f ERR
+grep -q "You are trying to pull from an unrelated package" ERR || fail -f ERR
+bk changes -qL -ndx ../two 2> ERR && fail -f ERR
+grep -q "trying to synchronize with an unrelated package" ERR || fail -f ERR
+echo OK
+
+echo $N Verify partition -@ fails if something unknown in kv ........$NL
+cd "$HERE"
+cp one/BitKeeper/log/partition backup
+echo foo | bk _setkv one/BitKeeper/log/partition WACKO
+bk partition -q -@one project copy.ref 2> GOT && fail
+echo "partition: Unknown feature 'WACKO'" > WANT
+cmpfiles WANT GOT
+cp backup one/BitKeeper/log/partition
+echo OK
+
+echo $N Verify partition state sticks and does not propagate ........$NL
+cd "$HERE"
+bk clone $Q one refer
+bk partition $Q -@refer project one.ref 2>ERR && fail
+grep -q "failed to fetch data from refer: no partition data" ERR || fail -f ERR
+cp one/BitKeeper/log/partition refer/BitKeeper/log/partition
+bk partition $Q -@refer project one.ref
+cd one.ref
+bk pull $Q ../one
+echo OK
+
+echo $N Verify cross component moves are blocked ....................$NL
+cd "$HERE"
+bk clone $Q project xcompmove
+cd xcompmove
+bk mv mvfile src/mvfile
+bk commit $Q -y"xcomp move"
+cd ..
+bk partition $Q -@one xcompmove xcompmove.ref 2>ERR && fail
+grep -q 'csetprune: At least one file moved between comp' ERR || fail -f ERR
+echo OK
+
+echo $N Demostrate why allowing move lowers support .................$NL
+bk partition $Q -Cmapfile.noattach project.orig nested.ref
+bk clone $Q -rROOT project.orig standalone.xcomp
+# Now, do some work in a file -- just an in place edit
+cd standalone.xcomp/src
+bk edit $Q a
+echo just doing my job > a
+bk delta $Q -y'another quality day of work' a
+cd ..
+bk commit $Q -y'another quality day of work'
+# oh, I need to pull this into the nested.  Let's see, it says pull
+# in the pivot repo .. okay:
+bk pull $Q
+# Then I'm ready to go!  Wonderful!
+cd ..
+bk partition $Q -@nested.ref standalone.xcomp nested.xcomp
+echo OK
+
+echo $N Verify simple deletes are not blocked after partition .......$NL
+cd "$HERE"
+bk clone $Q project delete
+cd delete
+bk rm mvfile
+bk commit $Q -y"simple delete"
+cd ..
+bk partition $Q -@one delete deleted.ref
+echo OK
+
+echo $N Verify new gone with reference makes new cset ...............$NL
+cd "$HERE"
+bk clone $Q project missing
+cd missing
+bk _cp SCCS/s.mvfile save
+bk edit $Q mvfile
+echo new content > mvfile
+bk delta $Q -ynew-stuff mvfile
+bk commit $Q -ymvfile
+bk _rm src/SCCS/s.newfile
+bk _cp save SCCS/s.mvfile
+bk -r check -aggg | bk gone -q -
+bk commit $Q -ygone
+cd ..
+BK_USER=wallawalla BK_HOST=zippy.moc \
+    bk partition $Q -@refer missing missing.ref || fail
+cd missing.ref
+DATA=`bk changes -r+ -nd':USER:@:HOST:'`
+test "wallawalla@zippy.moc" = "$DATA" || fail Got "$DATA"
+bk push $Q ../one || fail
+bk parent -l > GOT
+echo "file://$HERE/refer" > WANT
+checkfiles WANT GOT
+bk pull $Q || fail
+echo OK
+
+echo $N Verify partition must contain baseline cset .................$NL
+cd "$HERE"
+bk clone $Q -r1.2 project small
+bk partition $Q -@one small borker 2> ERR && fail -f ERR
+grep -q "csetprune: Revision must be present in repository" ERR || fail -f ERR
+echo OK
+
+echo $N Test name mapping of file names in other components .........$NL
+cd "$HERE"
+commercial normal 
+mkdir -p dir1/dir2
+touch dir1/dir2/foo~bar
+bk new $Q dir1/dir2/foo~bar
+bk mv dir1/dir2/foo~bar src/file
+bk commit $Q -yfile
+echo src > comps
+bk partition $Q -Ccomps . ../nested-movedtest
+cd ../nested-movedtest/src
+GOT=`bk log -r1.0 -nd:DPN: file`
+WANT="BitKeeper/moved/dir1/dir2/foo~bar"
+test "$WANT" = "$GOT" || {
+	echo WANT: $WANT
+	echo GOT: $GOT
+	exit 1
+}
+echo OK
+
+echo $N Same thing, version 1 .......................................$NL
+cd "$HERE/normal"
+bk partition $Q --version=1 -Ccomps . ../nested-movedtest.v1
+cd ../nested-movedtest.v1/src
+bk rm -f file
+# write a test and run it
+# We know it is the deleted path with deleted replaced by moved
+bk -rBitKeeper/deleted \
+    log -r1.0 -nd'test ":DPN:" = "BitKeeper/moved/:GFILE:" || fail -f X' > X
+. ./X
+echo OK
+
+echo $N Test attributes file mappings ...............................$NL
+cd "$HERE"/project
+ROOTKEY=`bk prs -r+ -hnd:ROOTKEY: ChangeSet`
+# Test ID in component
+cd "$HERE"/copy/src
+IDKEY=`bk changes -qr1.1 -nd:ATTR_ID:`
+test "$ROOTKEY" = "$IDKEY" || fail "$ROOTKEY" not same as "$IDKEY"
+# Test ID and HERE in product
+cd ..
+IDKEY=`bk changes -qr1.1 -nd:ATTR_ID:`
+test "$ROOTKEY" = "$IDKEY" || fail "$ROOTKEY" not same as "$IDKEY"
+echo all > WANT
+# note .. no -n as I want to get the original file without extra newline
+bk changes -qr1.1 -d:ATTR_HERE: > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N No core dump when PRUNEVER is not set .......................$NL
+cd "$HERE"
+bk partition $Q -Cmapfile --version=1 project copy.v1
+grep -q PRUNEVER copy.v1/BitKeeper/log/partition && fail
+bk partition $Q -@copy.v1 project copy.v2 || fail
+echo OK
+
+echo $N Demonstrate a name collision using version 1 ................$NL
+cd "$HERE"
+commercial import.sa
+# random bits same
+BK_RANDOM=123456789abced0f
+export BK_RANDOM
+# lifted from t.timestamps
+DTZ21="98/09/22 16:23:31+00:00"
+mkdir a b
+touch a/foo b/foo
+BK_DATE_TIME_ZONE=$DTZ21 bk new $Q a/foo b/foo
+bk mv a/foo c/a/foo
+bk mv b/foo c/b/foo
+bk commit $Q -y'a whole lot of foo'
+echo c > comps
+bk partition $Q --version=1 -Ccomps . ../import.nested 2> ERR && fail -f ERR
+grep -q "cset changes same rootkey twice" ERR || fail -f ERR
+rm -fr ../import.nested
+echo OK
+
+echo $N Show that it is now fixed ...................................$NL
+bk partition $Q -Ccomps . ../import.nested
+echo OK
+
+echo $N Partition creates a poly component - but skip poly db .......$NL
+cd "$HERE"
+commercial polyA
+bk clone $Q . ../polyB
+mkdir src
+touch src/foo
+bk new $Q src/foo
+bk commit $Q -f
+cd ../polyB
+mkdir src
+touch src/bar
+bk new $Q src/bar
+bk commit $Q -f
+bk pull $Q || fail
+cd ..
+echo src > comps
+bk partition $Q -Ccomps polyB poly-nested || fail
+echo OK
+
+echo $N Verify things work ..........................................$NL
+cd "$HERE"
+# We can undo (past the partition point) and not have poly mess it up.
+_BK_UNDO_OK=1 bk clone $Q -r1.1.1.1 poly-nested pn-one 2> ERR || fail -f ERR
+_BK_UNDO_OK=1 bk clone $Q -r1.2 poly-nested pn-two 2> ERR || fail -f ERR
+# list items in a cset which should show poly
+cd poly-nested
+bk changes -Vr1.1.1.1,1.2 -nd':GFILE:|:REV:' > GOT
+cat <<EOF > WANT
+ChangeSet|1.1.1.1
+src/ChangeSet|1.1.1.1
+src/ChangeSet|1.1
+src/ChangeSet|1.0
+ChangeSet|1.2
+src/ChangeSet|1.2
+src/ChangeSet|1.1
+src/ChangeSet|1.0
+EOF
+cmpfiles WANT GOT
+# Get a list of csets containing poly item: 1.1
+cd src
+bk r2c -r1.1 ChangeSet > GOT
+echo 1.1.1.1,1.2 > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Show deletes staying in components ..........................$NL
+cd "$HERE"
+commercial mono
+mkdir comp
+touch prod comp/comp
+bk new $Q prod comp/comp
+bk commit $Q -f
+touch always-deleted
+bk new $Q always-deleted
+bk rm prod comp/comp always-deleted
+bk commit $Q -f
+echo comp > complist
+bk partition $Q -Ccomplist --keep-deleted . ../nested-with-del-in-comp
+cd ../nested-with-del-in-comp
+test `bk sfiles BitKeeper/deleted | wc -l` -eq 1 || fail prod count wrong
+test `bk sfiles comp/BitKeeper/deleted | wc -l` -eq 1 || fail comp count wrong
+echo OK
+
+echo $N Show deletes staying in components works through ref repo ...$NL
+cd "$HERE"
+bk partition $Q -@nested-with-del-in-comp mono nested-keepdel-ref || fail
+cd nested-keepdel-ref
+bk changes $Q -LR ../nested-with-del-in-comp || fail
+echo OK

@@ -1,0 +1,79 @@
+# Copyright 2001,2006,2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Create a changeset file that has two lines, each of which have
+# a different tag on the tip as well
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo foo > foo
+bk new $Q foo
+bk commit $Q -yCset
+bk tag $Q LINUX_2.4.0
+echo OK
+cores
+echo $N Clone the tree and add a cset in each, with tags ............$NL
+cd "$HERE"
+bk clone $Q project tags
+for i in project tags
+do	cd "$HERE"/$i
+	echo bar > $i
+	bk new $Q $i
+	bk commit $Q -yCset
+	bk tag $Q $i
+done
+echo OK
+
+echo $N Pull and make sure it automerged the tag graph ..............$NL
+cd "$HERE/tags"
+bk pull $Q
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS8 6 l' || {
+	echo expected serials 8 and 6 to be merged and a tag leaf
+	exit 1
+}
+echo OK
+
+echo $N Add some csets in the child but no tag ......................$NL
+for i in 1 2 
+do	echo foo > $i
+	bk new $Q $i
+	bk commit $Q -y$i
+done
+#bk tag $Q 'after merge'
+bk admin -hhh || fail
+echo OK
+
+echo $N Add a cset in the parent and add a tag ......................$NL
+cd "$HERE/project"
+echo foo > parent
+bk new $Q parent
+bk commit $Q -yparent
+bk tag $Q parent
+bk admin -hhh || fail
+echo OK
+
+echo $N Pull and make sure it automerged the tag graph ..............$NL
+cd "$HERE/tags"
+bk pull $Q || fail
+bk admin -hhh || fail
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS14 9 l' || {
+	echo expected serials 14 and 9 to be merged and a tag leaf
+	bk _scat SCCS/s.ChangeSet | grep '^.cS'
+	exit 1
+}
+echo OK
+

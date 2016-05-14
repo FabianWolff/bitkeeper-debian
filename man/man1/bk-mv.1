@@ -1,0 +1,73 @@
+.so ../bk-macros
+.TH "bk mv" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME 
+bk mv \- rename file[s]
+.SH SYNOPSIS
+.B bk mv [\-f]
+.ARG "source-file-or-dir"
+.FILES
+.ARG "dest-file-or-dir"
+.SH DESCRIPTION
+.LP
+To rename a file/directory from
+.ARG A
+to
+.ARG B
+do this:
+.DS
+$ bk mv A B
+.DE
+.ft R
+The
+.B bk mv
+command will rename the checked out file (if any) as well as the
+revision control file.  Edited files are also renamed and then re-edited,
+preserving any changes made but not yet checked in.
+The rename
+will appear as an additional change to the file when you commit the
+next changeset.
+.LP
+Renames propagate just like content changes,
+i.e., they happen automatically when you pull changes into your 
+repository from another repository unless you have also renamed the file.
+In that case, the resolver will prompt you to choose a name.
+.LP
+If the last argument is an existing directory,
+.B bk mv
+moves all listed files into that directory.
+Otherwise, if only two files are given, it renames the first as the
+second.  It is an error if more than two files are listed and the last
+argument is not a directory.
+The intent is that
+.B bk mv
+behaves like the traditional \*[UN]
+.B mv
+command, except that it knows about the additional
+\*[BK] files and records the rename event.
+.SH NOTES
+.LP
+.B bk mv
+will refuse to move \*[BK] metafiles without the 
+.B \-f
+option (use of which is not recommended).
+.LP
+If both the
+.ARG A
+and
+.ARG B
+arguments are directories,
+.B bk mv
+will check the repository consistency.  If this check fails the move
+operation will not continue.
+.SH SEE ALSO
+.SA commit
+.SA names
+.SA pull
+.SA push
+.SA rm
+.SA rmdir
+.SH CATEGORY
+.B Common
+.br
+.B File
+.\" help://mvdir

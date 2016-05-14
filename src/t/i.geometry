@@ -1,0 +1,172 @@
+# Copyright 2006 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+# 'unset' doesn't work on Windows
+unset _BK_GEOM
+
+echo $N Create test data ............................................$NL
+commercial project
+touch foo
+bk new $Q foo
+echo OK
+
+echo $N Revtool 400x400 upper left ..................................$NL
+x=50
+_BK_GEOM=400x400+$x+$x bk revtool foo
+echo OK
+
+echo $N CsetTool 400x400 upper left..................................$NL
+_BK_GEOM=400x400+$x+$x bk csettool
+echo OK
+
+echo $N Revtool 400x400 upper right..................................$NL
+_BK_GEOM=400x400-$x+$x bk revtool foo
+echo OK
+
+echo $N CsetTool 400x400 upper right.................................$NL
+_BK_GEOM=400x400-$x+$x bk csettool
+echo OK
+
+echo $N Revtool 400x400 lower left ..................................$NL
+_BK_GEOM=400x400+$x-$x bk revtool foo
+echo OK
+
+echo $N CsetTool 400x400 lower left..................................$NL
+_BK_GEOM=400x400+$x-$x bk csettool
+echo OK
+
+echo $N Revtool 400x400 lower right..................................$NL
+_BK_GEOM=400x400-$x-$x bk revtool foo
+echo OK
+
+echo $N CsetTool 400x400 lower right.................................$NL
+_BK_GEOM=400x400-$x-$x bk csettool
+echo OK
+
+echo $N Revtool 400x400 location not specified ......................$NL
+_BK_GEOM=400x400 bk revtool foo
+echo OK
+
+echo $N CsetTool 400x400 location not specified......................$NL
+_BK_GEOM=400x400 bk csettool
+echo OK
+
+echo $N Revtool default size upper left .............................$NL
+x=50
+_BK_GEOM=+$x+$x bk revtool foo
+echo OK
+
+echo $N Revtool default size upper right.............................$NL
+_BK_GEOM=-$x+$x bk revtool foo
+echo OK
+
+echo $N Revtool default size lower left .............................$NL
+_BK_GEOM=+$x-$x bk revtool foo
+echo OK
+
+echo $N Revtool default size lower right.............................$NL
+_BK_GEOM=-$x-$x bk revtool foo
+echo OK
+
+echo $N Revtool default size, location not specified ................$NL
+unset _BK_GEOM
+rm -f "`bk dotbk`/"*.rc
+bk revtool foo
+echo OK
+
+echo $N Move it off screen and quit .................................$NL
+_BK_GEOM=400x400+$x+$x bk revtool foo
+echo OK
+
+echo $N Did it snap back on screen? .................................$NL
+bk revtool foo
+echo OK
+
+echo $N Revtool should be visible....................................$NL
+_BK_GEOM=+7000+7000 bk revtool
+echo OK
+
+echo $N Revtool no size, upper left..................................$NL
+x=50
+_BK_GEOM=+$x+$x bk revtool foo
+echo OK
+
+echo $N Revtool no size, upper right.................................$NL
+_BK_GEOM=-$x+$x bk revtool foo
+echo OK
+
+echo $N Revtool no size, lower left..................................$NL
+_BK_GEOM=+$x-$x bk revtool foo
+echo OK
+
+echo $N Revtool no size, lower right.................................$NL
+_BK_GEOM=-$x-$x bk revtool foo
+echo OK
+
+echo $N Revtool no position, 400x400.................................$NL
+_BK_GEOM=400x400 bk revtool foo
+echo OK
+
+echo $N Revtool offscreen upper left, no size........................$NL
+_BK_GEOM=+-7000+-7000 bk revtool foo
+echo OK
+
+echo $N Revtool offscreen lower right, no size.......................$NL
+_BK_GEOM=--7000--7000 bk revtool foo
+echo OK
+
+echo $N CsetTool slightly offscreen..................................$NL
+_BK_GEOM=+-1+-1 bk csettool
+echo OK
+
+echo $N CsetTool slightly offscreen on the right.....................$NL
+_BK_GEOM=--1--1 bk csettool
+echo OK
+
+echo $N Revtool offscreen --7000--7000...............................$NL
+_BK_GEOM=--7000--7000 bk revtool foo
+echo OK
+
+echo $N Move off the screen to the right ............................$NL
+_BK_GEOM=400x400-0+0 bk revtool foo
+echo OK
+
+echo $N Make sure it doesn\'t walk down...............................$NL
+bk revtool foo
+echo OK
+
+echo $N Make sure it doesn\'t walk down...............................$NL
+bk revtool foo
+echo OK
+
+echo $N Make sure it doesn\'t walk down...............................$NL
+bk revtool foo
+echo OK
+
+echo $N Resize it....................................................$NL
+bk revtool foo
+echo OK
+
+echo $N Did it remember its size\?....................................$NL
+bk revtool foo
+echo OK
+
+echo $N Resize it \(yes, again\).......................................$NL
+bk csettool
+echo OK
+
+echo $N Did it remember its size\?....................................$NL
+bk csettool
+echo OK

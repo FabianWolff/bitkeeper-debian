@@ -1,0 +1,79 @@
+# Copyright 1999-2000,2003-2005,2009,2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create a file with two branches .............................$NL
+echo base > foo.c
+bk new $Q foo.c
+if bk _test ! -f SCCS/s.foo.c; then echo failed to create history; exit 1; fi
+echo OK
+echo $N Strip out the trunk and renumber ............................$NL
+bk get -e $Q foo.c
+echo first > foo.c
+bk delta $Q -y1.2 foo.c
+bk get -e -r1.1 $Q foo.c
+echo second > foo.c
+bk delta $Q -y1.1.1.1 foo.c
+bk _cp SCCS/s.foo.c sfoo
+bk stripdel $Q -r1.2 foo.c
+bk renumber $Q foo.c
+bk _scat SCCS/s.foo.c | grep -q "^.d D 1.1.1.1"
+if [ $? -eq 0 ]; then echo Failed to remove delta table entry.; exit 1; fi
+bk _scat SCCS/s.foo.c | grep -q "^.d D 1.2"
+if [ $? -ne 0 ]; then echo Failed to move delta table entry to 1.2; exit 1; fi
+echo OK
+# Do many tests based on copy
+echo $N Restore initial and move revision numbers then fix ..........$NL
+bk _cp sfoo SCCS/s.foo.c
+bk get $Q foo.c
+bk _rm SCCS/s.foo.c
+rm -f top
+mv foo.c top
+perl -p -e 's/ D 1\.1\.1\.1 / D 1.5 /;' -e 's/ D 1\.2 / D 1.1.1.1 /;'  \
+	-e 's/ D 1\.5 / D 1.2 /' sfoo | bk undos > X
+bk _mv X SCCS/s.foo.c 
+bk admin $Q -z foo.c
+# XXX: this is using ATT mode, so SCCS dir exists
+cmp -s sfoo SCCS/s.foo.c
+if [ $? -eq 0 ]; then echo Failed to alter revions; exit 1; fi
+bk renumber $Q foo.c
+bk _cp SCCS/s.foo.c cp
+bk renumber $Q foo.c
+bk _cp SCCS/s.foo.c cp2
+cmp -s cp cp2
+if [ $? -ne 0 ]; then echo Failed idempotent 1; exit 1; fi
+bk get $Q foo.c
+cmp -s top foo.c
+if [ $? -eq 0 ]; then echo Failed to get new top; exit 1; fi
+bk admin $Q -fd foo.c	# turn off default branch reassignment
+bk _cp SCCS/s.foo.c cp
+cmp -s sfoo cp
+if [ $? -ne 0 ]; then echo Failed to fix numbers; exit 1; fi
+bk _cp SCCS/s.foo.c cp
+bk renumber $Q foo.c
+bk _cp SCCS/s.foo.c cp2
+cmp -s cp cp2
+if [ $? -ne 0 ]; then echo Failed idempotent 2; exit 1; fi
+echo OK
+# Do many tests based on copy
+echo $N Restore initial and move release numbers, then fix ..........$NL
+bk _cp sfoo SCCS/s.foo.c
+bk get $Q foo.c
+bk _rm SCCS/s.foo.c
+rm -f top
+mv foo.c top
+perl -p -e 's/ D 1\.1\.1\.1 / D 2.0.4.1 /; s/ D 1\.2 / D 2.0.7.1 /'  \
+	sfoo | bk undos > X
+bk _mv X SCCS/s.foo.c
+bk admin $Q -z foo.c || fail
+echo OK

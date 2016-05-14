@@ -1,0 +1,55 @@
+.so ../bk-macros
+.\" XXX - isn't this better left to the user guide?  Doesn't seem like a
+.\" a manual thing.  Or at least Howto-backup.1
+.TH "bk backups" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk backups \- guide to doing backups of \*(BK repositories
+.SH DESCRIPTION
+.LP
+BitKeeper repositories with no pending files can be safely backed up
+with any backup tool, such as tar or dump, etc.  To see if there are
+any pending files, run
+.DS
+bk pending
+.DE
+No output indicates no pending files.
+.LP
+.SH WARNING
+.LP
+If the repository has pending files (files which are checked in but not
+yet committed to a changeset), then saving and restoring the repository
+should be done carefully.  Problems can arise if the repository is
+restored multiple times and the same pending deltas are committed 
+to different changesets.  In other words, the following will cause
+problems:
+.DS
+cd REPO
+bk edit foo.c
+echo "I am a pending delta not yet committed" >> foo.c
+bk ci -yPENDING foo.c
+cd ..
+cp -r REPO COPY
+cd REPO
+bk commit
+cd ../COPY
+bk commit
+.DE
+.LP
+Why is it a problem?  Because the two commits both created a changeset,
+and the changesets are different.  This means that the same delta to
+foo.c now belongs to two different changesets.  It is not fatal when
+this happens, but it may make it difficult to roll backwards to this
+point.
+.SH SUGGESTION
+.LP
+If what you want is a copy of the repository, use bk clone to copy
+it, not tar, cp, or some other file by file copy.
+.SH "SEE ALSO"
+.SA pending
+.SA gfiles
+.SA status
+.\" help://backup
+.SH CATEGORY
+.B Overview
+.br
+.B Repository

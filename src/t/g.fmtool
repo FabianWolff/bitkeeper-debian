@@ -1,0 +1,138 @@
+# Copyright 2001,2004-2007,2012 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+OUT="$HERE/out"
+RC="`bk dotbk`/fm.rc"
+
+echo $N Create some data ............................................$NL
+commercial project
+cd "$HERE/project/BitKeeper/etc"
+mkdir "$HERE/project/src"
+cd "$HERE/project/src"
+echo "Common to both" > left
+echo "Common to both" > right
+echo "This is the right file" >> right
+echo "THis is the left file"  >> left
+bk ci $Q -i left right || exit 1
+echo OK
+
+echo $N Simple startup and exit......................................$NL
+bk get $Q left right 
+bk guitest fmtool left right merge >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+    test_die 99
+EOF
+err=$?
+if [ -s "$OUT" ] ; then echo failed; cat "$OUT"; exit 1 ; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo OK
+
+echo $N Create dotbk/fm.rc ..........................................$NL
+test -f "$RC" && rm -f "$RC"
+bk guitest fmtool left right merge >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+    test_die 99
+EOF
+test -f "$RC" || { echo "failed"; exit 1; }
+echo "OK"
+
+echo $N Use Left.....................................................$NL
+bk guitest fmtool left right merge >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress "Use Left"
+    test_buttonPress Done
+    test_die 99
+EOF
+err=$?
+if [ -s "$OUT" ] ; then echo failed; cat "$OUT"; exit 1 ; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+# should we ignore whitespace? At present, fmtool on windows creates
+# lines terminated by \r\n even if the original files were terminated
+# with \n.
+bk diff $Q -w merge left >"$OUT" 2>&1
+if [ $? -ne 0 ]; then echo failed; cat "$OUT"; exit 1; fi
+echo OK
+
+echo $N Use Right....................................................$NL
+bk guitest fmtool left right merge >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress "Use Right"
+    test_buttonPress Done
+    test_die 99
+EOF
+err=$?
+if [ -s "$OUT" ] ; then echo failed; cat "$OUT"; exit 1 ; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+# should we ignore whitespace? At present, fmtool on windows creates
+# lines terminated by \r\n even if the original files were terminated
+# with \n.
+bk diff $Q -w merge right >"$OUT" 2>&1
+if [ $? -ne 0 ]; then echo failed; cat "$OUT"; exit 1; fi
+echo OK
+
+echo $N Simple undo..................................................$NL
+bk guitest fmtool left right merge >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress "Use Left"
+    test_buttonPress "Undo"
+    test_buttonPress "Use Right"
+    test_buttonPress Done
+    test_die 99
+EOF
+err=$?
+if [ -s "$OUT" ] ; then echo failed; cat "$OUT"; exit 1 ; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+# should we ignore whitespace? At present, fmtool on windows creates
+# lines terminated by \r\n even if the original files were terminated
+# with \n.
+bk diff $Q -w merge right >"$OUT" 2>&1
+if [ $? -ne 0 ]; then echo failed; cat "$OUT"; exit 1; fi
+echo OK
+
+echo $N Test that the merge window is editable ......................$NL
+bk guitest fmtool left right merge >"$OUT" 2>&1 <<'EOF'
+	test_inputStringInMerge "This is a test"
+
+	set data [test_getMergeText]
+	if {![string match "*This is a test*" $data]} {
+		puts "Test string did not appear in merge text."
+		exit 1
+	}
+	test_buttonPress "Quit"
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo OK
+
+echo $N Make sure we do not put space markers in files...............$NL
+echo "#define TEST" > file1
+echo "#   define TEST" > WANT
+bk guitest fmtool file1 WANT GOT >"$OUT" 2>&1 <<'EOF'
+	test_buttonPress "Use Right"
+	test_buttonPress Done
+	test_die 99
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Make sure the space marker in user data makes it through.....$NL
+printf "#define\342\220\243TEST\n" > file1
+printf "#   define\342\220\243TEST\n" > WANT
+bk guitest fmtool file1 WANT GOT >"$OUT" 2>&1 <<'EOF'
+	test_buttonPress "Use Right"
+	test_buttonPress Done
+	test_die 99
+EOF
+cmpfiles WANT GOT
+echo OK

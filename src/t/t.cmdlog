@@ -1,0 +1,138 @@
+# Copyright 2001-2006,2012-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+echo OK
+
+echo $N Check that bk cmdlog works with a missing repo_log ..........$NL
+cd "$HERE/project/BitKeeper/log"
+test -f repo_log && fail repo_log exists
+bk cmdlog -a > $$ 2>$$.err
+test -s $$.err && {
+	echo "Failed"
+	rm -f $$.err
+	exit 1
+}
+rm -f $$.err
+echo OK
+
+echo $N See if cmdlog handles junk lines ............................$NL
+cd "$HERE/project/BitKeeper/log"
+chmod +w cmd_log
+echo "me 1 @@@@ : junk" >> cmd_log
+OUT=`bk cmdlog -a | tr -dc '@'`
+test "$OUT" && {
+	echo "Failed"
+	exit 1
+}
+echo OK
+
+echo $N See if cmdlog handles junk log versions .....................$NL
+cd "$HERE/project/BitKeeper/log"
+echo "/me 1 @@@@ : junk" >> cmd_log
+OUT=`bk cmdlog -a | grep "cannot display"`
+test "$OUT" || { 
+	echo "Failed"
+	exit 1
+}
+echo OK
+
+echo $N Verify the pull gets logged in both cmd_log and repo_log ....$NL
+cd "$HERE"
+bk clone $Q project copy
+cd copy
+bk pull $Q || fail
+tail -1 BitKeeper/log/repo_log | grep -q ": pull" || {
+	echo pull was not logged in repo_log
+	tail -1 BitKeeper/log/repo_log
+	exit 1
+}
+# Pull will be the second last line because of the
+# read unlock
+tail -2 BitKeeper/log/cmd_log | grep -q ": pull" || {
+	echo pull was not logged in cmd_log
+	tail -1 BitKeeper/log/cmd_log
+	exit 1
+}
+echo OK
+
+echo $N Verify that repoids are saved in cmdlogs on pull ............$NL
+cd "$HERE/project"
+project_repoid="`bk identity -r`"
+cd "$HERE/copy"
+copy_repoid="`bk identity -r`"
+tail -1 BitKeeper/log/repo_log | grep -q rmts="$project_repoid" || {
+	echo wrong repid in log 1
+	tail -1 BitKeeper/log/repo_log
+	exit 1
+}
+cd "$HERE/project"
+tail -1 BitKeeper/log/repo_log | grep -q rmtc="$copy_repoid" || {
+	echo wrong repid in log 2
+	tail -1 BitKeeper/log/repo_log
+	exit 1
+}
+echo OK
+
+echo $N Verify that cmdlog itself is not logged .....................$NL
+bk cmdlog -va > WANT
+bk cmdlog -va > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Verify that --no-log option does not add to cmdlog ..........$NL
+BCNT=`bk cmdlog -av | wc -l`
+bk --no-log parent $Q
+ACNT=`bk cmdlog -av | wc -l`
+test $BCNT = $ACNT || fail cmdlog line count changed: $BCNT : $ACNT
+echo OK
+
+echo $N Verify that the -r option adds relative timestamps ..........$NL
+bk cmdlog -r | tail -1 | grep -q '^[0-9]' >OUT 2>&1 || \
+	fail -f OUT wrong output
+echo OK
+
+echo $N Verify that cmdlog -v in a nested repo works ................$NL
+cd "$HERE"
+nested prod
+bk repocheck >/dev/null 2>&1
+bk clone $Q . ../prod-clone # this creates component repo_log files
+LOGCNT=`bk cmdlog -v | wc -l`
+ACTCNT=`cat BitKeeper/log/repo_log */BitKeeper/log/repo_log | wc -l`
+test $LOGCNT -eq $ACTCNT || \
+	fail cmdlog output line count does not match actual logfile line count
+echo OK
+
+echo $N Verify that cmdlog -av in a nested repo works ...............$NL
+LOGCNT=`bk cmdlog -av | wc -l`
+ACTCNT=`cat BitKeeper/log/cmd_log */BitKeeper/log/cmd_log | wc -l`
+test $LOGCNT -eq $ACTCNT || \
+	fail cmdlog output line count does not match actual logfile line count
+echo OK
+
+echo $N Verify that cmdlog -Sv in a nested repo works ...............$NL
+cd gcc
+LOGCNT=`bk cmdlog -Sv | wc -l`
+ACTCNT=`wc -l < BitKeeper/log/repo_log`
+test $LOGCNT -eq $ACTCNT || \
+	fail cmdlog output line count does not match actual logfile line count
+echo OK
+
+echo $N Verify that cmdlog -Sav in a nested repo works ..............$NL
+LOGCNT=`bk cmdlog -Sav | wc -l`
+ACTCNT=`wc -l < BitKeeper/log/cmd_log`
+test $LOGCNT -eq $ACTCNT || \
+	fail cmdlog output line count does not match actual logfile line count
+echo OK

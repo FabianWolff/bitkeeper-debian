@@ -1,0 +1,82 @@
+# Copyright 2001-2002,2005-2006,2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+bk clone $Q "$HERE/project" "$HERE/copy"
+echo OK
+
+echo $N test rename conflict w unchecked file .......................$NL
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i foo.c bar.c h.h
+bk commit $S -yCset --tag="new"
+bk clean foo.c
+bk mv foo.c zoo.c
+bk commit $S -yCset --tag="rename"
+cd "$HERE/copy"
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+cd "$HERE/project"
+bk push "$HERE/copy" > push.out 2>&1
+grep -q "pathname is used" push.out
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N test rename of file into directory of same name..............$NL
+cd "$HERE"
+rm -rf copy
+bk clone $Q project copy
+cd project/src
+bk mv bar.c tmp.c || fail
+mkdir bar.c
+bk mv tmp.c bar.c/bar.c || fail
+bk commit $S -yCset2 || fail
+cd "$HERE/copy/src"
+bk get $Q bar.c
+bk pull $Q || fail
+echo OK
+
+echo $N test undoing file to directory rename .......................$NL
+bk undo $Q -arename -f || fail
+echo OK
+
+echo $N Make sure delta does not rename, must use bk mv .............$NL
+cd "$HERE/project"
+cd src
+bk _mv SCCS/s.zoo.c SCCS/s.animal.c
+bk edit $Q animal.c
+bk delta $Q -yrename animal.c 2>ERR && {
+	echo failed
+	exit 1
+}
+grep -q 'must use bk mv to rename src/zoo.c to src/animal.c' ERR || {
+	echo wrong error 
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Make sure we can force it with _BK_MV_OK ....................$NL
+_BK_MV_OK=1 bk delta $Q -yrename animal.c 2>ERR || {
+	echo should not have failed
+	exit 1
+}
+echo OK

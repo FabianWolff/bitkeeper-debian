@@ -1,0 +1,51 @@
+# Copyright 2003-2005,2009,2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+commercial project
+
+# create a sfile with unknown field "c?"
+echo data > GOOD
+bk ci $Q -l -i GOOD
+echo more data >> GOOD
+bk ci $Q -y GOOD
+bk _scat SCCS/s.GOOD | perl -pe 's/^.cZ/c?/' | bk undos >  tmp
+OLDSUM=`sed -n 1p  < tmp | sed 's/^.[hH]//'`
+#adjust checksum
+NEWSUM=`expr $OLDSUM - 27`
+perl -pe s/$OLDSUM\$/$NEWSUM/ < tmp  | bk undos > X
+bk _mv X SCCS/s.BAD
+echo $N Read access test.............................................$NL
+bk admin -h -q BAD 2>${DEV_NULL}
+if [ $? -ne 0 ]; then echo failed.; exit 1; fi
+bk co $Q BAD 2>${DEV_NULL}
+if [ $? -ne 0 ]; then echo failed.; exit 1; fi
+bk clean BAD 2>${DEV_NULL}
+if [ $? -ne 0 ]; then echo failed.; exit 1; fi
+bk get $Q BAD 2>${DEV_NULL}
+if [ $? -ne 0 ]; then echo failed.; exit 1; fi
+bk get $Q -k BAD 2>${DEV_NULL}
+if [ $? -ne 0 ]; then echo failed.; exit 1; fi
+bk prs BAD >${DEV_NULL} 2>&1
+if [ $? -ne 0 ]; then echo failed.; exit 1; fi
+echo OK
+echo $N Write access test '(should fail)'..............................$NL
+bk admin -z -q BAD 2>${DEV_NULL}
+if [ $? -eq 0 ]; then echo failed.; exit 1; fi
+bk co $Q -l BAD 2>${DEV_NULL}
+if [ $? -eq 0 ]; then echo failed.; exit 1; fi
+bk get $Q -e BAD 2>${DEV_NULL}
+if [ $? -eq 0 ]; then echo failed.; exit 1; fi
+bk rmdel -r1.2 BAD 2>${DEV_NULL}
+if [ $? -eq 0 ]; then echo failed.; exit 1; fi
+echo OK

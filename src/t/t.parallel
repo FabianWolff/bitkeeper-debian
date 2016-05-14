@@ -1,0 +1,162 @@
+# Copyright 2010-2012,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# And if no test data then skip it
+if [ "$PLATFORM" = "WIN32" ]
+then
+	## Run tests using bkd instead of NFS
+	# VER=`bk version "$BKTESTDATA/bitcluster" |
+	#    head -1 | sed 's/.* \([^ ]*\)...... for .*/\1/'`
+	# test "$VER" -gt 20111107 || exit 0 
+	# TESTDATA="$BKTESTDATA"
+
+	# The above had problems running on windows and getting the
+	# right counts in cmd_log, as well as having all 64 Nway sfio
+	# hanging.  So for now continue to ...
+	exit 0
+elif [ ! -d $TESTDATA/bitcluster ]
+then	exit 0
+fi
+
+_BK_SHORT_OK=1
+export _BK_SHORT_OK
+
+# accept the license
+commercial repo
+cd ..
+
+echo $N Clone repo, should run in parallel ..........................$NL
+BK_CONFIG="checkout:none!"
+export BK_CONFIG
+_BK_FSTYPE=nfs
+export _BK_FSTYPE
+bk clone $Q $TESTDATA/bitcluster parallel || fail
+SFIO=`grep 'sfio -i' parallel/BitKeeper/log/cmd_log|wc -l`
+test $SFIO = 18 || fail wrong number $SFIO
+echo OK
+
+echo $N Clone repo force just one child sfio ........................$NL
+rm -rf showproc
+bk clone -j1 $Q $TESTDATA/bitcluster || fail
+SFIO=`grep 'sfio -i' bitcluster/BitKeeper/log/cmd_log|wc -l`
+test $SFIO = 2 || fail wrong number $SFIO
+echo OK
+
+echo $N Clone repo force just one sfio via config parallel:0 ........$NL
+rm -rf bitcluster showproc
+bk --config='parallel:0' clone $Q $TESTDATA/bitcluster || fail
+SFIO=`grep 'sfio -i' bitcluster/BitKeeper/log/cmd_log|wc -l`
+test $SFIO = 2 || fail wrong number $SFIO
+echo OK
+
+echo $N Clone repo force just one sfio total ........................$NL
+rm -rf bitcluster showproc
+bk clone -j0 $Q $TESTDATA/bitcluster || fail
+SFIO=`grep 'sfio -i' bitcluster/BitKeeper/log/cmd_log|wc -l`
+test $SFIO = 2 || fail wrong number $SFIO
+echo OK
+
+echo $N Check that both repos check clean ...........................$NL
+cd parallel
+bk -r check -ac || fail
+cd ../bitcluster
+bk -r check -ac || fail
+echo OK
+
+echo $N Check that both repos have the same data ....................$NL
+cd ..
+rm parallel/BitKeeper/log/*log*
+rm bitcluster/BitKeeper/log/*log*
+rm parallel/BitKeeper/log/repo_id
+rm bitcluster/BitKeeper/log/repo_id
+rm parallel/BitKeeper/log/checked
+rm bitcluster/BitKeeper/log/checked
+head -3 parallel/BitKeeper/log/TIP > X
+cp X parallel/BitKeeper/log/TIP
+head -3 bitcluster/BitKeeper/log/TIP > X
+cp X bitcluster/BitKeeper/log/TIP
+diff -r parallel bitcluster | grep -v 'Common subdirectories:' > D
+test -s D && {
+	echo has diffs
+	cat D
+	exit 1
+}
+echo OK
+
+# The following hosts won't let us create this many processes
+case `bk gethost -r` in
+    openbsd*)	;;
+    sunx86*)	;;
+    hp11*)	;;
+    netbsd*)	;;
+    *)
+echo $N Clone repo with unreasonably high number, should cap ........$NL
+rm -rf bitcluster showproc
+bk clone -j500 $Q $TESTDATA/bitcluster || fail
+SFIO=`grep 'sfio -i' bitcluster/BitKeeper/log/cmd_log|wc -l`
+test $SFIO = 130 || fail wrong number $SFIO
+echo OK
+esac
+
+echo $N Clone repo and check that checkout get runs in parallel .....$NL
+rm -rf parallel showproc
+BK_CONFIG="checkout:get!;partial_check:on!"
+bk clone $Q $TESTDATA/bitcluster parallel || fail
+CHECKOUT=`grep 'checkout -Tq' parallel/BitKeeper/log/cmd_log|wc -l`
+test $CHECKOUT = 16 || fail wrong number $CHECKOUT
+echo OK
+
+echo $N Clone non-parallel in checkout mode for diffs ...............$NL
+rm -rf bitcluster
+BK_CONFIG="checkout:get!;partial_check:on!"
+bk clone -j0 $Q $TESTDATA/bitcluster || fail
+CHECKOUT=`grep 'checkout -Tq' bitcluster/BitKeeper/log/cmd_log|wc -l`
+test $CHECKOUT = 2 || fail wrong number $CHECKOUT
+echo OK
+
+echo $N Check that both repos have the same data ....................$NL
+rm parallel/BitKeeper/log/*log*
+rm bitcluster/BitKeeper/log/*log*
+rm parallel/BitKeeper/log/repo_id
+rm bitcluster/BitKeeper/log/repo_id
+rm parallel/BitKeeper/log/checked
+rm bitcluster/BitKeeper/log/checked
+head -3 parallel/BitKeeper/log/TIP > X
+cp X parallel/BitKeeper/log/TIP
+head -3 bitcluster/BitKeeper/log/TIP > X
+cp X bitcluster/BitKeeper/log/TIP
+diff -r parallel bitcluster | grep -v 'Common subdirectories:' > D
+test -s D && {
+	echo has diffs
+	cat D
+	exit 1
+}
+echo OK
+
+echo $N Check that pending files are stripped in a parallel clone ...$NL
+cd bitcluster
+echo hi > extra
+bk new $Q extra || fail
+bk edit $Q STATE || fail
+echo junk >> STATE
+bk ci -yjunk $Q STATE || file
+cd ..
+_BK_FSTYPE=nfs bk clone $Q bitcluster no-pending || fail
+cd no-pending
+bk sfiles -p > OUT
+test -s OUT && fail -f OUT should have nothing pending after clone
+SFIO=`grep 'sfio -i' BitKeeper/log/cmd_log|wc -l`
+test $SFIO = 18 || fail wrong number $SFIO
+cd ..
+echo OK

@@ -1,0 +1,41 @@
+# Copyright 2001,2005-2006 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Clone the repo, create data, merge ..........................$NL
+commercial project
+echo foo > foo
+bk new $Q foo
+bk commit $Q -yproject
+bk clone $Q "$HERE/project" "$HERE/clone"
+bk edit $Q foo
+echo foo foo >> foo
+bk ci $Q -yfoo foo
+bk commit $Q -yproject
+cd "$HERE/clone"
+bk edit $Q foo
+echo fu fu >> foo
+bk ci $Q -yfoo foo
+bk commit $Q -yclone
+bk pull -R $Q
+(echo ul; echo comment; echo) | bk resolve $Q 2> ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+bk changes -fkr1.3,1.4 > CMP
+cmp CMP BitKeeper/etc/csets-in || {
+	echo failed to update csets-in properly
+	cat BitKeeper/etc/csets-in
+}
+echo OK

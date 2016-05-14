@@ -1,0 +1,53 @@
+.so ../bk-macros
+.TH "bk unlock" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    =============== Discarding lock files ===============
+.SH NAME
+bk unlock \- remove \*(BK repository locks
+.SH SYNOPSIS
+.B bk unlock
+.[B] \-rsw
+.FILES
+.SH DESCRIPTION
+.LP
+The unlock command can be used to remove locks which have been left behind
+for some reason.  In general, you shouldn't need this command, if you do
+it indicates that \*(BK is leaving lock files that it should not.
+In that case, please tell
+.B support@bitkeeper.com
+so we can fix that problem.
+.LP
+The unlock command can be used to remove repository level locks.  This can
+be necessary if a remote process has left behind a lock (local stale locks
+are detected and cleaned automatically).  A stale lock is one which has been
+created locally but the process is no longer present.
+.LP
+.B Note:
+a repository can have two write locks: the regular lock file and
+the existence of the
+.B RESYNC
+directory.  Removing the write lock does not
+imply removing the
+.B RESYNC
+directory, see
+.B bk help abort
+for that.
+.SH "OPTIONS"
+.TP
+.B \-r
+Remove all read locks, stale or not.
+.tp
+.B \-s
+Remove both read and write locks, but only if they are stale.
+.tp
+.B \-w
+Remove the write lock, stale or not.  Does not remove the RESYNC directory.
+.SH "SEE ALSO"
+.SA lock
+.SA abort
+.\" help://Repository/locks
+.\" help://Repository/repo
+.\" help://Repository/unlocking
+.SH CATEGORY
+.B File
+.br
+.B Repository

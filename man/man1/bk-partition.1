@@ -1,0 +1,112 @@
+.if \n[NESTED] \{\
+.so ../bk-macros
+.TH "bk partition" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk partition \- transform a single repository into a nested collection
+.SH SYNOPSIS
+.B bk partition
+.[ARG] options
+.[OPTreq] \-C components " | \-@<url>"
+.ARG from
+.ARG to
+.SH DESCRIPTION
+The
+.B partition
+command is used to transform a single large repository to product
+composed of a collection of component repositories.
+The collection of component files is determined by the component
+list file, which is a list of directories which will become component
+repository roots.
+.LP
+To get the most flexibility out of using a partitioned repository, the
+partition should be done such that few, if any, files remain in
+the top level product.  Best is if the top level product repository
+is only a collection of component repositories.
+.LP
+Partition will prune all deleted and missing
+files, and create an empty gone file.  Any file that used to be in one
+component and was moved to another component will only appear in the
+most recent component. 
+.LP
+As part of partition, it is possible to remove the record of some files
+that were accidentally added along the way, and or have since been
+removed and added to the gone file.
+A list of keys to be removed is stored in a prunelist file, one key per
+line.
+.LP
+To transform many repositories, first transform one into a layout you
+like.  Then transform the others, using the -@url option naming the
+first post-partition repository.  Each repository partitioned after
+the first must contain all of the csets of the first repository.
+.SH OPTIONS 
+.TP \-C\*<components\*>
+.OPTreq \-@ url
+Instead of specifying components list and prune list, specify a url
+to a repository that has been partitioned.  The result will be a repository
+that can communicate with that url, or partition will fail with messages
+about why it can't do that.
+.tp
+.OPTreq \-C components
+Specify a file containing the directories that will become
+component repository roots.
+The directories are listed in the file, one per line.
+Lines starting with # will be ignored, as well as blank lines.
+.tp
+.OPTreq \-P prunelist
+Specify a file containing the keys to be removed before the partitioning
+begins.
+This is similar to running a bk csetprune before running bk partition.
+The difference is that the bk partition command will provide the stable
+-k parameter to the csetprune enable the resulting repositories to
+communicate with repositories that have gone through the same partitioning.
+.tp
+.B \-\-keep\-deleted
+Normally, partition prunes all deleted files.
+Use \-\-keep\-deleted to keep the deleted history as part of the component
+the file was most recently in before being deleted.
+.tp
+.OPTreq \-j N
+Run the per-component portions of the partition in parallel using N
+processes.  Useful for partitioning on multi-core machines.
+.tp
+.B \-q
+Run quietly.
+.SH EXAMPLE
+.LP
+Suppose there is a repository which has two major subsections, called
+.B doc
+and
+.B src
+respectively.  The repository has grown to be too large and people
+working on one part may not need the other part. The following steps
+would convert it to a product comprising many components,
+such as 'doc' and 'src'.
+.LP
+Create a file which defines the partition boundaries.  Call it components:
+.DS
+$ cat components
+# These directory paths are the partition boundaries
+# Note that one can be under another: src and src/gnu
+# src would get everything under src that is not under src/gnu
+doc
+src
+src/gnu
+lib/graph
+lib/print
+# and the list could go on for hundreds of lines
+$
+.DE
+Then run the command to transform the original repo, called standalone
+in this example, into a nested collection of repositories, called nested.
+.DS
+$ bk partition -Ccomponents standalone nested
+.DE
+To partition another repository, you can reference the first partition
+you did instead of passing in the component list.  Standalone2 must
+be a superset of standalone for the partition to work.
+.DS
+$ bk partition -@nested standalone2 nested2
+.DE
+.SH CATEGORY
+.B Nested
+.\}

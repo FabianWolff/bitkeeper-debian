@@ -1,0 +1,33 @@
+# Copyright 2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Test for corrupted component bug ............................$NL
+nested product
+for c in gcc gdb .
+do
+	echo foobar > $c/afile
+	bk new $Q $c/afile
+done
+bk commit $Q -yafile
+bk clone $Q -sPRODUCT . ../copy
+cd gcc
+# bk cp sets sortkey in the feature list
+bk cp $Q afile bfile
+bk commit $Q -ybfile
+cd ..
+bk features | grep -q sortkey || fail no sortkey feature found
+cd "$HERE"
+bk clone $Q copy copy2 2>ERR || fail
+test -s ERR && fail -f ERR errors during clone
+echo OK

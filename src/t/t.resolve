@@ -1,0 +1,1493 @@
+# Copyright 2002-2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test "$PLATFORM" = "WIN32" && USER=`bk getuser -r`
+
+echo $N Test resolving file missing a newline .......................$NL
+commercial proj
+echo line 1 > file
+bk new $Q file || fail
+bk commit $Q -ystart || fail
+cd "$HERE"
+bk clone $Q proj copy
+cd proj
+bk edit $Q file
+echo $NX new line without NL $NXL >> file
+cp file ../file.bak
+bk delta $Q -ynonl file || fail
+bk commit $Q -ynew_remote || fail
+cd "$HERE/copy"
+bk edit $Q file
+echo new line with NL >> file
+bk delta $Q -ynl file || fail
+bk commit $Q -ynew_local || fail
+_BK_PREVENT_RESOLVE_RERUN=1 bk pull $Q 2> OUT && {
+	echo should not pass
+	exit 1
+}
+grep -q 'Conflicts during automerge of file' OUT || {
+	echo pull should have had conflict
+	bk cat file
+	cat OUT
+	exit 1
+}
+echo ur | bk resolve $Q 2>OUT || {
+	echo resolve should work
+	cat OUT
+	exit 1
+}
+bk get $Q file || fail
+cmp -s file ../file.bak || {
+	echo file did not match remote
+	exit 1
+}
+echo OK
+
+echo $N Test out aborting a conflict ................................$NL
+bk unpull -f $Q || fail
+bk pull $Q -R
+{ echo a; echo y; } | bk resolve -q 2> ERR && {
+	echo expected to fail
+	exit 1
+}
+# If there is an error, it will be in the slot after the space and before
+# the equals.
+grep -q 'Abort patch? (y/n) =*$' ERR || {
+	echo unexpected msg
+	cat ERR
+	exit 1
+}
+test -d RESYNC && fail
+test -d PENDING || fail
+rm -fr PENDING
+echo OK
+
+echo $N Test exiting out a resolve early deleting files .............$NL
+bk edit $Q file || fail
+_BK_PREVENT_RESOLVE_RERUN=1 bk pull $Q 2> OUT && {
+	echo should not pass
+	exit 1
+}
+grep -q 'Conflicts during automerge of file' OUT || {
+	echo pull should have had conflict
+	exit 1
+}
+echo q | bk resolve $Q 2>OUT && {
+	echo resolve should have failed
+	exit 1
+}
+test -w file || {
+	echo file should be writable
+	exit 1
+}
+bk _test -f SCCS/p.file || {
+	echo file should be locked
+	exit 1
+}
+echo OK
+
+echo $N Test permission problems in resolve .........................$NL
+cd "$HERE/proj"
+mkdir dir1
+echo ff > dir1/ff
+mkdir dir2
+echo gg > dir2/gg
+echo "space me" > "dir2/space file"
+bk new $Q dir1/ff dir2/gg "dir2/space file" || fail
+bk commit $Q -ystart || fail
+mkdir dir3
+chmod -w dir3
+bk -r check -ac || fail
+cd ..
+bk clone $Q proj copy2 || fail
+cd copy2
+bk edit $Q dir1/ff dir2/gg || fail
+echo ff2 >> dir1/ff
+echo gg2 >> dir2/gg
+bk delta $Q -yappend dir1/ff dir2/gg || fail
+mkdir dir3
+mkdir dir3/dir33
+echo hh > dir3/dir33/hh
+bk new $Q dir3/dir33/hh || fail
+bk commit $Q -yappend
+bk push > OUT 2>&1
+status=$?
+chmod -R +w "$HERE"
+test $status != 0 || {
+	echo push shouldn\'t have worked
+	cat OUT
+	exit 1
+}
+grep 'No write permission: dir3' OUT > /dev/null || {
+	echo wrong error message
+	cat OUT
+	exit 1
+}
+cd "$HERE/proj"
+bk abort -f
+bk -r check -acf || fail
+echo OK
+
+echo $N What if you don\'t have permissions to delete a file..........$NL
+oldmode=`bk _stat dir2/SCCS | awk -F\| '{ print substr($3, 3) }'`
+chmod 555 dir2/SCCS .bk/dir2/SCCS 2> /dev/null
+cd "$HERE/copy2"
+bk mv dir2/gg dir3/gg || fail
+bk commit -ymv $Q || fail
+bk push > OUT 2>&1
+status=$?
+test $status != 0 || {
+	echo push shouldn\'t have worked
+	cat OUT
+	exit 1
+}
+grep 'No write permission: dir2' OUT > /dev/null || {
+	echo wrong error message
+	cat OUT
+	exit 1
+}
+cd "$HERE/proj"
+chmod $oldmode dir2/SCCS .bk/dir2/SCCS 2> /dev/null
+bk abort -f
+bk -r check -acf || fail
+echo OK
+
+echon Test listing of files in conflict ...........................
+cd "$HERE"
+cd proj
+echo foo > uuencode
+bk new $Q -Euuencode uuencode
+bk commit -yuuencode $Q || fail
+cd ..
+bk clone $Q proj copy3 || fail
+for d in proj copy3; do
+	cd "$HERE"/$d
+	for f in uuencode file dir1/ff dir2/gg "dir2/space file" ; do
+		bk edit $Q "$f"
+		echo $d >> "$f"
+		BK_USER=$d bk delta $Q -y"$d side" "$f" || fail
+	done
+	bk mv file file.$d
+	BK_USER=$d bk commit -y"$d" $Q || fail
+done
+cd "$HERE/copy3"
+bk pull -R $Q
+echo q | bk resolve -a -d -l 2> OUT && {
+	echo resolve should have failed
+	cat OUT
+	exit 1
+}
+# List files in conflict
+cat <<EOF > WANT
+dir1/ff
+dir2/gg
+dir2/space file
+file (renamed) LOCAL=file.copy3 REMOTE=file.proj
+uuencode (binary)
+EOF
+bk conflicts > GOT
+test $? = 1 || fail
+cmpfiles WANT GOT
+# test ordering of prs options: sfile gfile REMOTE LOCAL GCA
+cd RESYNC > /dev/null
+bk sfiles -U "$@" | bk prs -hnr+ \
+-d'$if(:RREV:){:DPN:|:PN:|:LREV:|:RREV:|:GREV:|:RREV:|:PN:|:LREV:|:GREV:|:DPN:}' - | \
+while IFS='|' read GF1 SF1 LR1 RR1 GR1 RR2 SF2 LR2 GR2 GF2
+do	test "$GF1" = "$GF2" || { echo Failed gfile; exit 1; }
+	test "$SF1" = "$SF2" || { echo Failed sfile; exit 1; }
+	test "$LR1" = "$LR2" || { echo Failed local rev; exit 1; }
+	test "$RR1" = "$RR2" || { echo Failed remote rev; exit 1; }
+	test "$GR1" = "$GR2" || { echo Failed gca rev; exit 1; }
+done
+cd .. > /dev/null
+echo OK
+
+echon Test bk conflicts -v ........................................
+cat <<EOF > WANT
+dir1/ff has 1 conflict block
+dir2/gg has 1 conflict block
+dir2/space file has 1 conflict block
+BitKeeper/RENAMES/1 has 1 conflict block
+    GCA path:     file
+    Local path:   file.copy3
+    Remote path:  file.proj
+uuencode (binary)
+EOF
+bk conflicts -v > GOT
+test $? = 1 || fail
+cmpfiles WANT GOT
+echo OK
+
+echon Test bk conflicts -vv .......................................
+cat <<EOF > WANT
+dir1/ff has 1 conflict block
+   1 local lines by copy3/$USER
+   1 remote lines by proj/$USER
+dir2/gg has 1 conflict block
+   1 local lines by copy3/$USER
+   1 remote lines by proj/$USER
+dir2/space file has 1 conflict block
+   1 local lines by copy3/$USER
+   1 remote lines by proj/$USER
+BitKeeper/RENAMES/1 has 1 conflict block
+   1 local lines by copy3/$USER
+   1 remote lines by proj/$USER
+    GCA path:     file
+    Local path:   file.copy3
+    Remote path:  file.proj
+uuencode (binary)
+EOF
+bk conflicts -vv > GOT
+test $? = 1 || fail
+cmpfiles WANT GOT
+echo OK
+
+echon Testing skip command ........................................
+cat <<EOF >WANT
+dir1/ff
+dir2/space file
+EOF
+# l - resolves file.copy3 rename conflict
+# ul - resolves file.copy3 content conflict
+# ul - resolves uuencode content conflict
+# S - skips dir1/ff
+# ul - resolves dir2/gg content conflict
+# q - leaves 'dir2/space file' unresolved
+bk resolve -l << EOF > OUT 2>&1
+l
+ul
+this is the comment
+.
+ul
+this is the comment
+.
+S
+ul
+this is the comment
+.
+q
+EOF
+bk conflicts > GOT
+test $? = 1 || fail
+cmpfiles WANT GOT
+echo OK
+
+echon Testing locking of RESYNC dir ...............................
+LOCKURL=`bk lock -t -fRESYNC/BitKeeper/tmp/resolve_lock`
+bk lock -LfRESYNC/BitKeeper/tmp/resolve_lock > /dev/null
+bk undos << EOF > CMP1
+Could not get lock on RESYNC directory.
+EOF
+bk resolve -q 2>&1 | head -1 > CMP2
+bk _kill $LOCKURL
+cmpfiles CMP1 CMP2
+echo OK
+
+echon Test selective resolve using includes .......................
+bk abort -f
+bk pull -R $Q
+cat <<EOF > WANT
+dir1/ff has 1 conflict block
+dir2/gg has 1 conflict block
+dir2/space file has 1 conflict block
+file.proj has 1 conflict block
+    GCA path:     file
+    Local path:   file.copy3
+    Remote path:  file.proj
+uuencode (binary)
+EOF
+bk conflicts -v > GOT
+test $? = 1 || fail
+cmpfiles WANT GOT
+# l - resolves file.copy3 rename conflict
+# ul - resolves dir2/gg content conflict
+bk resolve -l -i'*/gg' <<EOF > OUT 2>&1
+l
+ul
+this is the comment
+.
+EOF
+cat <<EOF > WANT
+dir1/ff has 1 conflict block
+dir2/space file has 1 conflict block
+file.copy3 has 1 conflict block
+uuencode (binary)
+EOF
+bk conflicts -v > GOT
+test $? = 1 || fail
+cmpfiles WANT GOT
+grep -q 'Commands are:' OUT && {
+	echo failed to exit resolver when it should have
+	exit 1
+}
+echo OK
+
+echon Test selective resolve using excludes .......................
+bk abort -f
+bk pull -R $Q
+# l - resolves file.copy3 rename conflict
+# ul - resolves dir2/gg content conflict
+bk resolve -d -l -x'*/ff' -x'dir2/s*' -x'f*' -x'u*' <<EOF > OUT 2>&1
+l
+ul
+this is the comment
+.
+EOF
+cat <<EOF > WANT
+dir1/ff has 1 conflict block
+dir2/space file has 1 conflict block
+file.copy3 has 1 conflict block
+uuencode (binary)
+EOF
+bk conflicts -v > GOT
+test $? = 1 || fail
+cmpfiles WANT GOT
+grep -q 'Commands are:' OUT && {
+	echo failed to exit resolver when it should have
+	exit 1
+}
+echo OK
+
+echon Test selective resolve specifying a file that needs rename ..
+bk abort -f
+bk pull -R $Q
+# l - resolves file.copy3 rename conflict
+# ul - resolves file.copy3 content conflict
+bk resolve -d -l -i'f*' <<EOF > OUT 2>&1
+l
+ul
+this is the comment
+.
+EOF
+cat <<EOF > WANT
+dir1/ff has 1 conflict block
+dir2/gg has 1 conflict block
+dir2/space file has 1 conflict block
+uuencode (binary)
+EOF
+bk conflicts -v > GOT
+test $? = 1 || fail
+cmpfiles WANT GOT
+grep -q 'Commands are:' OUT && {
+	echo failed to exit resolver when it should have
+	exit 1
+}
+echo OK
+
+# This test shows that the include is on the name of the file after the rename
+echon Test selective resolve specifying the rename ................
+bk abort -f
+bk pull -R $Q
+# m - resolves file.copy3 rename conflict to xyz
+# ul - resolves xyz content conflict
+bk resolve -d -l -i'xyz' <<EOF > OUT 2>&1
+m
+xyz
+ul
+this is the comment
+.
+EOF
+cat <<EOF > WANT
+dir1/ff has 1 conflict block
+dir2/gg has 1 conflict block
+dir2/space file has 1 conflict block
+uuencode (binary)
+EOF
+bk conflicts -v > GOT
+test $? = 1 || fail
+cmpfiles WANT GOT
+grep -q 'Commands are:' OUT && {
+	echo failed to exit resolver when it should have
+	exit 1
+}
+bk _test -f RESYNC/SCCS/s.xyz || {
+	failed to move to xyz
+	exit 1
+}
+echo OK
+
+echon Test selective resolve with uncomitted new-file conflict ....
+cd "$HERE"
+bk clone $Q proj copy3b || fail
+cd proj
+echo new > newfile
+bk new $Q newfile || fail
+bk commit $Q -y'add newfile' || fail
+cd ../copy3b
+echo new > dummy
+bk new $Q dummy || fail
+bk commit $Q -f
+echo new > newfile
+bk new $Q newfile || fail
+bk pull -R $Q || fail
+cat <<EOF > IN
+rl
+y
+EOF
+bk resolve newfile <IN > OUT 2>&1 || {
+	echo should have worked
+	cat OUT
+	exit 6
+}
+echo OK
+
+echo $N Do a \'rr\' when given a create/gfile conflict ................$NL
+cd "$HERE"
+rm -rf copy2
+bk clone $Q proj copy2 || fail
+cd proj
+echo hh > hh
+bk new $Q hh
+bk commit $Q -ynewhh || fail
+cd "$HERE/copy2"
+echo hj > hh
+(echo rr; echo y) | bk pull > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+grep -q '| 1 unresolved name conflict' OUT || {
+	echo wrong message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Check vr when remote is on a branch .........................$NL
+cd "$HERE/proj"
+echo VERSION 1 > foo
+bk new $Q foo
+bk commit $Q -yfoo
+cd ..
+bk clone $Q proj vrcopy
+cd proj
+bk edit $Q foo
+echo VERSION 2 > foo
+bk delta $Q -y2 foo
+bk commit $Q -yfoo
+cd ../vrcopy
+bk edit $Q foo
+bk delta $Q -y2 foo  
+bk commit $Q -yfoo
+cd ../proj
+bk pull $Q ../vrcopy  
+cd ../vrcopy
+bk edit $Q foo
+echo VERSION 3 > foo
+bk delta $Q -y2 foo
+bk commit $Q -yfoo
+cd ../proj
+bk pull $Q -R ../vrcopy
+bk resolve <<EOF > VR 2>&1
+vr
+q
+EOF
+# When failing, gave VERSION 2
+grep -q "VERSION 3" VR || {
+	echo Fail
+	echo Expecting to contain the string "'VERSION 3'" and resolve gave
+	cat VR
+	exit 1
+}
+echo OK
+
+echo $N Check pass1 to see if dups when no dup.......................$NL
+cd "$HERE"
+export CLOCK_DRIFT=1
+commercial p1d
+mkdir src
+cat > src/foo <<EOF
+line1
+line2
+line3
+line4
+line5
+EOF
+bk new $Q src/foo
+# 3 long names
+list="alkjlskdjflksjfdjdfskjdflsjfljfd
+	aladflskdjflskjdikjsdfdlsjdadd
+	polbnlknsdlkafljalfjallskdjskj"
+# make 162 files with long names
+for a in $list; do
+	for b in $list; do
+		for c in $list; do
+			file=''
+			dir=AB/$a/$b/$c
+			mkdir -p $dir
+			for d in $list; do
+				file="$file $dir/a$d $dir/b$e$d"
+			done
+			touch $file
+			bk new $Q $file
+		done
+	done
+done
+bk commit $Q -y'a whole lot of files'
+cd ..
+bk clone $Q p1d p1dtmp
+cd p1dtmp
+bk mv src/foo .foo
+bk mv AB A
+bk commit $Q -y'a whole lot of moving'
+cd ../p1d
+bk pull -qR ../p1dtmp
+bk resolve $Q -234 2> ERR || {
+	echo Fail
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Make sure that a rename only conflict does partial check ....$NL
+cd "$HERE"
+commercial parent
+echo 'partial_check:yes!' > "`bk dotbk`"/config
+touch start
+bk new $Q start
+bk commit $Q -ybaseline
+bk clone $Q . ../child
+bk mv start parent
+bk commit $Q -yparent
+cd ../child
+touch parent
+bk new $Q parent
+bk commit $Q -ychild
+bk repocheck $Q
+bk pull $Q -R
+(
+echo rl
+echo y
+echo q
+) | BK_SHOWPROC="$HERE/PROC" bk resolve >OUT 2>&1 || fail -f OUT
+test -d RESYNC && {
+	echo failed to complete resolve
+	exit 1
+}
+grep -q 'check -c' "$HERE/PROC" || fail -f "$HERE/PROC"
+echo OK
+
+echo $N Make sure resolve does not rerun with conflicts and -s ......$NL
+cd "$HERE/proj"
+bk abort -f
+cd "$HERE"
+bk clone $Q proj conflict
+for i in proj conflict
+do
+	cd "$HERE"/$i
+	bk edit $Q foo
+	echo $i >> foo
+	bk delta $Q -y$i foo
+	bk commit $Q -y$i 
+done
+cd "$HERE/conflict"
+( echo '?'
+  echo q
+) | bk pull -s > OUT 2>&1
+grep -q 'starting manual resolve process.' OUT && {
+	echo Should not have restarted resolve
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure resolve reruns when there are conflicts ...........$NL
+bk abort -f
+( echo '?'
+  echo q
+) | bk pull > OUT 2>&1
+grep -q 'starting manual resolve process.' OUT || {
+	echo Did not restart resolve
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure resolve is not interactive with rename conflicts ..$NL
+bk abort -f
+for i in proj conflict
+do
+	cd "$HERE"/$i
+	test $i = proj && bk mv dir1 dir1-proj
+	bk mv foo foo-$i
+	bk commit $Q -y$i 
+done
+cd "$HERE/conflict"
+( echo '?'
+  echo q
+) | bk pull -s > OUT 2>&1
+grep -q 'starting manual resolve process.' OUT && {
+	echo Should not have restarted resolve
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure we can finish the resolve, both name and content ..$NL
+( 
+  echo '?'
+  echo 'l'
+  echo '?'
+  echo q
+) | bk resolve > OUT 2>&1
+grep -q 'Local:  foo-conflict pathname is available locally' OUT &&
+grep -q 'Remote: foo-proj pathname is available locally' OUT &&
+grep -q 'added locally and remotely and must be merged.' OUT || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure xflags always automerge ...........................$NL
+cd "$HERE"
+bk clone $Q proj xflags
+cd "$HERE/proj"
+bk admin -fEXPAND1 foo-proj
+bk commit $Q -yproj
+cd "$HERE/xflags"
+bk admin -fEOLN_NATIVE foo-proj
+bk commit $Q -yxflags
+bk pull -R $Q
+( echo '?'
+  echo q
+) | bk resolve > OUT 2>&1
+grep -q 'Added merged flags to both local and remote versions.' OUT || {
+	echo Should have automerged xflags
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure resolve automerges modes when it can ..............$NL
+cd "$HERE/proj"
+date > mode
+bk new $Q mode
+bk chmod 0600 mode
+test `bk prs -hr+ -nd:RWXMODE: mode` = -rw------- || {
+	echo failed
+	bk prs -hr+ -nd:RWXMODE: mode
+	exit 1
+}
+bk commit $Q -yproj
+cd "$HERE"
+bk clone $Q proj mode
+cd proj
+bk chmod g+rw mode
+test `bk prs -hr+ -nd:RWXMODE: mode` = -rw-rw---- || {
+	echo failed
+	bk prs -hr+ -nd:RWXMODE: mode
+	exit 1
+}
+bk commit $Q -yproj
+cd ../mode
+bk edit $Q mode
+echo whatever >> mode
+bk delta $Q -ywhatever mode
+bk commit $Q -ywhatever mode
+( echo '?'
+  echo q
+) | bk pull -s > OUT 2>&1
+grep -q 'mode conflict' OUT && {
+	echo Should not have gone into interactive mode with -s
+	cat OUT
+	exit 1
+}
+test -d RESYNC && {
+	echo did not finish resolve
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure resolve is not interactive with mode conflicts ....$NL
+cd "$HERE/proj"
+bk chmod 0777 mode
+test `bk prs -hr+ -nd:RWXMODE: mode` = -rwxrwxrwx || {
+	echo failed
+	bk prs -hr+ -nd:RWXMODE: mode
+	exit 1
+}
+bk commit $Q -yproj
+cd "$HERE/mode"
+bk chmod 0710 mode
+test `bk prs -hr+ -nd:RWXMODE: mode` = -rwx--x--- || {
+	echo failed
+	bk prs -hr+ -nd:RWXMODE: mode
+	exit 1
+}
+bk commit $Q -ymode
+( echo '?'
+  echo q
+) | bk pull -s > OUT 2>&1
+grep -q 'mode conflict' OUT && {
+	echo Should not have gone into interactive mode with -s
+	cat OUT
+	exit 1
+}
+echo OK
+
+cp -rp "$HERE/mode" "$HERE/locktest"
+echo $N Make sure we can finish the resolve .........................$NL
+( 
+  echo '?'
+  echo 'l'
+  echo 'm'
+  echo 'C'
+  echo '?'
+  echo q
+) | bk resolve -a > OUT 2>&1
+grep -q 'The file has conflicting changes to the modes.' OUT &&
+grep -q 'changed mode to -rwx--x---' OUT &&
+grep -q 'changed mode to -rwxrwxrwx' OUT &&
+grep -q '100% |==============================| OK' OUT || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure that we get a lock in pass4 .......................$NL
+cd "$HERE/locktest"
+L=`bk lock -rt`
+(
+  echo 'l'
+  echo 'm'
+  echo 'C'
+  echo q
+) | bk resolve -a > OUT 2>&1
+grep -q 'Entire repository is locked by:' OUT || {
+	bk _kill $L
+	fail -f OUT
+}
+bk _kill $L
+echo OK
+
+echo $N Keep keywords in an sccs merge ..............................$NL
+commercial project
+echo '%K%' > foo
+bk new $Q foo
+bk commit $Q -yfoo
+cd ..
+bk clone $Q project copy
+cd project
+bk edit $Q foo
+echo project >> foo
+bk delta $Q -yfoo foo
+bk commit $Q -yfoo
+cd ../copy
+bk edit $Q foo
+echo copy >> foo
+bk delta $Q -yfoo foo
+bk commit $Q -yfoo
+bk pull $Q -R
+bk resolve << EOF > OUT 2> ERR
+s
+C
+.
+EOF
+bk edit $Q foo
+grep -q '^%K%$' foo || fail -f foo
+echo OK
+
+echo $N Check vr and vl when filename has spaces ....................$NL
+cd "$HERE"
+commercial proj1
+echo VERSION 1 > 'foo bar'
+bk new $Q 'foo bar'
+bk commit $Q -yfoo
+cd ..
+bk clone $Q proj1 copy1
+cd proj1
+bk edit $Q 'foo bar'
+echo VERSION 2 > 'foo bar'
+bk delta $Q -y2 'foo bar'
+bk commit $Q -yfoo
+cd ../copy1
+bk edit $Q 'foo bar'
+echo VERSION 3 > 'foo bar'
+bk delta $Q -y2 'foo bar' 
+bk commit $Q -yfoo
+cd ../proj1
+bk pull $Q -R ../copy1
+bk resolve <<EOF > VR 2>&1
+vr
+q
+EOF
+grep -q "VERSION 3" VR || {
+	echo Fail
+	echo Expecting to contain the string "'VERSION 3'" and resolve gave
+	cat VR
+	exit 1
+}
+bk resolve <<EOF > VL 2>&1
+vl
+q
+EOF
+grep -q "VERSION 2" VL || {
+	echo Fail
+	echo Expecting to contain the string "'VERSION 2'" and resolve gave
+	cat VL
+	exit 1
+}
+echo OK
+
+echo $N Show you can\'t commit a partial merge in RESYNC .............$NL
+cd "$HERE"
+bk clone $Q proj copy4
+cd proj/dir2
+bk edit $Q 'space file'
+echo "more stuff" >> 'space file'
+bk delta $Q -ymore 'space file'
+cd ../dir1-proj
+bk edit $Q ff
+echo "more stuff" >> ff
+bk delta $Q -ymore ff
+bk commit $Q -ymore
+cd "$HERE/copy4/dir2"
+bk edit $Q 'space file'
+echo "conflict" >> 'space file'
+bk delta $Q -yconflict 'space file'
+cd ../dir1-proj
+bk edit $Q ff
+echo "conflict" >> ff
+bk delta $Q -yconflict ff
+bk commit $Q -yconflict
+cd "$HERE/copy4"
+bk pull $Q -R ../proj
+# Create a repo with the same problem as if the user had used an old
+# version of citool to commit a partial merge. See bug 2004-11-22-000
+cd RESYNC/dir1-proj
+bk get $Q -eM ff
+cat > ff <<EOF
+ff
+proj
+conflict
+EOF
+bk delta $Q -ymerge ff
+bk _rm -f SCCS/r.ff
+cd ../dir2
+bk get $Q -eM 'space file'
+echo "resolved" >> 'space file'
+bk _rm -f 'SCCS/r.space file'
+cd ..
+bk get $Q -eM -g ChangeSet
+bk commit $Q -R -c 2>ERR && fail -f ERR
+grep -q 't: ChangeSet is a merge but is missing' ERR || fail -f ERR wrong error
+echo OK
+
+echo $N Automerge a trigger after automerging gone ..................$NL
+cd "$HERE"
+commercial trigger-master
+T=BitKeeper/triggers/pre-commit.test
+mkdir -p BitKeeper/triggers
+cat - <<'EOF' > "$T"
+#!/bin/sh
+
+echo I am in the trigger
+
+echo add merge line after this
+EOF
+bk new $Q "$T"
+touch foo
+bk new $Q foo
+bk prs -r+ -hnd:ROOTKEY: foo | bk -R gone - 2>ERR || fail
+bk _rm -f foo SCCS/s.foo
+bk commit $Q -ytrig
+cd ..
+bk clone $Q trigger-master trigger-copy
+cd trigger-master
+bk edit $Q "$T"
+cat - <<'EOF' > "$T"
+#!/bin/sh
+
+echo I am in the trigger
+echo Really, that is the case
+
+echo add merge line after this
+EOF
+bk delta $Q -yedit "$T"
+touch foo
+bk new $Q foo
+bk prs -r+ -hnd:ROOTKEY: foo | bk -R gone - 2>ERR || fail
+bk _rm -f foo SCCS/s.foo
+bk commit $Q -ytrig
+cd ../trigger-copy
+bk edit $Q "$T"
+echo "echo new last line" >> "$T"
+bk delta $Q -yedit "$T"
+touch foo
+bk new $Q foo
+bk prs -r+ -hnd:ROOTKEY: foo | bk -R gone - 2>ERR || fail
+bk _rm -f foo SCCS/s.foo
+bk commit $Q -ytrig
+bk pull $Q 2>ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N "Test rl on an locally edited file in create/sfile conflict ..$NL"
+# BUGID 2007-05-10-001
+cd "$HERE"
+commercial remote
+cd ..
+bk clone $Q remote local
+cd remote
+touch foo
+bk new $Q foo
+bk commit $Q -f
+cd ../local
+touch foo
+bk new $Q foo
+bk commit $Q -f
+bk edit $Q foo
+(echo rl; echo y; echo q) | bk pull $Q 2> ERR || {
+	echo failed
+	grep -q 'Empty p.file' ERR || {
+		echo unexpected failure. Not Empty p.file
+	}
+	cat ERR
+	echo
+	exit 1
+}
+echo OK
+
+echo $N Check multiword editor when resolve content conflict ........$NL
+cd "$HERE"
+rm -fr project copy
+commercial project
+touch foo
+bk new $Q foo
+bk commit $Q -yfoo foo
+cd ..
+bk clone $Q project copy
+cd project
+bk edit $Q foo
+echo a > foo
+bk delta $Q -yfoo foo
+bk commit $Q -yfoo foo
+cd ../copy
+bk edit $Q foo
+echo b > foo
+bk delta $Q -yfoo foo
+bk commit $Q -yfoo foo
+cat <<'EOF' > myedit
+#!/bin/sh
+test $# -eq 2 || { echo wrong number; exit 1; }
+test "$1" = '-x' || { echo wrong number; exit 1; }
+echo memememem
+echo resolve > "$2"
+exit 0
+EOF
+chmod +x myedit
+bk pull $Q -R
+EDITOR="myedit -x" BK_LIMITPATH="$PWD:${LIMITPATH-$PATH}" \
+    bk resolve > OUT 2>&1 <<'EOF'
+m
+e
+C
+null comment
+.
+EOF
+test $? = 0 || {
+	echo failed
+	exit 1
+}
+echo OK
+
+cd ..
+rm -rf trigger-copy trigger-master
+echo $N Automerge a identical trigger change after automerging gone .$NL
+cd "$HERE"
+commercial trigger-master
+T=BitKeeper/triggers/pre-commit.test
+mkdir -p BitKeeper/triggers
+cat - <<'EOF' > "$T"
+#!/bin/sh
+
+echo I am in the trigger
+
+echo add merge line after this
+EOF
+bk new $Q "$T"
+touch foo
+bk new $Q foo
+bk prs -r+ -hnd:ROOTKEY: foo | bk -R gone - 2>ERR || fail
+bk _rm -f foo SCCS/s.foo
+bk commit $Q -ytrig
+cd ..
+bk clone $Q trigger-master trigger-copy
+cd trigger-master
+bk edit $Q "$T"
+echo "echo new last line" >> "$T"
+bk delta $Q -yedit "$T"
+touch foo
+bk new $Q foo
+bk prs -r+ -hnd:ROOTKEY: foo | bk -R gone - 2>ERR || fail
+bk _rm -f foo SCCS/s.foo
+bk commit $Q -ytrig
+cd ../trigger-copy
+bk edit $Q "$T"
+echo "echo new last line" >> "$T"
+bk delta $Q -yedit "$T"
+touch foo
+bk new $Q foo
+bk prs -r+ -hnd:ROOTKEY: foo | bk -R gone - 2>ERR || fail
+bk _rm -f foo SCCS/s.foo
+bk commit $Q -ytrig
+bk pull $Q 2>ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+cd "$HERE"
+rm -rf project copy
+
+echo $N Pull with edited cset file and rootkeys with spaces .........$NL
+commercial project
+touch "foo-bar"
+bk new $Q "foo-bar"
+bk commit $Q -yfile-with-space || fail
+bk clone $Q ../project ../copy || fail
+bk edit $Q "foo-bar"
+bk delta $Q -fynull-delta "foo-bar" || fail
+bk commit $Q -ynull-delta || fail
+cd ../copy
+touch "foo bar"
+bk new $Q "foo bar"  || fail
+bk commit $Q -yfile-with-space || fail
+bk edit $Q ChangeSet || fail
+bk pull $Q || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Create a resync conflict ....................................$NL
+cd ../project
+bk edit $Q "foo-bar"
+bk delta $Q -fynull-delta "foo-bar" || fail
+touch lucky
+bk new $Q lucky
+bk commit $Q -f
+cd ../copy
+bk mv foo-bar lucky
+bk commit $Q -f
+bk pull $Q -R
+bk resolve $Q -c 2> ERR
+bk undo $Q -fsr+
+grep -q "pathname is used by another file already in RESYNC" ERR || {
+	echo wrong msg
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Receive a patch, then resolve and offer a default cmt .......$NL
+bk edit $Q "foo-bar"
+bk delta $Q -fynull "foo-bar"
+bk commit $Q -f
+bk undo $Q -fr+
+mv BitKeeper/tmp/undo.patch u
+touch newbar
+bk new $Q newbar
+bk commit $Q -f
+bk receive < u
+echo u | bk resolve -q -a > GOT 2> ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo >> GOT
+cat <<'EOF' > WANT
+
+-------------------------------------------------
+Merge
+-------------------------------------------------
+Use these comments: (e)dit, (a)bort, (u)se? 
+EOF
+cmpfiles WANT GOT
+bk changes -r+ -nd'$each(:C:){(:C:)}' > GOT
+echo Merge > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Show diff between sfiles showing no diff when has diff ......$NL
+# Picking on vr, vl and res_diff as they were using "tip" in their
+# gets which doesn't make sense.
+cd "$HERE"
+rm -fr remote local
+commercial remote
+touch foo
+bk new $Q foo
+bk commit $Q -ynewfiles
+cd ..
+bk clone $Q remote local
+cd local
+bk edit $Q foo
+echo "local content" > foo
+bk delta $Q -yfoo foo
+echo "bar content" > bar
+bk new $Q bar
+bk commit $Q -f
+cd ../remote
+# the null content is used to lock sync the time stamps
+# so that the rename winds up on the branch after the merge
+bk edit $Q foo
+echo "remote content" > foo
+bk delta $Q -yfoo foo
+bk mv foo bar
+bk commit $Q -f
+cd ../local
+{ echo vl; echo vr; echo d; echo q; } | bk pull -q 2> ERR > GOT && {
+	echo pull passed -- fix test
+	exit 1
+}
+cat <<'EOF' > WANT
+bar content
+remote content
+1c1
+< bar content
+---
+> remote content
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Show duplicate file create/sfile with rl ....................$NL
+# Handcrafted error test from seeing 'cp' on rs->dname in sc_ml
+# and back calculating a test case to create a bug.
+# Coincidentally, error matches message Zahy sent in Aug 4
+cd "$HERE"
+rm -fr remote local
+commercial remote
+touch foo
+bk new $Q foo
+bk commit $Q -ynewfiles
+cd ..
+bk clone $Q remote local
+cd local
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+touch bar
+bk new $Q bar
+bk commit $Q -f
+cd ../remote
+# the null content is used to lock sync the time stamps
+# so that the rename winds up on the branch after the merge
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk mv foo bar
+bk commit $Q -f
+cd ..
+tar cf TAR local
+cd local || fail
+{ echo rl; echo y; } | bk pull -q 2> ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Show duplicate file create/sfile with ml ....................$NL
+# Handcrafted error test from seeing 'cp' on rs->dname in sc_ml
+# and back calculating a test case to create a bug.
+# Coincidentally, error matches message Zahy sent in Aug 4
+cd ..
+rm -fr local
+tar xf TAR || fail
+cd local || fail
+{ echo ml; echo zoo; } | bk pull -q 2> ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Show rename to . with ml bug is fixed .......................$NL
+cd ..
+rm -fr local
+tar xf TAR || fail
+cd local || fail
+{ echo ml; echo .; echo q; } | bk pull -q 2> ERR
+grep -q "Illegal filename" ERR || fail -f ERR wrong error message
+echo OK
+
+echo $N Show rename to .. with ml does not ..........................$NL
+cd ..
+rm -fr local
+tar xf TAR || fail
+cd local || fail
+{ echo ml; echo ..; echo q; } | bk pull -q 2> ERR
+grep -q "Illegal filename" ERR || fail -f ERR wrong error message
+echo OK
+
+echo $N Show rename to . with mr bug is fixed .......................$NL
+cd ..
+rm -fr local
+tar xf TAR || fail
+cd local || fail
+{ echo mr; echo .; echo q; } | bk pull -q 2> ERR
+grep -q "Illegal filename" ERR || fail -f ERR wrong error message
+echo OK
+
+echo $N Show rename to .. with mr does not ..........................$NL
+cd ..
+rm -fr local
+tar xf TAR || fail
+cd local || fail
+{ echo mr; echo ..; echo q; } | bk pull -q 2> ERR
+grep -q "Illegal filename" ERR || fail -f ERR wrong error message
+echo OK
+
+echo $N Show unmerged leaf as part of a pull resolve with rl ........$NL
+cd "$HERE"
+rm -fr remote local
+commercial remote
+touch a b c
+bk new $Q a b c
+bk commit $Q -ynewfiles
+cd ..
+bk clone $Q remote local
+#
+cd local
+touch foo
+bk new $Q foo
+bk commit $Q -yfoo
+#
+cd ../remote
+bk mv a foo
+bk rm foo
+bk commit $Q -yfoo
+bk pull $Q ../local
+#
+cd ../local
+bk rm foo
+touch foo
+bk new $Q foo
+  # Skip this indented block to only create an m
+  # with it get an 'm' and an 'r' and the multiple tips error
+  bk edit $Q a
+  # no sleep and fast machine: prompt with 'a', else prompt with 'del-..'
+  # sleep 3
+  bk delta $Q -fya a
+bk commit $Q -yfoo
+#
+cd ../remote
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q -yfoo
+#
+cd ..
+rm TAR
+tar cf TAR local
+cd local
+printf "rl\ny\nq\n" | bk pull $Q 2> ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Show unmerged leaf as part of a pull resolve with ml ........$NL
+cd ..
+rm -fr local
+tar xf TAR
+cd local || fail
+printf "ml\nzoo\nq\n" | bk pull $Q 2> ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Show that dlm will automerge if necessary ...................$NL
+cd "$HERE"
+commercial repo
+touch foo
+bk new $Q foo
+bk commit $Q -y'created foo'
+cd "$HERE"
+bk clone $Q repo repo-clone
+cd "$HERE/repo"
+bk edit $Q foo
+echo foo >> foo
+bk ci $Q -y'added foo' foo
+bk commit $Q -y'added foo'
+cd "$HERE/repo-clone"
+bk edit $Q foo
+echo bar >> foo
+bk ci $Q -y'added bar' foo
+bk commit $Q -y'added bar'
+bk pull $Q <<EOF >OUT 2>&1
+dlm
+q
+EOF
+grep -q "<<<< gca foo 1.1" OUT || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Show that failed resolve will not mangle repo ...............$NL
+cd "$HERE"
+_commercial_config > c
+bk setup --sccs-compat -f -cc repo2
+cd repo2
+test -d .bk && fail
+mkdir dir
+touch dir/foo
+bk new $Q dir/foo
+bk commit $Q -y'added foo'
+cd ..
+bk clone $Q repo2 repo2-clone
+cd repo2-clone
+touch dir/bar
+bk new $Q dir/bar
+bk commit $Q -y'added bar'
+cd ../repo2
+bk -Ur get $Q
+chmod 644 dir/foo
+echo foo >> dir/foo
+BK_CONFIG='checkout:get!;partial_check:off!' bk pull $Q ../repo2-clone 2>ERR
+test -d .bk && fail
+echo OK
+
+# Next 3 tests check to see that user doesn't lose work
+echo $N Modify a file before pulling - takepatch should fail ........$NL
+cd "$HERE"
+commercial collider
+touch foo
+bk new $Q foo
+bk commit $Q -yfoo
+bk clone $Q . ../collidee
+bk edit $Q foo
+echo project > foo
+bk delta $Q -yfoo foo
+bk commit $Q -yfoo
+cd ../collidee
+bk edit $Q foo
+echo copy > foo
+bk delta $Q -yfoo foo
+bk commit $Q -yfoo
+# The actual test
+bk edit $Q foo
+echo new > foo
+bk pull -q 2> ERR1 && fail -f ERR1
+grep -q 'Pull failed: takepatch exited 1' ERR1 || fail -f ERR1
+test -d RESYNC && fail takepatch left RESYNC
+echo OK
+
+echo $N Modify after pass1 and before pass4 .........................$NL
+bk _rm -fr PENDING RESYNC
+# keep file edited, but with no change
+echo copy > foo
+# do the pull and alter contents of repo's foo during content resolve
+cat <<'EOF' | bk pull -q 2> ERR2 && fail -f ERR2
+!echo new > ../foo
+s
+C
+EOF
+grep -q 'resolve: RESYNC directory left intact' ERR2 || fail -f ERR2
+test -d RESYNC || fail no RESYNC
+echo OK
+
+echo $N Quit resolve, modify and start resolve again ................$NL
+bk abort -f
+# keep file edited, but with no change
+echo copy > foo
+# do the pull and alter contents of repo's foo during content resolve
+echo q | bk pull -q 2> ERR3
+echo new > foo
+echo q | bk resolve 2> ERR4
+grep -q 'resolve: RESYNC directory left intact' ERR4 || fail -f ERR4
+test -d RESYNC || fail no RESYNC
+echo OK
+
+echo $N Show that remote rename does not conflict with local edit ...$NL
+# via support email
+# From: Dave Hart <hart@ntp.org>
+# Subject: "bk pull oddity"
+# Date: May 16, 2011
+cd "$HERE"
+commercial ntp-stable
+echo stable > info
+bk new $Q info
+bk commit $Q -f
+cd ..
+bk clone $Q ntp-stable ntp-dev
+cd ntp-stable
+bk edit $Q info
+echo modified-stable > info
+bk ci $Q -y'modified stable' info
+bk commit $Q -f
+cd ../ntp-dev
+bk rm info
+bk commit $Q -f
+echo dev > info
+bk new $Q info
+bk commit $Q -f
+bk edit $Q info
+echo modified-dev > info
+bk pull $Q || fail should have worked
+echo OK
+
+echo $N Test resolve -r can see conflict resolve with ul and ur .....$NL
+cd "$HERE"/copy4
+bk abort -qf
+bk pull $Q -R
+# Note: resolve -r only works in gui environment, so hack one in
+BK_NO_GUI_PROMPT= DISPLAY=:1 bk resolve $Q <<EOF 2> OUT
+ul
+q
+EOF
+# This both tests that ul worked in that the already done file
+# is listed first, and it sets up the test for ur
+BK_NO_GUI_PROMPT= DISPLAY=:1 bk resolve $Q -r <<EOF 2> OUT
+ur
+q
+EOF
+printf \
+  "(content conflict) dir1-proj/ff>> (content conflict) dir2/space file>> " \
+  > WANT
+cmpfiles WANT OUT
+# verify ur can be redone by the file being named first
+BK_NO_GUI_PROMPT= DISPLAY=:1 bk resolve $Q -r <<EOF 2> OUT
+q
+EOF
+printf "(content conflict) dir1-proj/ff>> " > WANT
+cmpfiles WANT OUT
+echo OK
+
+echo $N Test CC option to resolve....................................$NL
+bk abort -qf
+bk pull $Q -R
+BK_NO_GUI_PROMPT= DISPLAY=:1 bk resolve $Q <<EOF 2>OUT
+s
+q
+EOF
+# force some diffs
+echo stuff >> RESYNC/dir1-proj/ff
+BK_NO_GUI_PROMPT= DISPLAY=:1 bk resolve $Q <<EOF >OUT 2>&1
+CC
+stuff
+q
+EOF
+grep -q "^+stuff" OUT || fail -f OUT diffs not shown
+echo OK

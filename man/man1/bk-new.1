@@ -1,0 +1,62 @@
+.so ../bk-macros
+.TH "bk new" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk new \- add a file to the repository
+.SH SYNOPSIS
+.B bk new
+.[B] \-bcq
+.[OPTreq] \-M mode
+.BKARGS
+.SH DESCRIPTION
+The 
+.B bk new
+command is used to initially place files under \*[BK] control.
+.LP
+A useful way to add new files in the current directory is:
+.DS
+bk gfiles -x *.[ch] | bk new - 
+.DE
+When you want to add files in the current directory and all 
+subdirectories, do the following:
+.DS
+bk -xr. new	# same as bk gfiles -x | bk new -
+.DE
+After the files are checked in, don't be surprised to see that
+the files are no longer in your directory. The process of checking
+in files removes the files from the directory and places them in
+the SCCS directories.  Once in the SCCS directory, the file can be
+retrieved with the 
+.B bk co
+or 
+.B bk edit
+commands.  Most versions of the
+\*[UN] make command know about SCCS and will automatically check out
+files as they are needed.
+.SH OPTIONS
+.TP  "\-M \*<mode\*>"
+.B \-b
+force binary encoding with no keyword expansion;
+recommended for all binary files, but will work
+on text files as well (with a corresponding increase in the size of the 
+revision history file).
+.tp
+.B \-c
+Use comments saved by a previous run of citool, fix, collapse, etc.
+It is an error if there are no saved comments.
+.tp
+.OPTreq \-M mode
+Set the permissions on the new delta to \*<mode\*>.
+.tp
+.B \-q
+be quiet.
+.SH SEE ALSO
+.SA ci
+.SA edit
+.SA co
+.SA ignore
+.SA gfiles
+.SH CATEGORY
+.B File
+.br
+.B Common
+.\" help://add

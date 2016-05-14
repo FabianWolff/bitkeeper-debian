@@ -1,0 +1,565 @@
+# Copyright 1999-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+PREFIX=file://"$HERE"
+BK_REMOTEBIN="$BK_BIN"
+export BK_REMOTEBIN
+
+echo 'compression:none!' >> "`bk dotbk`"/config
+
+# Tests for pull, push, and clone.
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+mkdir src
+cd src
+echo foo > 'F!O#O$ B%A^R&RR(R)RR'
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i 'F!O#O$ B%A^R&RR(R)RR' bar.c h.h
+if bk _test ! -f SCCS/s.'F!O#O$ B%A^R&RR(R)RR'; then echo failed to create history; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 15 ]; then echo wrong pending result $P; bk pending; exit 1; fi
+bk commit $S -yCset
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo failed to clear pending list; bk pending; exit 1; fi
+echo OK
+cores
+
+echo $N Clone repository ............................................$NL
+mkdir -p "$HERE/tst"
+cd "$HERE/tst"
+bk clone $Q "$HERE/project" || { echo failed; exit 1; }
+bk _test -f "$HERE/tst/project/src/SCCS/s."'F!O#O$ B%A^R&RR(R)RR' || \
+							{ echo failed; exit 1; }
+cd "$HERE"
+bk clone $Q "$HERE/project" "$HERE/copy" || { echo failed; exit 1; }
+bk _test -f copy/src/SCCS/s.'F!O#O$ B%A^R&RR(R)RR' || { echo failed; exit 1; }
+[ -f copy/BitKeeper/log/parent ] || { echo no parent; exit 1; }
+parent=`cat copy/BitKeeper/log/parent`
+host=`bk gethost`
+[ "x$parent" = xfile://"$HERE/project" ] || \
+					{ echo wrong parent $parent; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+
+echo $N Clone a nested repository ...................................$NL
+cd "$HERE/project/src"
+bk clone $Q "$HERE/project" sub_proj || fail
+if [ ! -d "$HERE/project/src/sub_proj" ]; then echo failed; exit 1; fi
+rm -rf "$HERE/project/src/sub_proj"
+echo OK
+
+echo $N Pull with no changes in child ...............................$NL
+cd "$HERE/project/src"
+bk get $Q -e 'F!O#O$ B%A^R&RR(R)RR' || fail
+echo delta two >> 'F!O#O$ B%A^R&RR(R)RR'
+bk delta $Q -y2 'F!O#O$ B%A^R&RR(R)RR' || fail
+bk commit $Q -y2 || fail
+cd "$HERE/copy"
+bk pull -u -q || fail
+WANT=`bk changes -qd:MD5KEY: -r+ "$HERE/project"`
+GOT=`bk changes -qd:MD5KEY: -r+`
+test "$WANT" = "$GOT" || {
+	echo transfered the wrong csets
+	echo $WANT
+	echo $GOT
+	exit 1
+}
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+if [ $DO_REMOTE = YES ]; then
+ cd "$HERE/copy"
+
+ echo $N Pull with explicit remote parent ............................$NL
+ bk pull $Q localhost:"$HERE/project" || { echo failed; exit 1; }
+ revs=`bk prs -hd':I:\n' src/'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+ [ $revs -eq 2 ] || { echo failed; exit 1; }
+ cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+ echo OK
+
+ echo $N Pull with explicit remote parent and username ...............$NL
+ cd "$HERE/copy"
+ bk pull $Q $USER@localhost:"$HERE/project" > /dev/null 2>& 1 ||
+							{ echo failed; exit 1; }
+ revs=`bk prs -hd':I:\n' src/'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+ [ $revs -eq 2 ] || { echo failed; exit 1; }
+ cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+ echo OK
+
+ echo $N Pull with explicit local parent .............................$NL
+ cd "$HERE/copy"
+ HOSTNAME=`bk gethost -r`
+ bk pull $Q $HOSTNAME:"$HERE/project" > /dev/null 2>&1 || 
+							{ echo failed; exit 1; }
+ revs=`bk prs -hd':I:\n' src/'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+ [ $revs -eq 2 ] || { echo failed; exit 1; }
+ cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+ echo OK
+ echo $N Pull with explicit local parent and username ................$NL
+ bk pull $Q $USER@$HOSTNAME:"$HERE/project" > /dev/null 2>&1 ||
+							{ echo failed; exit 1; }
+ revs=`bk prs -hd':I:\n' src/'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+ [ $revs -eq 2 ] || { echo failed; exit 1; }
+ echo OK
+else
+ echo Pull with explicit remote parent ............................skipped
+ echo Pull with explicit remote parent and username................skipped
+ echo Pull with explicit local parent .............................skipped
+ echo Pull with explicit local parent and username ................skipped
+fi
+
+echo $N Pull from subdirectory of repository ........................$NL
+cd src
+bk pull $Q || { echo failed; exit 1; }
+revs=`bk prs -hd':I:\n' 'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+[ $revs -eq 2 ] || { echo failed; exit 1; }
+echo OK
+
+echo $N Pull from subdirectory of repository w/relative parent path..$NL
+cd "$HERE/copy"
+bk unpull -f $Q || fail 1
+bk parent $Q -sn ../project || fail 2
+cd src
+bk pull $Q || fail 3
+revs=`bk prs -hd':I:\n' 'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+[ $revs -eq 2 ] || fail 4
+bk parent $Q -s "$HERE/project" || fail 5
+echo OK
+
+echo $N Push from subdirectory of repository w/relative parent path..$NL
+bk unpull -f $Q || fail 1
+cd "$HERE/project"
+bk parent $Q -sn ../copy || fail 2
+cd src
+bk push $Q || fail 3
+bk parent $Q -r || fail 4
+cd "$HERE/copy/src"
+revs=`bk prs -hd':I:\n' 'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+[ $revs -eq 2 ] || fail 5
+echo OK
+
+echo $N Pull with mergeable changes in child ........................$NL
+bk get $Q -e bar.c
+echo line three >>bar.c
+bk delta $Q -ythree bar.c
+bk commit $Q -ythree
+cd "$HERE/project/src"
+bk get $Q -e bar.c
+mv bar.c bar.x
+echo line zero >bar.c
+cat bar.x >>bar.c
+rm -f bar.x
+bk delta $Q -yzero
+bk commit $Q -y0
+cd "$HERE/copy"
+bk pull $Q || { echo failed; exit 1; }
+cd src
+cat > X <<EOF
+line zero
+bar
+line three
+EOF
+bk undos X > ref-bar.c
+bk get $Q bar.c
+cmp -s ref-bar.c bar.c
+[ $? -eq 0 ] || { echo failed; diff ref-bar.c bar.c; exit 1; }
+echo OK
+bk clean 
+
+echo $N Push with no upstream deltas ................................$NL
+bk push $Q || { echo failed; exit 1; }
+mv ref-bar.c "$HERE/project/src"
+cd "$HERE/project/src"
+bk get $Q bar.c
+cmp -s ref-bar.c bar.c
+[ $? -eq 0 ] || { echo failed; diff ref-bar.c bar.c; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+bk clean 
+rm -f ref-bar.c
+
+echo $N Push with an unrelated upstream delta .......................$NL
+cd "$HERE/project"
+date > stamp
+bk delta $Q -i stamp
+bk commit $Q -ytime
+KEY="`bk prs -hd:KEY: -r+ ChangeSet`"
+cd "$HERE/copy/src"
+bk get $Q -e h.h
+sed 's/h/qwerty/' <h.h >h.x
+mv h.x h.h
+bk delta $Q -ydvorak h.h
+cd ..
+bk commit $Q -yzxcvbnm
+bk parent $Q "$HERE/copy" || fail
+bk push $Q -a "$HERE/project" 2>ERR || {
+	echo push w/ autopull failed
+	exit 1
+}
+grep -q "The repository you are pushing to is 1 csets/tags" ERR || {
+	echo wrong message
+	cat ERR
+	exit 1
+}
+bk parent $Q "$HERE/project" || fail
+bk findkey $KEY > foo
+if [ ! -s foo ]; then echo bad push; exit 1; fi
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+
+echo $N Push with a conflicting upstream delta ......................$NL
+cd "$HERE/project/src"
+bk get $Q -e h.h
+sed 's/h/yuhjklbn/' <h.h >h.x
+mv h.x h.h
+bk delta $Q -yrogue h.h
+cd ..
+bk commit $Q -yrogue
+KEY="`bk prs -hd:KEY: -r+ ChangeSet`"
+cd "$HERE"
+tar cf PUSH.tar project copy
+cd "$HERE/copy"
+_BK_PREVENT_RESOLVE_RERUN=1 bk push -a $Q 2> resolve.out
+test $? -ne 0 || { echo failed; cat resolve.out; exit 1; }
+grep -q 'unresolved conflicts, nothing is applied' resolve.out || {
+	echo should have had conflicts, but did not
+	cat resolve.out
+	exit 1
+}
+KEY2="`bk prs -hd:KEY: -r+ "$HERE/project/ChangeSet"`"
+[ "$KEY" = "$KEY2" ] || { echo bad push; exit 1; }
+echo OK
+
+echo $N Make sure we left the c.ChangeSet file there ................$NL
+bk _test -f RESYNC/SCCS/c.ChangeSet || fail
+echo OK
+
+echo $N Resolve by hand and push again ..............................$NL
+bk resolve $Q -F <<EOF >resolve.out 2>&1
+m
+C
+whatever
+.
+u
+EOF
+[ $? -eq 0 ] || { echo resolve failed; cat resolve.out; exit 1; }
+L=`bk get $Q -p src/h.h | wc -l`
+target=7
+if [ "X$BK_RESOLVE_MERGEPROG" = "Xmerge" ]; then
+	target=5
+fi
+[ $L -eq $target ] || { echo merge failed; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+cd "$HERE"
+cp -rp project project2
+cp -rp project project3
+cd copy
+KEY="`bk prs -hd:KEY: -r+ ChangeSet`"
+bk push >OUT 2>ERR || { echo failed; exit 1; }
+KEY2="`cd "$HERE/project" && bk prs -hd:KEY: -r+ ChangeSet`"
+[ "$KEY" = "$KEY2" ] || { echo no push; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+
+echo $N Check merge commit comment ..................................$NL
+bk changes -r+ -d'$each(:C:){(:C:)\n}' > GOT
+# If the paths put into urls were sanatized we wouldn't need this hack
+if [ X$PLATFORM = XWIN32 ]
+then
+	grep -q '^Merge ' GOT || fail
+	grep -q '^into  ' GOT || fail
+else
+	(cd ../project && echo "Merge bk_regression.bk:`pwd`";
+	cd ../copy && echo "into  bk_regression.bk:`pwd`") > WANT
+	checkfiles WANT GOT
+fi
+echo OK
+
+if [ $DO_REMOTE = YES -a X$NO_TTY = X ]; then
+ echo $N Push with explicit remote parent ............................$NL
+ cd "$HERE/copy"
+ bk push $Q localhost:"$HERE/project2" > /dev/null 2>&1 ||
+							{ echo failed; exit 1; }
+ KEY2="`cd "$HERE/project2" && bk prs -hd:KEY: -r+ ChangeSet`"
+ [ "$KEY" = "$KEY2" ] || { echo no push; exit 1; }
+ cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+ echo OK
+else
+ echo Push with explicit remote parent ............................skipped
+fi
+
+echo $N Push with conflict in uncomitted remote delta ...............$NL
+cd "$HERE/copy/src"
+bk get $Q -e 'F!O#O$ B%A^R&RR(R)RR'
+sed 's/delta two/delta two-local/' 'F!O#O$ B%A^R&RR(R)RR'  > x
+mv x 'F!O#O$ B%A^R&RR(R)RR'
+bk delta $Q -y 'F!O#O$ B%A^R&RR(R)RR'
+cd "$HERE/project/src"
+bk get $Q -e 'F!O#O$ B%A^R&RR(R)RR'
+sed 's/delta two/delta two-remote/' 'F!O#O$ B%A^R&RR(R)RR'  > x
+mv x 'F!O#O$ B%A^R&RR(R)RR'
+bk delta $Q -y 'F!O#O$ B%A^R&RR(R)RR'
+bk commit $Q -ytest
+_BK_COPY_SFILE=YES bk push "$HERE/copy" > push.out 2>&1
+grep -q "has uncommitted changes" push.out
+if [ $? -ne 0 ]; then echo failed; cat push.out; exit 1; fi
+echo OK
+
+echo $N pull with a delete event ....................................$NL
+bk clone $Q "$HERE/project" "$HERE/copy2"
+cd "$HERE/project/src"
+bk rm 'F!O#O$ B%A^R&RR(R)RR'
+bk commit $Q -ydelete
+cd "$HERE/copy2/src"
+bk rm 'F!O#O$ B%A^R&RR(R)RR'
+bk commit $Q -ydelete2
+bk pull $Q "$HERE/project" || { echo failed; exit 1; }
+echo OK
+
+echo $N pull with a mvdir event .....................................$NL
+cd "$HERE/project"
+bk mvdir src src2/src3
+bk commit $Q -ymvdir
+cd "$HERE/copy2"
+bk pull $Q "$HERE/project"
+if bk _test ! -f src2/src3/SCCS/s.bar.c; then echo failed; exit 1; fi
+if bk _test ! -f src2/src3/SCCS/s.h.h; then echo failed; exit 1; fi
+echo OK
+
+echo $N push to a read locked repository should fail ................$NL
+L=`cd "$HERE/project" ; bk lock -rt`
+bk push -c0 "$HERE/project" > OUT 2>&1
+grep -q 'Unable to lock repository for update' OUT || {
+	echo failed
+	bk _kill $L
+	cat OUT
+	exit 1
+}
+bk _kill $L
+echo OK
+
+echo $N push to unrelated project should error ......................$NL
+cd "$HERE"
+fresh_commercial unrelated
+cd "$HERE/project"
+bk push "$HERE/unrelated" > push.out 2>&1 && {
+   echo should have failed
+   exit 1
+}
+grep -q "trying to push to an unrelated" push.out
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N pull from unrelated project should error ....................$NL
+cd "$HERE/project"
+bk pull "$HERE/unrelated" > pull.out 2>&1
+grep -q "trying to pull from an unrelated" pull.out
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N pull from read-only server should work fine .................$NL
+cd "$HERE/project"
+echo hi > test
+bk new $Q test
+bk commit $Q -ytt || fail
+oldmode=`bk _stat SCCS | awk -F\| '{ print substr($3, 3) }'`
+bk _chmod 555 SCCS
+cd "$HERE/copy2"
+bk pull $Q || {
+	echo pull failed
+	bk _chmod $oldmode "$HERE/project/SCCS"
+	exit 1
+}
+bk _chmod $oldmode "$HERE/project/SCCS"
+echo OK
+
+echo $N Create bad change and pull should fail ......................$NL
+cd "$HERE"
+commercial badsrc
+cd ..
+bk clone $Q badsrc badclone
+cd badsrc
+echo foo > foo
+bk new $Q foo
+bk commit $Q -yfoo
+sum=`bk prs -r+ -hnd:DSUM: ChangeSet`
+newsum=`expr $sum + 10`
+test "$newsum" -ge 65536 && {
+	newsum=`expr $newsum - 65536`
+}
+newsum=`printf "%05u" "$newsum"`
+bk edit $Q foo
+echo no more foo > foo
+bk delta $Q -yfoo foo
+bk commit $Q -yfoo
+test "$sum" = "$newsum" && {
+	echo newsum should be different $sum $newsum
+	exit 1
+}
+bk _scat ChangeSet > s.ChangeSet
+# Only change the checksum in the 1.2 cset
+PROG="\$doit = / 1\\.2 / if /^\\001d/; s/K$sum/K$newsum/ if \$doit;"
+perl -pe "$PROG" s.ChangeSet | bk undos > s.NEW_ChangeSet
+cmp -s s.ChangeSet s.NEW_ChangeSet && {
+	echo sed "s/K$sum/K$newsum/" 
+	echo sed failed, the changeset files should be different
+	cat s.NEW_ChangeSet
+	exit 1
+}
+bk _mv s.NEW_ChangeSet SCCS/s.ChangeSet
+bk admin -z ChangeSet
+bk edit $Q foo
+echo another foo > foo
+bk delta $Q -yfoo foo
+bk commit $Q -yfoo
+cd ../badclone
+bk pull -R $Q ../badsrc 2> ERR && {
+	echo Failed
+	cat ERR
+	exit 1
+}
+grep -q "checksum in the patch for the ChangeSet" ERR || {
+	echo Failed
+	echo Wrong message. Expected "'checksum ... ChangeSet'":
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N make sure pull normalize file url ...........................$NL
+bk pull -v ../././project > "$HERE/pull.out" 2> /dev/null
+grep -q "$PREFIX/project" "$HERE/pull.out" 
+STATUS=$?
+test $STATUS = 0 || {
+	test "$PLATFORM" = "WIN32" && {
+		grep -q -i "$PREFIX/project" "$HERE/pull.out"
+		STATUS=$?
+	}
+}
+test $STATUS = 0 || {
+	echo failed;
+	exit 1;
+}
+echo OK
+
+
+# XXX TODO need test case for pull/pull/clone to/from space in pathname
+
+echo $N Try pushing to an illegal hostname ..........................$NL
+bk push bk://badhostname > ERR 2>&1 && {
+	echo should have failed
+	exit 1
+}
+grep -q "Assert" ERR && {
+	echo should not assert
+	exit 1
+}
+
+grep -q "Cannot resolve host 'badhostname'." ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Make sure illegal hostname error is emitted even with -q ....$NL
+bk push -q bk://badhostname 2> ERR
+grep -q "Cannot resolve host 'badhostname'." ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N And the same for pull -q ....................................$NL
+bk pull -q bk://badhostname 2> ERR
+grep -q "Cannot resolve host 'badhostname'." ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Push to something that is not there using BK_RSH ............$NL
+# run anything that doesn't work
+BK_RSH="bk _usleep 1000" \
+    bk push $Q bkd@data.bitkeeper.com:no-such-repo 2>ERR && fail -f ERR
+# Test should have fixed this one
+grep -q "Assertion" ERR && fail -f ERR
+# two possible error messages
+grep -q "no-such-repo: push: write to remote failed" ERR || \
+	grep -q "push: no data?" ERR || fail -f ERR
+echo OK
+
+echo $N Pull from something that is not there using BK_RSH ..........$NL
+BK_RSH="bk _usleep 1000" \
+    bk pull $Q bkd@data.bitkeeper.com:no-such-repo 2>ERR && fail -f ERR
+
+# two possible error messages
+grep -q "no-such-repo: pull: write to remote failed" ERR || \
+	grep -q "pull: no data?" ERR || fail -f ERR
+echo OK
+
+# Set up next two tests
+cd "$HERE"
+commercial pull-self
+cd ..
+cp -r pull-self push-self
+
+echo $N Try pulling from myself .....................................$NL
+cd pull-self
+bk pull $Q . 2>../ERR && {
+	echo should have failed
+	exit 1
+}
+# test cleaning up bkd -- will cause core dump if not (if not NOPROC)
+cd ..
+rm -fr pull-self
+grep -q "can't connect to same repo_id" ERR || {
+	echo wrong error message
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Try pushing to myself .......................................$NL
+cd push-self
+bk push $Q . 2>../ERR && {
+	echo should have failed
+	exit 1
+}
+# test cleaning up bkd -- will cause core dump if not (if not NOPROC)
+cd ..
+rm -fr push-self
+grep -q "can't connect to same repo_id" ERR || {
+	echo wrong error message
+	cat ERR
+	exit 1
+}
+echo OK
+
+test -d "$TESTDATA/commercial" && {
+echo $N Try pulling in a big patch to tickle fastsum boundary .......$NL
+cd "$HERE"
+bk clone $Q "$TESTDATA/commercial"
+cd commercial
+_BK_NO_PATCHSFIO=1 bk pull $Q "$TESTDATA/repo-32klines" || fail
+echo OK
+}
+
+true

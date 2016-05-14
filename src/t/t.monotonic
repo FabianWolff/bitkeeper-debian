@@ -1,0 +1,388 @@
+# Copyright 2002-2006,2013-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# See also src/Notes/MONOTONIC
+
+# Because we use tar xmf we don't check for timestamp errors here.
+unset _BK_DEVELOPER
+
+echo $N Mark a file as MONOTONIC, add a delta, check for danglers ...$NL
+commercial project
+bk admin -fMONOTONIC BitKeeper/etc/config
+bk edit $Q BitKeeper/etc/config
+echo "bogus1: bogus" >> BitKeeper/etc/config
+bk delta $Q -ywhatever BitKeeper/etc/config
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 || {
+	echo should not have had any dangling deltas
+	bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config
+	exit 1
+}
+bk commit $Q -ywhatever
+echo OK
+
+echo $N Clone -r backwards a forward file, check for danglers .......$NL
+cd "$HERE"
+bk clone $Q -r1.1 project clone || fail
+cd clone
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 2 || {
+	echo should have had 2 dangling deltas
+	bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config
+	exit 1
+}
+echo OK
+
+echo $N Check flags, should have MONOTONIC ..........................$NL
+case `bk prs -r+ -hnd':FLAGS:' BitKeeper/etc/config` in
+    *MONOTONIC*) ;;
+    *)	echo Bad flags
+    	bk prs -r+ -hnd':FLAGS:' BitKeeper/etc/config
+	exit 1;;
+esac
+echo OK
+
+echo $N Pull to fill in missing csets, check for no danglers ........$NL
+bk pull $Q || fail
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 || {
+	echo should have had 0 dangling deltas
+	bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config
+	exit 1
+}
+echo OK
+
+echo $N Clone a repo with uncommitted deltas, should be stripped ....$NL
+cd "$HERE/project"
+WANT=`bk prs -hr+ -nd:I: BitKeeper/etc/config`
+bk edit $Q BitKeeper/etc/config
+bk delta -fypending $Q BitKeeper/etc/config
+TOP=`bk prs -hr+ -nd:I: BitKeeper/etc/config`
+cd "$HERE"
+bk clone $Q project pending || fail
+cd pending
+test `bk prs -hr+ -nd:I: BitKeeper/etc/config` != $TOP || {
+	echo Failed to strip pending deltas
+	exit 1
+}
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 || {
+	echo should not have dangling deltas
+	bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config
+	exit 1
+}
+echo OK
+
+echo $N Clone -r backwards a forward file, check for danglers .......$NL
+cd "$HERE"
+bk clone $Q -r1.1 project clone2 || fail
+cd clone2
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 2 || {
+	echo should have had 2 dangling deltas
+	bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config
+	exit 1
+}
+echo OK
+
+# XXX - this is a pretty pointless test, we're just making sure we don't send
+# the dangling delta in a pull, which has little to do with danglers.
+echo $N Pull to fill in missing csets, check for no danglers ........$NL
+bk pull $Q || fail
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 || {
+	echo should have had 0 dangling deltas
+	bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config
+	exit 1
+}
+GOT=`bk prs -hr+ -nd:I: BitKeeper/etc/config`
+test $GOT = $WANT || {
+	echo Wrong top delta WANT=$WANT GOT=$GOT
+	bk prs BitKeeper/etc/config
+	exit 1
+}
+echo OK
+
+echo $N Pull csets which partially fill in danglers, check marks ....$NL
+cd "$HERE/project"
+bk commit $Q -ywhatever
+bk edit $Q BitKeeper/etc/config
+echo "bogus2: bogus" >> BitKeeper/etc/config
+bk delta $Q -ywhatever BitKeeper/etc/config
+TOP=`bk prs -hr+ -nd':I:' BitKeeper/etc/config`
+bk commit $Q -ywhatever
+cd "$HERE"
+bk clone $Q -r1.3 project middle
+cd middle
+test $TOP = `bk prs -hr+ -nd':I:' BitKeeper/etc/config` || {
+	echo should have had $TOP at the top
+	bk prs BitKeeper/etc/config
+	exit 1
+}
+bk prs -hnd'$if(:DANGLING:){:GFILE:|:I:}' BitKeeper/etc/config | 
+    bk stripdel -dC $Q -
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 || {
+	echo should have had 0 dangling deltas
+	bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config
+	exit 1
+}
+DELTAS=`bk prs -hnd':I:' BitKeeper/etc/config | wc -l`
+cd "$HERE"
+bk clone $Q -r1.1 project lots
+tar cf TAR lots
+cd lots
+test `bk prs -hr+ -nd':I:' BitKeeper/etc/config` = $TOP || {
+	echo should have had $TOP at the top
+	bk prs BitKeeper/etc/config
+	exit 1
+}
+test `bk prs -hnd':I:' BitKeeper/etc/config | wc -l` -gt $DELTAS || {
+	echo Repo lots should have had more deltas than repo middle
+	echo WANT=$DELTAS
+	get GOT=`bk prs -hnd':I:' BitKeeper/etc/config | wc -l`
+	exit 1
+}
+BEFORE=`bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l`
+bk pull $Q ../middle || fail
+AFTER=`bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l`
+test $BEFORE -gt $AFTER || {
+	echo should have filled in some danglers
+	echo BEFORE=$BEFORE AFTER=$AFTER
+	exit 1
+}
+echo OK
+
+echo $N Pull csets which fill in the rest of the danglers, check ....$NL
+bk pull $Q "$HERE/project" || fail
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 || {
+	echo should have had 0 dangling deltas
+	bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config
+	bk parent
+	bk difftool BitKeeper/etc/SCCS/s.config "$HERE/project/BitKeeper/etc/SCCS/s.config"
+	exit 1
+}
+echo OK
+
+echo $N Remove MONOTONIC flag, clone -r, should roll backwards ......$NL
+cd "$HERE/project"
+bk admin -FMONOTONIC BitKeeper/etc/config
+bk commit -ynormal $Q
+cd "$HERE"
+bk clone -r1.1 $Q project normal
+cd normal
+test `bk prs -hr+ -nd:I: BitKeeper/etc/config` = 1.1 || {
+	echo Failed to roll config file backwards
+	exit 1
+}
+echo OK
+
+echo $N Simulate editing a forward file by hand .....................$NL
+cd "$HERE"
+rm -rf lots
+tar xmf TAR
+cd lots
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 && {
+	echo should have had dangling deltas
+	exit 1
+}
+bk edit $Q BitKeeper/etc/config
+echo whatever >> BitKeeper/etc/config
+bk _rm BitKeeper/etc/SCCS/p.config
+REV=`bk prs -hnd'$unless(:DANGLING:){:I:}' BitKeeper/etc/config | tail -1`
+bk _get $Q -ger$REV BitKeeper/etc/config
+bk delta $Q -yaddition BitKeeper/etc/config || fail
+bk prs -hnd'$if(:DANGLING:){:GFILE:|:I:}' BitKeeper/etc/config | 
+    bk stripdel -dC $Q -
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 || {
+	echo failed to strip all danglers
+	exit 1
+}
+bk renumber $Q BitKeeper/etc/config
+bk -r check -ac || {
+	bk config -v
+	bk log -r1.0.. -nd':I: :FLAGS:' BitKeeper/etc/config
+	exit 1
+}
+echo OK
+
+echo $N Edit a MONOTONIC file, delta it, should strip danglers ......$NL
+cd "$HERE"
+rm -rf lots
+tar xmf TAR
+cd lots
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 && {
+	echo should have had dangling deltas
+	exit 1
+}
+# The following prs shows 1.2 .. 1.5 as danglers
+# bk prs -nd':I: :FLAGS: :DANGLING:' BitKeeper/etc/config
+bk edit $Q BitKeeper/etc/config
+echo whatever >> BitKeeper/etc/config
+bk delta $Q -yaddition BitKeeper/etc/config || fail
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 || {
+	echo should not have had dangling deltas
+	bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config
+	exit 1
+}
+# The top delta should be the 1.2 delta we just added.
+test `bk prs -r+ -hnd:I: BitKeeper/etc/config` = 1.2 || {
+	echo Failed to strip danglers
+	bk prs -nd':I: :DANGLING:' BitKeeper/etc/config
+	exit 1
+}
+test `bk prs -r+ -hnd:FLAGS: BitKeeper/etc/config` = "BITKEEPER,CSETMARKED,SCCS,MONOTONIC,EOLN_UNIX" || {
+	echo failed to preserve flags
+	bk prs -r+ -hnd'GOT :FLAGS:' BitKeeper/etc/config
+	echo Wanted BITKEEPER,CSETMARKED,SCCS,MONOTONIC
+	exit 1
+}
+echo OK
+
+echo $N Edit a MONOTONIC file, change it, get diffs .................$NL
+cd "$HERE"
+rm -rf project
+commercial project
+bk admin -fMONOTONIC BitKeeper/etc/config
+for i in 1 2 3
+do	bk edit $Q BitKeeper/etc/config
+	echo "bogus${i}: bogus" >> BitKeeper/etc/config
+	bk delta $Q -ybogus$i BitKeeper/etc/config
+	bk commit $Q -ybogus$i
+done
+cd "$HERE"
+bk clone $Q -r1.1 project clean
+cd clean
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 && {
+	echo should have had dangling deltas
+	exit 1
+}
+bk edit $Q BitKeeper/etc/config
+test -w BitKeeper/etc/config || fail
+echo foo >> BitKeeper/etc/config
+test `bk diffs -h BitKeeper/etc/config | wc -c` -eq 0 && {
+	echo should have had diffs
+	bk diffs -h BitKeeper/etc/config
+	exit 1
+}
+echo OK
+
+echo $N Unedit, re-edit, run diffs, should be empty .................$NL
+bk unedit $Q BitKeeper/etc/config
+test -w BitKeeper/etc/config && fail
+bk edit $Q BitKeeper/etc/config
+test -w BitKeeper/etc/config || fail
+test `bk diffs -h BitKeeper/etc/config | wc -c` -eq 0 || {
+	echo had diffs
+	bk diffs -h BitKeeper/etc/config
+	exit 1
+}
+echo OK
+
+echo $N Run diffs against real parent, should have diffs ............$NL
+PARENT=`bk prs -hnd'$unless(:DANGLING:){:I:}' BitKeeper/etc/config | head -1`
+bk get $Q -kpr+ BitKeeper/etc/config > TOP
+cmp -s TOP BitKeeper/etc/config || fail
+bk get $Q -kpr$PARENT BitKeeper/etc/config > PARENT
+cmp -s PARENT BitKeeper/etc/config && fail
+test `bk diffs -hr$PARENT BitKeeper/etc/config | wc -c` -eq 0 && {
+	echo should have had diffs against $PARENT
+	bk diffs -r$PARENT BitKeeper/etc/config
+	echo real diffs
+	diff PARENT TOP
+	echo 1.2 diffs
+	bk diffs -r1.2 BitKeeper/etc/config
+	exit 1
+}
+echo OK
+
+echo $N Run clean, should clean it ..................................$NL
+bk clean $Q BitKeeper/etc/config || fail
+test -f BitKeeper/etc/config && {
+	echo failed to clean file without changes
+	exit 1
+}
+echo OK
+
+echo $N Make sure sfiles -c thinks it is unmodified .................$NL
+bk edit $Q BitKeeper/etc/config
+test `bk sfiles -c BitKeeper/etc/config | wc -c` -eq 0 || {
+	echo sfiles thinks it is modified
+	exit 1
+}
+echo OK
+
+echo $N Edit a MONOTONIC file, put non-dangling parent in it, clean .$NL
+cd "$HERE"
+rm -rf lots
+tar xmf TAR
+cd lots
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 && {
+	echo should have had dangling deltas
+	exit 1
+}
+bk edit $Q BitKeeper/etc/config
+PARENT=`bk prs -hnd'$unless(:DANGLING:){:I:}' BitKeeper/etc/config | head -1`
+bk get $Q -kpr$PARENT BitKeeper/etc/config > XXX
+cmp -s BitKeeper/etc/config XXX && fail
+mv XXX BitKeeper/etc/config
+bk clean $Q BitKeeper/etc/config || fail
+test -f BitKeeper/etc/config && {
+	echo failed to clean file without changes
+	exit 1
+}
+echo OK
+
+echo $N Make sure sfiles -c thinks it is unmodified .................$NL
+bk edit $Q BitKeeper/etc/config
+bk get $Q -kpr$PARENT BitKeeper/etc/config > XXX
+cmp -s BitKeeper/etc/config XXX && fail
+mv XXX BitKeeper/etc/config
+test `bk sfiles -c BitKeeper/etc/config | wc -c` -eq 0 || {
+	echo sfiles thinks it is modified
+	exit 1
+}
+echo OK
+
+echo $N Make sure we cannot remove the MONOTONIC flag with danglers .$NL
+cd "$HERE"
+rm -rf lots
+tar xmf TAR
+cd lots
+test `bk prs -hnd'$if(:DANGLING:){:I:}' BitKeeper/etc/config | wc -l` -eq 0 && {
+	echo should have had dangling deltas
+	exit 1
+}
+bk admin -fMONOTONIC BitKeeper/etc/config 2> ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q '(monotonic)' ERR || {
+	echo bad error message
+	cat ERR
+}
+echo OK
+
+echo $N Make a MONOTONIC user file and verify that check whines .....$NL
+cd "$HERE/project"
+touch foo
+bk new $Q foo
+bk commit $Q -f
+bk admin -fMONOTONIC foo
+BK_CONFIG=monotonic:allow bk commit $Q -f
+bk -r check -ac > GOT 2>&1 && fail -f OUT should have failed
+cat > WANT <<EOF
+Warning: foo : support for MONOTONIC files has been deprecated.
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Verify MONOTONIC gone works with BK_GONE ....................$NL
+cd "$HERE/project"
+bk admin -fMONOTONIC BitKeeper/etc/gone
+BK_GONE=foo bk -r check -ac || fail
+echo OK

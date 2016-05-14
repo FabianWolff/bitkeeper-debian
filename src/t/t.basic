@@ -1,0 +1,165 @@
+# Copyright 1999-2001,2005-2009,2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+cat > foo <<EOF
+Hi there, this is file foo.
+Hi there, this is file foo.
+Hi there, this is file foo.
+Hi there, this is file foo.
+Hi there, this is file foo.
+Hi there, this is file foo.
+Hi there, this is file foo.
+Hi there, this is file foo.
+Hi there, this is file foo.
+EOF
+mv foo SAVE
+ATT=no
+for D in "" A/ A/A/A/A/
+do	case "$D" in
+	"") DOTS=........
+	   ;;
+	"A/") DOTS=......
+	   ;;
+	*) DOTS=
+	   ;;
+	esac
+	cd "$HERE"
+	rm -rf root 
+	echo $N Create initial changeset ....................................$NL
+	commercial root
+	if bk _test ! -f SCCS/s.ChangeSet; then fail; fi
+	if [ X$D != X ]; then mkdir -p $D; fi
+	echo OK
+	cp ../SAVE ${D}foo
+	echo $N checkin with ${D}SCCS/s.foo ${DOTS}.............................$NL
+	bk ci $Q -i ${D}foo
+	if bk _test ! -f ${D}SCCS/s.foo; then fail Failed to create s.foo.; fi
+	if [ -f ${D}foo ]; then fail Failed to get foo.; fi
+	echo OK
+	echo $N checkout with ${D}SCCS/s.foo ${DOTS}............................$NL
+	bk co $Q ${D}foo
+	if [ ! -f ${D}foo ]; then fail Failed to get foo.; fi
+	if writable ${D}foo; then fail foo is writable; fi
+	echo OK
+	echo $N Verifying data checksum .....................................$NL
+	A=`bk prs -r1.1 -hd:DSUM: ${D}foo`
+	B=`bk checksum -s < ../SAVE`
+	if [ $A -ne $B ]; then fail Failed - chksums $A $B differ; fi
+	echo OK
+	echo $N "cleaning ${D}" ${DOTS}...........................................$NL
+	bk clean ${D}
+	if [ -f ${D}foo ]; then fail Failed to clean foo.; fi
+	echo OK
+	# XXX - this looks up to far for the pending file
+	echo $N "checkout of the directory ${D}" ${DOTS}..........................$NL
+	bk co $Q ${D}
+	if [ ! -f ${D}foo ]; then fail Failed to get foo.; fi
+	if writable ${D}foo; then fail foo is writable; fi
+	echo OK
+	if [ $ATT = YES ]
+	then
+	    # OK, now try it with s.names, no SCCS/
+	    echo $N checkin with ${D}s.foo ${DOTS}..................................$NL
+	    # Non blob stuff in ATT code path, so let this go..
+	    rm -rf ${D}foo ${D}SCCS
+	    cp SAVE ${D}foo
+	    bk ci $Q -i ${D}s.foo
+	    if [ ! -f ${D}s.foo ]; then fail Failed to create s.foo.; fi
+	    if [ -f ${D}foo ]; then fail Failed to get foo.; fi
+	    echo OK
+	    echo $N checkout with ${D}s.foo ${DOTS}.................................$NL
+	    bk co $Q ${D}s.foo
+	    if [ ! -f ${D}foo ]; then fail Failed to get foo.; fi
+	    if writable ${D}foo; then fail foo is writable; fi
+	    echo OK
+	fi
+	echo $N "cleaning ${D}" ${DOTS}...........................................$NL
+	bk clean ${D}
+	if [ -f ${D}foo ]; then fail Failed to clean foo.; fi
+	echo OK
+	echo $N "checkout of the directory ${D}" ${DOTS}..........................$NL
+	bk co $Q ${D}
+	if [ ! -f ${D}foo ]; then fail Failed to get foo.; fi
+	if writable ${D}foo; then fail foo is writable; fi
+	echo OK
+done
+cd "$HERE"
+rm -rf root
+
+echo $N Check in files named s.something ............................$NL
+mkdir -p bar/blech
+echo foo > s.foo
+echo foo > bar/s.foo
+echo foo > bar/blech/s.foo
+bk _find . | grep s.foo | bk ci $S -i -
+if bk _test ! -f SCCS/s.s.foo; then fail failed on s.s.foo; fi
+if bk _test ! -f bar/SCCS/s.s.foo; then fail failed on bar/SCCS/s.s.foo; fi
+if bk _test ! -f bar/blech/SCCS/s.s.foo; then fail failed on bar/blech/s.foo; fi
+echo OK
+echo $N Clean files named s.something ...............................$NL
+bk clean; bk clean bar; bk clean bar/blech
+if [ -f s.foo ]; then fail failed on s.s.foo; fi
+if [ -f bar/s.foo ]; then fail failed on bar/SCCS/s.s.foo; fi
+if [ -f bar/blech/s.foo ]; then fail failed on bar/blech/s.foo; fi
+echo OK
+echo $N Check out files named s.something ...........................$NL
+bk co $Q s.foo bar/s.foo bar/blech/s.foo
+if [ ! -f s.foo ]; then fail failed on s.foo; fi
+if [ ! -f bar/s.foo ]; then fail failed on bar/s.foo; fi
+if [ ! -f bar/blech/s.foo ]; then fail failed on bar/blech/s.foo; fi
+echo OK
+bk clean; bk clean bar; bk clean bar/blech
+echo $N get files named s.something using - .........................$NL
+bk co $Q - <<EOF
+s.foo
+bar/s.foo
+bar/blech/s.foo
+EOF
+if [ ! -f s.foo ]; then fail failed on s.foo; fi
+if [ ! -f bar/s.foo ]; then fail failed on bar/s.foo; fi
+if [ ! -f bar/blech/s.foo ]; then fail failed on bar/blech/s.foo; fi
+echo OK
+bk clean; bk clean bar; bk clean bar/blech
+echo $N get files named SCCS/s.something using - ....................$NL
+bk co $Q - <<EOF
+SCCS/s.s.foo
+bar/SCCS/s.s.foo
+bar/blech/SCCS/s.s.foo
+EOF
+if [ ! -f s.foo ]; then fail failed on s.foo; fi
+if [ ! -f bar/s.foo ]; then fail failed on bar/s.foo; fi
+if [ ! -f bar/blech/s.foo ]; then fail failed on bar/blech/s.foo; fi
+echo OK
+echo $N get -S should not check out files again .....................$NL
+touch ref
+echo "new" > ref
+sleep 1
+bk co $Q -S s.foo
+find . -name ref | grep "^\./foo.c$"
+if [ $? -eq 0 ]; then fail; fi
+echo OK
+echo $N get -S should ignore modified files .........................$NL
+bk co $Q -e s.foo
+bk co $Q -S s.foo 2>${DEV_NULL}
+if [ $? != 0 ]
+then	fail failed to ignore modified file
+fi
+echo OK
+echo $N bk -rFOO -rBAR should fail ..................................$NL
+cd "$HERE"
+rm -fr FOO BAR
+mkdir FOO BAR
+bk -rFOO -rBAR 2>ERR && fail failed by passing
+grep -q "Only one -r allowed" ERR || fail -f ERR wrong message
+echo OK

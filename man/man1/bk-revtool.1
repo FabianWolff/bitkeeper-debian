@@ -1,0 +1,244 @@
+.so ../bk-macros
+.TH "bk revtool" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+
+
+.\"    =============== BitKeeper Graphical History Browser ===============
+.SH NAME
+bk revtool \- \*(BK graphical history browser
+.SH SYNOPSIS
+.B bk revtool
+.[OPTreq] \-l local
+.[OPTreq] \-r remote
+.ARG file
+.br
+.B bk revtool
+.[OPTreq] \-r rev
+.if \n[NESTED] [\fB\-S\fR]
+.[OPTreq] \-/ string /
+.[OPTreq] + number
+.[ARG] file
+.SH DESCRIPTION
+.LP
+.B bk revtool
+is one of the primary tools used when doing code reviews,
+tracking down bugs, and when following the progress of a project.
+.LP
+.B bk revtool
+shows checkin comments and the graph history of a project
+or file.
+.B bk revtool
+may be used to view any revision controlled file,
+including the ChangeSet file. When no filename is given, the entire
+package history is shown.
+.if \n[NESTED] \{\
+In a nested collection, the default is to show the product changesets.
+If you wish to look at a component's changesets, go to that directory
+and run
+.DS
+$ bk revtool -S
+or
+$ bk revtool --standalone
+.DE
+.\}
+.LP
+.B bk revtool
+has an upper window which shows the graph of revision history
+and a lower window which can show either the checkin comments or
+differences between versions.
+.SH "HISTORY AND DIFFERENCES"
+.LP
+Upon startup, the bottom window displays the recent revision
+history for the file or project. If a line number (\c
+.OPTreq + number \c
+) 
+or search string (\c
+.OPTreq \-/ string /\c
+)
+is specified on the command line along with a file name an annotated 
+listing of the filename will be displayed instead.
+.LP
+If a search string is given, the first occurrence of the search string
+on or after the given line number will be highlighted and the text
+will be scrolled so that it is in view; if no line number is given the
+search begins with the first line. If a line number is given without a
+search string, that line will be highlighted and centered on the
+screen.
+.LP
+To view the comments for just one revision, left click once on that
+revision in the graph.
+.LP
+To see the differences between two revisions, left click the older
+revision and right click on the newer revision.  The differences
+will be displayed in the lower text window.  You can right click on
+another revision and diff again.  The default diff format is
+.Q \-u
+(unified diffs).
+The text shown for the file is
+annotated with the user name, the latest revision that modified
+the line and the revision (if any) that deleted or excluded
+the line in the other version.
+.if 0 \{
+The file text is generated with the
+.Q bk annotate \-Aur \-r$thisRev \-w$otherRev
+command.
+That will show which revision added the line and which revision (if any)
+deleted or excluded the line.
+\}
+This helps to isolate which revision in a range removed a line.
+.LP
+To see the contents of a file, double click the left mouse button
+on the revision node in the graph.  The text shown for the file is
+annotated with the user name and the latest revision that modified
+the line. The file text is generated with the
+.Q bk annotate \-Aur
+command.
+.LP
+Once the annotated file listing is shown, you can then click on
+the text to view the checkin comments associated with the chosen
+line. Double clicking on an annotated line brings up
+.B bk csettool
+and shows all of the other files that were modified in the same changeset
+as the selected line.
+.LP
+To get a side-by-side view of the differences, select the two revisions
+and click on the
+.Q Diff tool
+button.
+.SH CHANGESETS
+.LP
+When operating on the ChangeSet file, the behavior is slightly
+different.  Double-clicking a revision displays the revision history
+of the changeset and the history of the changes to each file contained
+in that changeset.
+.LP
+If you click left/right on a range of changesets, you will get the
+history of the entire range of changesets.  To see the history and the
+differences in detail, you can click on the
+.Q View changeset
+button
+to bring up the changeset browser tool,
+.BR "bk csettool" .
+Typical usage is to browse the ChangeSet file with
+.B bk revtool
+and drill down using
+.BR "bk csettool" .
+.LP
+When viewing the ChangeSet file, nodes that have a tag
+associated with them will have a colored outline around them. 
+See bk config-gui for more information.
+.SH BINDINGS
+.LP
+The scrollbars can be used to orient the view of either window. 
+In addition, there are the following keyboard bindings:
+.TP \fBControl-MouseWheel\fP
+.B LeftArrow
+Scroll graph window left 1 line.
+.tp
+.B RightArrow
+Scroll graph window right 1 line.
+.tp
+.B Shift\-LeftArrow
+Scroll graph window left 1 screen.
+.tp
+.B Shift\-RightArrow
+Scroll graph window right 1 screen.
+.tp
+.B Shift\-UpArrow
+Scroll graph window up 1 line.
+.tp
+.B Shift\-DownArrow
+Scroll graph window down 1 line
+.tp
+.B Shift\-PageUp
+Scroll graph window up 1 screen.
+.tp
+.B Shift\-PageDown
+Scroll graph window down 1 screen.
+.tp
+.B Shift\-Home
+Scroll graph window to the first revision.
+.tp
+.B Shift\-End
+Scroll graph window to the last revision.
+.tp
+.B UpArrow
+Scroll text window up 1 line (also
+.BR Control-y ).
+.tp
+.B DownArrow
+Scroll text window down 1 line (also
+.BR Control-e ).
+.tp
+.B PageUp
+Scroll text window up 1 screen (also
+.BR Control-b ).
+.tp
+.B PageDown
+Scroll text window down 1 screen (also
+.BR Control-f ).
+.tp
+.B Home
+Scroll text window to the top.
+.tp
+.B End
+Scroll text window to the bottom.
+.tp
+.B s
+Show the raw SCCS file.
+.tp
+.B a
+Show an annotated listing of the selected node.
+.tp
+.B C
+Run
+.BR "bk csettool" .
+If the selected node in the graph is for a changeset,
+that changeset will be displayed. If the selected node is a file, the
+changeset that introduces the selected version of the file will be
+displayed. If no node is selected this will do nothing.
+.tp
+.B c
+Show an annotated listing of all versions of the file.
+The data shown is the union of all lines ever added to the file
+in any version, deletes are ignored.  Lines which were created at
+a particular spot in the file tend to be grouped together.
+If the line is not in the tip revision, this will also list which
+revision deleted or exclude the line.
+.tp
+.B d
+Show the differences between the selected item and its parent. If
+a graph node is selected, the difference between it and its parent
+are shown. However, if a line within the annotated file listing is
+selected, the difference between the selected revision and its parent
+are shown.
+.tp
+.B h
+Show the entire revision history comments.
+.tp
+.B t
+Show only csets that have a tag associated with them.
+.tp 
+.B /
+Search the text window for a string.
+.tp
+.B ?
+Reverse search.
+.tp
+.B n
+Search for the next occurrence of the string.
+.tp
+.B Control-q
+Quit
+.BR "bk revtool" .
+.SH "SEE ALSO"
+.SA Basics-Overview
+.SA config-gui
+.SH CATEGORY
+.B Common
+.br
+.B GUI-tools
+.br
+.B Repository
+.\" help://bk-sccstool.1
+.\" help://bk-sccstool
+.\" help://sccstool

@@ -1,0 +1,554 @@
+# Copyright 2011-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# 5.0 introduced Nested.  At first, there was nothing to be backward
+# compatible with, but now with a few rounds of nested out in the field,
+# stick in bk-5.3 as a baseline to compare against.
+
+OLDVER=5.3
+OLDBK=/build/bitkeeper-$OLDVER
+
+# use new parallel clone in tests
+_BK_FSTYPE=nfs
+export _BK_FSTYPE
+
+echo $N Check bitkeeper 5.3 installation ............................$NL
+if [ -n "$BK_DEV_SKIPTEST" ]; then echo skipped; exit 0; fi
+# Skip this test for Windows VISTA
+OSTYPE=`uname -s`
+case $OSTYPE in
+	MINGW32_NT-6.*) echo skipped; exit 0;;
+esac
+# http://config.bitmover.com:7777/cgi-bin/view.cgi?id=2016-05-02-002
+BKL_PRO=BKL65908cc51572709000001200fffff000000000
+BKL_P1=YgAAAo4AAAADgQAAAAHZK6YXrWpbvvL7wuT1Fj8Z4gsjm633vW6T8Irespi/d1GL
+BKL_P2=LltIV1NobkMykn2BWS45ph8r+VpBbslq4r8cOffc7UK3qd40y6uFW+ud1mMUJjYm
+BKL_P3=Jl+mK0yL7V9E8uvsWU8VF6Wr/0lFDLZOMAbLUeTnh3EM8WcTqE0oar00Wygc0A==
+
+echo license: $BKL_PRO > c
+echo licsign1: $BKL_P1 >> c
+echo licsign2: $BKL_P2 >> c
+echo licsign3: $BKL_P3 >> c
+mv c "`bk dotbk`"/config
+test -d $OLDBK || {
+    # Skip this test if we don't have at least 5gigs free
+    df -Pk /build 2>/dev/null |
+        perl -e '$_ = <>; $_ = <>; exit 0 if /^\S+\s+\d+\s+\d+\s+(\d+)\s+\d+%/ && $1 > 5e6; exit 1' || {
+	echo skipped
+	exit 0
+    }
+    bk upgrade $Q -f -d $BK_TCOMPAT_ARCH \
+	    http://downloads.bitkeeper.com/unsupported/bk-$OLDVER >out 2>ERR || {
+	    grep -q "No upgrade for the arch.*found" ERR && {
+	        # can use $BK_TCOMPAT_ARCH to fix if your platform
+		# isn't one of the official
+		echo skipped
+		exit 0
+	    }
+	    echo image fetch failed
+	    exit 1
+    }
+    # NOTE bk-3.2.x didn't set exit status...
+    echo y | BK_NOLINKS=1 ./bk-$OLDVER-* $OLDBK >out 2>err || fail
+    rm -f $OLDBK/config
+}
+$OLDBK/bk _eula -a
+
+# generate a crypto key for tests
+test -f "$OLDBK/my.pub" || {
+    $OLDBK/bk crypto -i 1024 $OLDBK/my.sec $OLDBK/my.pub || fail
+}
+VER=`$OLDBK/bk version -s`
+test X$VER = X$OLDVER || {
+	echo bk not installed correctly
+	exit 1
+}
+echo OK
+
+mkBINs
+
+echo -------------- crypto tests
+echo $N New and old version should generate the same signature ......$NL
+$OLDBK/bk crypto -s $OLDBK/my.sec < "$BIN2" > sig1 || fail
+bk crypto -s $OLDBK/my.sec < "$BIN2" > sig2 || fail
+echo OK
+
+echo $N New and old versions should validate signature ..............$NL
+$OLDBK/bk crypto -v $OLDBK/my.pub sig1 < "$BIN2" || fail
+bk crypto -v $OLDBK/my.pub sig1 < "$BIN2" || fail
+$OLDBK/bk crypto -v $OLDBK/my.pub sig2 < $BIN2 || fail
+bk crypto -v $OLDBK/my.pub sig2 < "$BIN2" || fail
+echo OK
+
+echo $N Old version encrypts and new version decrypts ...............$NL
+$OLDBK/bk crypto -e $OLDBK/my.pub < "$BIN2" > enc || fail
+bk crypto -d $OLDBK/my.sec < enc > out || fail
+cmp -s "$BIN2" out || fail
+rm -f enc out
+echo OK
+
+echo $N New version encrypts and old version decrypts ...............$NL
+bk crypto -e $OLDBK/my.pub < "$BIN2" > enc || fail
+$OLDBK/bk crypto -d $OLDBK/my.sec < enc > out || fail
+cmp -s "$BIN2" out || fail
+rm -f enc out
+echo OK
+
+KEY=64338d0365e3c7da
+echo $N New and old versions should symetric encrypt to same data ...$NL
+$OLDBK/bk crypto -E $KEY < "$BIN2" > enc1 || fail
+bk crypto -E $KEY < "$BIN2" > enc2 || fail
+cmp -s enc1 enc2 || fail
+rm -f enc2
+echo OK
+
+echo $N Both versions should be able to decrypt data ................$NL
+$OLDBK/bk crypto -D $KEY < enc1 > out || fail
+cmp -s "$BIN2" out || fail
+bk crypto -D $KEY < enc1 > out || fail
+cmp -s "$BIN2" out || fail
+rm -f enc1 out
+echo OK
+
+echo $N Check hashing with new and old versions .....................$NL
+$OLDBK/bk crypto -h - < "$BIN2" > hash1
+bk crypto -h - < "$BIN2" > hash2 || fail
+cmpfiles hash1 hash2
+echo OK
+
+echo $N Check hmacs with new and old versions .......................$NL
+$OLDBK/bk crypto -h - key < "$BIN2" > hash1
+bk crypto -h - key < "$BIN2" > hash2 || fail
+cmpfiles hash1 hash2
+echo OK
+
+echo $N Start new and old bkds ......................................$NL
+cd "$HERE"
+OLDP=`port 54500`
+# old bkd will have "No root for triggers!" ttyprintf
+$OLDBK/bk bkd -d -aPORT -ikill 2> OLDERR || fail -f OLDERR
+OLDP=`cat PORT`
+_BK_FORCE_PAGING=1 bk bkd -d -aPORT -ikill 2> NEWERR || fail -f NEWERR
+NEWP=`cat PORT`
+trap "bk _kill bk://localhost:$OLDP; bk _kill bk://localhost:$NEWP" 0
+echo OK
+
+echo -------------- clone compat tests
+
+echo $N Clone from old bkd and make sure we do checkouts ............$NL
+cd "$HERE"
+fresh_commercial --compat project
+bk clone $Q --sccs-compat . ../sccsdirs
+cd ../sccsdirs
+mkdir src
+cd src
+echo foo > foo
+bk new $Q foo
+cd ..
+bk commit -ywhatever $Q
+cd ..
+# Important for the test: SCCS compat, partial check and checkout get|edit
+bk --config='partial_check:yes' clone $Q --checkout=get \
+    bk://localhost:$OLDP/sccsdirs file-after || fail
+cd file-after
+bk -U^G > CO
+test -s CO && fail -f CO files not checked out
+echo OK
+
+echo $N Clone again, but such that config is last in the list .......$NL
+cd "$HERE"/sccsdirs
+bk mv src/foo foo
+bk commit -ywhatever $Q
+cd ..
+# Important for the test: SCCS compat, partial check and checkout get|edit
+bk --config='partial_check:yes' clone $Q --checkout=get \
+    bk://localhost:$OLDP/sccsdirs config-last || fail
+cd config-last
+bk -U^G > CO
+test -s CO && fail -f CO files not checked out
+echo OK
+
+echo $N Try parallel clone to bkd, should fail ......................$NL
+cd "$HERE"
+bk clone $Q -j5 config-last bk://localhost:$OLDP/clone-j > OUT 2>&1
+test $? = 0 && fail
+grep -q "does not understand -j" OUT || fail
+echo OK
+
+echo $N Demo clone --parents error message ..........................$NL
+bk clone --parents bk://localhost:$OLDP/sccsdirs parents > GOT 2>&1
+grep -q 'The remote BitKeeper binary is missing a feature that the local' GOT ||
+    fail
+echo OK
+
+echo $N Try a pull urllist to see if the hacks work .................$NL
+# old bkds fail bkd_nested call, so hackery in place to work anyway
+cd "$HERE"
+fresh_nested --compat nest
+bk clone $Q . ../nest-dest
+touch gcc/foo
+bk new $Q gcc/foo
+bk commit $Q -f
+bk clone $Q -s. . ../nest-src
+cd ../nest-src
+rm BitKeeper/log/urllist
+cd ../nest-dest
+perl -pe 's|.*/nest$|bk://localhost:'$OLDP'/nest|' BitKeeper/log/urllist > x
+cp x BitKeeper/log/urllist
+bk pull ../nest-src >X 2>&1 || fail -f X
+grep searching X > GOT
+# The non -q shows takepatch reading the file, and then failing with
+# this same nested only in product.  That means to upgraded the bkd.
+cat <<EOF > WANT
+pull: searching bk://localhost:$OLDP/nest...ok (gate)
+EOF
+cmpfiles WANT GOT
+# again, http style
+bk unpull $Q -sf
+perl -pe 's|^bk://|http://|' BitKeeper/log/urllist > x
+cp x BitKeeper/log/urllist
+bk pull ../nest-src >X 2>&1 || fail -f GOT
+grep searching X > GOT
+cat <<EOF > WANT
+pull: searching http://localhost:$OLDP/nest...ok (gate)
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo -------------- misc tests
+echo $N Verify old bk can read new hash encoding ....................$NL
+cat <<EOF > hash
+@a|b|c
+value
+EOF
+bk _hashfile_test -w hash > hash.new || fail
+$OLDBK/bk _hashfile_test w hash > hash.old || fail
+bk _hashfile_test -w hash.old > hash.old.new || fail
+$OLDBK/bk _hashfile_test w hash.new > hash.new.old || fail
+
+grep -q '@a|b|c' hash.new || fail
+grep -q '@a%7cb%7cc' hash.old || fail
+
+cmpfiles hash.old hash.new.old
+cmpfiles hash.new hash.old.new
+echo OK
+
+echo $N Verify new bk can read old md5keys ..........................$NL
+Kold=`$OLDBK/bk prs -hnd:MD5KEY: -r+ ChangeSet`
+Knew=`bk prs -hnd:MD5KEY: -r+ ChangeSet`
+Kcompat=`bk prs -hnd:MD5KEY_COMPAT: -r+ ChangeSet`
+
+test $Kold = $Kcompat || fail
+test $Kold \!= $Knew || fail
+
+Knew2=`bk prs -hnd:MD5KEY: -r$Kold ChangeSet`
+
+test $Knew = $Knew2 || fail
+echo OK
+
+echo -------------- ascii cset files match
+echo $N New and old version should generate the same cset file ......$NL
+cd "$HERE"
+touch empty
+DAT="98/09/22 16:23:31+00:00"
+
+# XXX the oldrepo part of this test needs a non-eval license,
+#     so we needed to skip it.
+
+#_BK_NO_ATTR=1 BK_DATE_TIME_ZONE=$DAT BK_RANDOM=1234567890abcdef \
+#    $OLDBK/bk setup -fcempty newrepo
+#$OLDBK/bk clone $Q newrepo newcopy
+#cd newrepo
+#echo f > foo
+#BK_DATE_TIME_ZONE=$DAT BK_RANDOM=1234567890abcdef $OLDBK/bk new $Q foo
+#_BK_NO_ATTR=1 BK_DATE_TIME_ZONE=$DAT $OLDBK/bk commit $Q -yfoo
+#cd ../newcopy
+#echo b > bar
+#BK_DATE_TIME_ZONE=$DAT BK_RANDOM=1234567890abcdef $OLDBK/bk new $Q bar
+
+# the pre-7.0 code had a bug where the timestamp it attached to each
+# key in bk-keys was the delta timestamp. When BK_DATE_TIME_ZONE was
+# used then that date can be way in the past. In bk-6.x the file is
+# pruned at load time so if you write a key in the past it will never
+# be seen by a followup process.
+# We 'fix' this by recreating the parallel key creation record but
+# use a current timestamp so it won't get pruned.
+#T=`bk prs -r+ -hnd:TIME_T: ../nest/ChangeSet`
+#bk prs -hnd":SHORTKEY: $T" ../newrepo/ChangeSet \
+#	>> "$BK_DOTBK"/bk_keys
+
+#_BK_NO_ATTR=1 BK_DATE_TIME_ZONE=$DAT $OLDBK/bk commit $Q -ybar
+#_BK_NO_ATTR=1 BK_DATE_TIME_ZONE=$DAT $OLDBK/bk pull $Q
+#cd ..
+#mv newrepo oldrepo
+#mv newcopy oldcopy
+# again with the current stuff
+_BK_NO_ATTR=1 BK_DATE_TIME_ZONE=$DAT BK_RANDOM=1234567890abcdef \
+    bk setup --compat -fcempty newrepo
+bk clone $Q newrepo newcopy
+cd newrepo
+echo f > foo
+BK_DATE_TIME_ZONE=$DAT BK_RANDOM=1234567890abcdef bk new $Q foo
+_BK_NO_ATTR=1 BK_DATE_TIME_ZONE=$DAT bk commit $Q -yfoo
+cd ../newcopy
+echo b > bar
+BK_DATE_TIME_ZONE=$DAT BK_RANDOM=1234567890abcdef bk new $Q bar
+_BK_NO_ATTR=1 BK_DATE_TIME_ZONE=$DAT bk commit $Q -ybar
+_BK_NO_ATTR=1 BK_DATE_TIME_ZONE=$DAT bk pull $Q
+cd ..
+# compare cset files
+#bk _scat oldcopy/ChangeSet > old
+bk _scat newcopy/ChangeSet > new
+#cmpfiles old new
+echo OK
+
+echo $N Document the weave signature ................................$NL
+# Dump a weave signature
+dump() {
+	perl -e '
+		while (<>) { last if /^\001T/ }  # Skip to weave
+		while (<>) {
+			if (s/\001//) {
+				if ($x) {
+					print "$x\n";
+					$x = 0;
+				} elsif (/^E/) {
+					print "== 0 ==\n";
+				}
+				print;
+			} else {
+				$x++;
+			}
+		}
+	' $1
+}
+# For compat sake, 2 empty slots.
+dump new > GOT
+cat <<EOF > WANT
+I 5
+== 0 ==
+E 5
+I 4
+1
+E 4
+I 3
+1
+E 3
+I 2
+4
+E 2
+I 1
+== 0 ==
+E 1
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo -------------- ascii cset files with holes in the serials
+echo $N Compute a repo with a hole in the serials ...................$NL
+cd newcopy
+$OLDBK/bk undo $Q -sfa1.1.1.1
+$OLDBK/bk prs -ahnd:DS: ChangeSet > GOT
+cat <<EOF > WANT
+4
+2
+EOF
+cmpfiles WANT GOT
+bk changes -vr+ -nd':GFILE:|:I:' > GOT
+cat <<EOF > WANT
+ChangeSet|1.2
+bar|1.1
+bar|1.0
+EOF
+cmpfiles WANT GOT
+bk _scat ChangeSet > GOT || fail
+echo OK
+
+echo $N See that takepatch checkout edit with holes works ...........$NL
+bk clone $Q . ../server
+cd ../server
+bk clone $Q . ../client
+bk edit $Q bar
+bk delta $Q -fynull bar
+bk commit $Q -f
+cd ../client
+bk edit $Q bar
+echo bar > bar
+# The -l is key to the failure, as takepatch called sccs_restart()
+# which reset s->remap
+bk delta $Q -l -ybar bar
+bk commit $Q -f
+bk pull -R $Q
+cp PENDING/* patch
+bk resolve $Q
+# Use old bk to create holes in the table
+$OLDBK/bk unpull $Q -sf
+bk takepatch -j0 -f patch || fail
+echo OK
+
+echo -------------- compat '<->' BK testing with clone, push, pull
+echo $N Set up bkfile/bweave format repo called bkfile ..............$NL
+cd "$HERE"
+bk clone $Q --upgrade-repo bk://localhost:$OLDP/newrepo bkfile || fail
+bk clone $Q $COMPAT4 bkfile bkfile--compat || fail
+$OLDBK/bk --cd=bkfile--compat repocheck $Q || fail
+echo OK
+
+echo $N Clone from bk5/bkfile with bk6 - should fail / no msg .......$NL
+bk clone -q bk://localhost:$OLDP/bkfile save-this && fail
+test -d save-this && fail created bad repo
+# XXX it does fail, but with no messages - fix goes in 5.x bugfix
+echo OK
+
+echo $N Clone from bk6/bkfile with bk5 - now passes .................$NL
+$OLDBK/bk clone -q bk://localhost:$NEWP/bkfile save-this || fail
+mv save-this saved-clone
+cd saved-clone
+bk _test -f SCCS/1.ChangeSet && fail
+bk _test -f SCCS/2.ChangeSet && fail
+cd ..
+echo OK
+
+echo $N Rclone with bk6/bkfile to bk5 - now passes ..................$NL
+bk clone $Q bkfile bk://localhost:$OLDP/save-this || fail
+mv save-this saved-rclone
+echo OK
+
+echo $N Rclone with bk5/bkfile to bk6 - should fail / bad msg .......$NL
+$OLDBK/bk clone -q bkfile bk://localhost:$NEWP/save-this 2> OUT && fail -f OUT
+test -d save-this && fail created bad repo
+# XXX: could be a more useful error, but it's because of bk-5.3
+sed 's/got [0-9]*/got XXX/' < OUT > OUT2
+cat << EOF > WANT
+Bad checksum for BitKeeper/etc/SCCS/s.gone, got XXX, wanted 0
+clone: must commit local changes to BitKeeper/etc/gone
+EOF
+cmpfiles WANT OUT2
+echo OK
+
+echo $N Pull from bk5/compat to bk6/bkfile ..........................$NL
+cd newrepo
+touch newfile-compat
+$OLDBK/bk new $Q newfile-compat
+$OLDBK/bk _lconfig -d 2>/dev/null  # XXX flush
+$OLDBK/bk commit $Q -ynewfile
+cd ../bkfile
+bk pull $Q || fail
+bk repocheck $Q || fail
+echo OK
+
+echo $N Pull from bk6/bkfile to bk5/compat ..........................$NL
+touch newfile-bkfile
+bk new $Q newfile-bkfile
+bk commit $Q -ynewfile-bkfile
+cd ../newrepo
+$OLDBK/bk pull $Q bk://localhost:$NEWP/bkfile || fail
+echo OK
+
+echo $N Pull from bk6/bkfile to bk6/compat ..........................$NL
+bk pull $Q bk://localhost:$NEWP/bkfile || fail
+echo OK
+
+echo $N Push from bk5/compat to bk6/bkfile ..........................$NL
+touch newfile-compat-push
+$OLDBK/bk new $Q newfile-compat-push
+$OLDBK/bk commit $Q -ynewfile-compat-push
+$OLDBK/bk push $Q bk://localhost:$NEWP/bkfile || fail
+echo OK
+
+echo $N Push from bk6/compat to bk6/bkfile ..........................$NL
+bk push $Q bk://localhost:$NEWP/bkfile || fail
+echo OK
+
+echo $N Push from bk6/bkfile to bk5/compat ..........................$NL
+cd ../bkfile
+touch newfile-bkfile-push
+bk new $Q newfile-bkfile-push
+bk commit $Q -ynewfile-bkfile-push || fail
+bk push $Q bk://localhost:$OLDP/newrepo || fail
+echo OK
+
+echo -------------- compat '<->' BK testing with attach, detach, port
+echo $N Set up bkfile/bweave format repo called bkfile.nest .........$NL
+cd "$HERE"
+bk clone $Q --upgrade-repo bk://localhost:$OLDP/nest bkfile.nest || fail
+echo OK
+
+echo $N Attach from bk6/bkfile to bk5/compat - now works ............$NL
+cd nest
+$OLDBK/bk attach $Q bk://localhost:$NEWP/bkfile newrepo || fail
+bk gate -qr
+bk portal -qr
+bk undo -qsfr+
+bk gate -q .
+bk portal -q .
+echo OK
+
+echo $N Detach from bk5/compat to bk6/bkfile - works ................$NL
+$OLDBK/bk detach $Q gcc bk://localhost:$NEWP/gcc.bk6 || fail
+echo OK
+
+echo $N Attach from bk5/compat to bk6/bkfile - works ................$NL
+cd ../bkfile.nest
+bk portal $Q .
+bk gate $Q .
+bk attach $Q bk://localhost:$OLDP/newrepo bkfile || fail
+# XXX test to see that it is in bkfile format
+echo OK
+
+echo $N Push to bk5/compat which will clone bkfile comp - works .....$NL
+bk push $Q bk://localhost:$OLDP/nest || fail
+echo OK
+
+echo $N Pull from bk6/bkfile to bk5/compat - now works ..............$NL
+# XXX See the additional lines on the test below: problem with nested lock?
+# It's from the bk-5.3 binary.  If we want to improve it, add RTI to bugfix
+cd ../nest
+$OLDBK/bk pull -q bk://localhost:$NEWP/bkfile.nest || fail
+cd ../bkfile.nest
+echo OK
+
+echo $N Push to bk6/compat which will clone bkfile comp - works .....$NL
+bk push $Q bk://localhost:$NEWP/nest || fail
+# See that an old bk thinks all is fine
+$OLDBK/bk --cd="$HERE/nest" repocheck $Q || fail
+echo OK
+
+echo $N Detach from bk6/bkfile to bk5/compat - now works ............$NL
+bk detach $Q gcc bk://localhost:$OLDP/gcc.bk5 || fail
+echo OK
+
+echo $N Port from bk6/bkfile to bk5/compat ..........................$NL
+# make into new product so we can port.
+bk newroot
+# update bk6 comp
+cd gcc
+touch bk6
+bk new $Q bk6
+bk commit $Q -ybk6
+# port into bk5 comp
+cd ../../nest/gcc
+$OLDBK/bk port $Q bk://localhost:$NEWP/bkfile.nest/gcc || fail
+echo OK
+
+echo $N Port from bk5/compat to bk6/bkfile ..........................$NL
+# update bk5 comp
+cd ../gdb
+touch bk5
+$OLDBK/bk new $Q bk5
+bk commit $Q -ybk5
+# port into bk6 comp
+cd ../../bkfile.nest/gdb
+bk port $Q bk://localhost:$OLDP/nest/gdb || fail
+echo OK

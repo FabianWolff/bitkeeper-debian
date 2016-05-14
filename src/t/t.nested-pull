@@ -1,0 +1,1565 @@
+# Copyright 2008-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -e
+
+echo $N Two consecutive pulls should not reuse RESYNC................$NL
+nested proj
+touch afile ; bk new $Q afile ; bk commit $Q -y'afile'
+cd "$HERE"
+bk clone $Q proj copy
+cd proj
+bk mv afile bfile ; echo foo > afile ; bk new $Q afile ; bk commit $Q -y'new afile'
+cd ../copy
+bk mv afile bfile ; echo foo > afile ; bk new $Q afile ; bk commit $Q -y'new afile'
+echo q | bk pull $Q 2>ERR && fail should have failed
+bk pull $Q 2>ERR && fail should have failed
+perl -pe 's|$HERE||; s|(\s*Write locker:).*|\1|' < ERR > GOT
+cat <<EOF > WANT
+	RESYNC directory.
+
+	Usually the RESYNC directory indicates a push/pull in progress.
+	Use bk resolve/bk abort as appropriate.
+Unable to lock repository for update.
+EOF
+cmpfiles WANT GOT
+echo OK
+
+TAGGED=`perl -e 'if (\`bk version -s\` =~ /^[0-9]+$/) { print "NO" ;} else { print "YES";}'`
+if [ $TAGGED = NO ] ; then
+	echo $N Counting number of locks	....................................$NL
+	cd "$HERE"
+	bk --cd=copy parent -qr
+	bk --cd=copy abort -qf
+	bk --cd=copy undo -qsfr+
+	for i in 1 2 3;
+	do
+  		bk clone $Q proj parent$i
+  		cd parent$i
+  		touch p$i; bk new $Q p$i; bk commit $Q -y"p$i"
+  		cd ..
+  		bk --cd=copy parent -qa -i ../parent$i
+	done
+	cd copy
+	mkdir BitKeeper/triggers
+	cat <<EOF > BitKeeper/triggers/post-incoming
+#!/bin/sh
+exec 2>> "$HERE/locks-read"
+set -x
+test -d RESYNC && ls -al RESYNC 1>&2
+bk lock -Sl
+exit 0
+EOF
+	chmod +x BitKeeper/triggers/post-incoming
+	cat <<EOF > BitKeeper/triggers/pre-incoming
+#!/bin/sh
+exec 2>> "$HERE/locks-write"
+set -x
+test -d RESYNC && ls -al RESYNC 1>&2
+bk lock -Sl
+exit 0
+EOF
+	chmod +x BitKeeper/triggers/pre-incoming
+	bk --trace=locking,cmd --trace-file="$HERE/OUT" pull $Q
+	NLOCKS=`egrep "WRLOCK [0-9]+" "$HERE/OUT" | wc -l`
+	test $NLOCKS -eq 5 || fail -f "$HERE/OUT" wanted 5 WRLOCKs, got $NLOCKS
+	# bk ci locks in RESYNC so we get 1 WRLOCK per component + 1 WRLOCK
+	# in RESYNC for the file
+	grep -q -i write ../locks-read && fail -f ../locks-read write locks
+	grep -q -i read ../locks-read || fail -f ../locks-read read locks
+	grep -q -i read ../locks-write && fail -f ../locks-write read locks
+	grep -q -i write ../locks-write || fail -f ../locks-write write locks
+	KEEPNL=`grep bk_nl ../locks-write | wc -l`
+	test $KEEPNL -eq 3 || \
+	    fail -f "$HERE/locks-write" wanted 3 .bk_nl, got $KEEPNL
+	# bk ci locks in RESYNC so we get 1 WRLOCK per component + 1 WRLOCK
+	echo OK
+fi
+
+cd "$HERE"
+rm -rf proj copy parent1 parent2
+
+echo $N Set up component collisions and abort .......................$NL
+nested bing
+touch gcc/foo gdb/bar
+bk new $Q gcc/foo gdb/bar
+bk commit $Q -yfiles
+bk clone $Q . ../bang
+bk edit $Q gcc/foo gdb/bar
+echo rem > gcc/foo
+echo rem > gdb/bar
+bk delta $Q -yremote gcc/foo gdb/bar
+bk commit $Q -yremote
+cd ../bang
+bk edit $Q gcc/foo gdb/bar
+echo loc > gcc/foo
+echo loc > gdb/bar
+bk delta $Q -ylocal gcc/foo gdb/bar
+bk commit $Q -ylocal
+# Pull and abort in a component
+printf "a\ny\n" | bk pull -q 2> OUT && fail -f OUT
+sed s/=//g < OUT > GOT
+cat <<EOF > WANT
+resolve: RESYNC directory left intact.
+
+resolve: RESYNC directory left intact.
+
+Conflicts during automerge of foo
+resolve: 1 unresolved conflicts, starting manual resolve process for:
+	gcc/foo
+(content conflict) foo>> Abort patch? (y/n) 
+Aborting
+EOF
+cmpfiles WANT GOT
+cd ..
+echo OK
+
+echo $N Create an ensemble...........................................$NL
+nested project
+touch amerge
+bk new $Q amerge
+# add some files
+cd "$HERE/project/gcc"
+for i in 1 2 3 4 5
+do
+	touch file$i
+	echo "stuff $i" > file$i
+	bk new $Q -y"add" file$i
+done
+bk commit -S $Q -y"Add $i to file$i"
+cd "$HERE/project" && bk commit -S $Q -y"Commit cset in gcc"
+cd "$HERE/project/gdb"
+for i in 1 2 3 4 5
+do
+	touch file$i
+	echo "stuff $i" > file$i
+	bk new $Q -y"add" file$i
+	bk commit -S $Q -y"add file $i"
+done
+cd "$HERE/project" && bk commit $Q -y"add csets to gdb"
+echo OK
+
+echo $N Try a null pull..............................................$NL
+cd "$HERE"
+bk clone $Q project null-pull
+cd "$HERE/null-pull"
+bk pull >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+grep -q "Nothing to pull." OUT || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Try a simple pull............................................$NL
+cd "$HERE"
+bk clone $Q project copy
+bk clone $Q project twin
+cd "$HERE/project"
+bk parent $Q -a ../copy ../twin
+cd ..
+# multiple parents
+for proj in copy twin
+do
+	# add some csets to gcc
+	cd $proj/gcc || fail
+	for i in 1 2 3 4 5
+	do
+		bk edit $Q file$proj$i || true
+		echo "new stuff $i" >> file$proj$i
+		bk delta $Q -a -y"modify" file$proj$i
+		bk commit -S $Q -y"Add $i to file$proj$i"
+	done
+	cd ..
+	bk commit -S $Q -y"more stuff to gcc"
+	cd ..
+done
+cd "$HERE/project"
+bk pull $Q || {
+	echo failed
+	exit 1
+}
+test -z "`bk changes -qR`" || {
+	echo failed
+	echo Did not pull
+	bk changes -qR
+	exit 1
+}
+bk -e -r check -av >OUT 2>&1 || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Test rootkey urls, file url, component root key .............$NL
+cd ../project
+RK=`bk prs -r1.0 -hnd:KEY: gcc/ChangeSet`
+touch foo
+bk new $Q foo
+bk mv foo bar
+BADRK=`bk prs -r1.0 -hnd:KEY: bar`
+cd ../copy
+RK2=`bk changes -Sq -r1.0 -nd:KEY: ../project?ROOTKEY=$RK`
+test "$RK" = "$RK2" || fail
+echo OK
+
+echo $N Test rootkey urls, file url, product root key ...............$NL
+PRK=`bk -R prs -r1.0 -hnd:KEY: ChangeSet`
+RK2=`bk changes -Sq -r1.0 -nd:KEY: ../project?ROOTKEY=$PRK`
+test "$PRK" = "$RK2" || fail
+echo OK
+
+echo $N Test rootkey urls, file url, nonexistant root key ...........$NL
+bk changes -q -r1.0 -nd:KEY: ../project?ROOTKEY=$RK.junk 2> ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q "cannot use key" ERR || {
+	echo wrong msg
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Test rootkey urls, file url, file root key ..................$NL
+bk changes -q -r1.0 -nd:KEY: ../project?ROOTKEY=$BADRK 2> ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q "cannot use key" ERR || {
+	echo wrong msg
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Test rootkey urls, file url, component key, no component ....$NL
+cd ../project
+mv gcc hidden
+cd ../copy
+bk changes -q -r1.0 -nd:KEY: ../project?ROOTKEY=$RK 2> ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q "ERROR-cannot cd to gcc " ERR || {
+	echo wrong msg
+	cat ERR
+	exit 1
+}
+cd ../project
+mv hidden gcc
+cd ../copy
+echo OK
+
+echo $N Test rootkey urls, bk:// url above, component root key ......$NL
+cd "$HERE"
+bk bkd -q -d -aPORT -ikill > "$HERE/BKD" 2>&1 || fail
+P=`cat PORT`
+RK2=`bk changes -Sq -r1.0 -nd:KEY: bk://localhost:$P/project?ROOTKEY=$RK`
+test "$RK" = "$RK2" || {
+	echo failed
+	bk _kill bk://localhost:$P
+	exit 1
+}
+# leave bkd running for next test
+echo OK
+
+echo $N Test rootkey urls, bk:// url above, product root key ........$NL
+RK2=`bk changes -q -r1.0 -nd:KEY: bk://localhost:$P/project?ROOTKEY=$PRK`
+test "$PRK" = "$RK2" || {
+	echo failed
+	bk _kill bk://localhost:$P
+	exit 1
+}
+echo OK
+bk _kill bk://localhost:$P
+
+echo $N Test rootkey urls, bk:// url in repo, component root key ....$NL
+cd "$HERE/project"
+bk bkd -q -d -aPORT -ikill > "$HERE/BKD" 2>&1 || fail
+P=`cat PORT`
+RK2=`bk changes -Sq -r1.0 -nd:KEY: bk://localhost:$P?ROOTKEY=$RK`
+test "$RK" = "$RK2" || {
+	echo failed
+	bk _kill bk://localhost:$P
+	exit 1
+}
+echo OK
+
+echo $N Test rootkey urls, bk:// url in repo, product root key ......$NL
+RK2=`bk changes -q -r1.0 -nd:KEY: bk://localhost:$P?ROOTKEY=$PRK`
+test "$PRK" = "$RK2" || {
+	echo failed
+	bk _kill bk://localhost:$P
+	exit 1
+}
+echo OK
+
+echo $N Test rootkey urls, bk:// url, nonexistant root key ..........$NL
+bk changes -q -r1.0 -nd:KEY: bk://localhost:$P?ROOTKEY=$RK.junk 2> ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q "cannot use key" ERR || {
+	echo wrong msg
+	cat ERR
+	bk _kill bk://localhost:$P
+	exit 1
+}
+echo OK
+
+echo $N Test rootkey urls, bk:// url, file root key .................$NL
+bk changes -q -r1.0 -nd:KEY: bk://localhost:$P?ROOTKEY=$BADRK 2> ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q "cannot use key" ERR || {
+	echo wrong msg
+	cat ERR
+	bk _kill bk://localhost:$P
+	exit 1
+}
+echo OK
+
+echo $N Test rootkey urls, bk:// url, component key, no component ...$NL
+cd "$HERE/project"
+mv gcc hidden
+cd ../copy
+bk changes -q -r1.0 -nd:KEY: bk://localhost:$P?ROOTKEY=$RK 2> ERR && {
+	echo should have failed
+	bk _kill bk://localhost:$P
+	exit 1
+}
+grep -q "ERROR-cannot cd to gcc " ERR || {
+	echo wrong msg
+	cat ERR
+	bk _kill bk://localhost:$P
+	exit 1
+}
+cd ../project
+mv hidden gcc
+cd ../copy
+echo OK
+bk _kill bk://localhost:$P
+
+echo $N Try a pull with conflicts that can be automerged.............$NL
+cd "$HERE"
+bk clone $Q null-pull remote
+cd remote
+bk portal $Q . || fail
+bk setup -f x/y/z/comp || fail
+bk clone $Q ../remote ../local
+cd x/y/z/comp
+touch f.remote
+bk new $Q f.remote || fail
+bk commit -S $Q -yremote || fail
+cd "$HERE"/remote
+echo bam > bam
+bk new $Q -b bam
+bk edit $Q amerge
+bk delta $Q -fyamerge amerge
+cd "$HERE"/remote/gcc
+echo bam > bam
+bk new $Q -b bam
+for i in 1 2 3 4 5
+do
+	bk edit $Q file$i
+	echo "new stuff $i" >> file$i
+	bk delta $Q -y"modify" file$i
+	bk commit -S $Q -y"Add $i to file$i"
+done
+cd "$HERE"/remote
+bk commit $Q -y"remote gcc"
+cd "$HERE"/local
+echo junk > fff
+bk new $Q fff
+bk commit $Q -y'new file'
+bk tag $Q OLD
+cd "$HERE"/local/gcc
+for i in 6 7 8 9
+do
+	echo "new stuff $i" >> file$i
+	bk new $Q -y"modify" file$i
+	bk commit -S $Q -y"Add $i to file$i"
+done
+bk edit $Q file1
+cp file1 old
+echo "stuff at top" > file1
+cat old >> file1
+rm old
+bk delta $Q -ymodify file1 || fail
+bk commit -S $Q -y"modify file1" || fail
+cd "$HERE"/local
+bk edit $Q amerge
+bk delta $Q -fyamerge amerge
+bk commit $Q -y"local gcc"
+mkdir BitKeeper/triggers
+cat <<EOF > BitKeeper/triggers/post-commit.bug
+#!/bin/sh
+
+bk changes -v -r+ -nd:DPN:@:REV: > "$HERE"/commit.log 2>&1 || exit 1
+bk changes -v -rOLD -nd:DPN:@:REV: >> "$HERE"/commit.log 2>&1 || exit 1
+EOF
+chmod +x BitKeeper/triggers/post-commit.bug
+cat <<EOF > BitKeeper/triggers/pre-resolve.bug
+#!/bin/sh
+
+# we should not have a gone file in RESYNC
+test -f BitKeeper/etc/gone && {
+     echo RESYNC shouldn\'t have a gone file
+     exit 1
+}
+exit 0
+EOF
+chmod +x BitKeeper/triggers/pre-resolve.bug
+
+cd ..
+tar cf local.tar local
+cd local
+bk pull $Q || {
+	echo failed
+	exit 1
+}
+bk lock -q || fail
+
+# check must pass
+bk $Q -e -r check -a || {
+	echo failed
+	cat OUT
+	exit 1
+}
+
+cat <<EOF > ../WANT.commit.log
+ChangeSet@1.7
+amerge@1.3
+gcc/ChangeSet@1.8
+gcc/file1@1.3
+ChangeSet@1.5.1.1
+fff@1.1
+fff@1.0
+EOF
+
+cmpfiles ../commit.log ../WANT.commit.log
+
+# gcc/ChangeSet is in product's changeset
+cd "$HERE"/local
+cat <<EOF > ../WANT.changes
+ChangeSet
+amerge
+gcc/ChangeSet
+gcc/file1
+EOF
+bk changes -nd:GFILE: -vr+ > GOT
+cmpfiles ../WANT.changes GOT
+
+# Files were actually pulled
+cd "$HERE"/local/gcc
+cat <<EOF > "$HERE/WANT.actual"
+ChangeSet
+bam
+file1
+file2
+file3
+file4
+file5
+file6
+file7
+file8
+file9
+BitKeeper/etc/attr
+BitKeeper/etc/collapsed
+BitKeeper/etc/config
+BitKeeper/etc/gone
+BitKeeper/etc/ignore
+EOF
+bk gfiles > GOT
+cmpfiles "$HERE/WANT.actual" GOT
+
+bk _test -f SCCS/d.ChangeSet && {
+	echo failed
+	echo left dfile
+	pwd
+	bk _find SCCS
+	exit 1
+}
+echo OK
+
+echo $N Do it again, but in two steps: bk pull -R and bk resolve -a .$NL
+cd "$HERE"/local
+bk unpull $Q -sf || fail
+bk pull $Q -R
+bk resolve $Q -a 2>ERR || fail -f ERR did not resolve
+bk lock -q || fail
+# gcc/ChangeSet is in product's changeset
+cd "$HERE"/local
+bk changes -nd:GFILE: -vr+ > GOT
+cmpfiles ../WANT.changes GOT
+# Files were actually pulled
+cd "$HERE"/local/gcc
+bk gfiles > GOT
+cmpfiles "$HERE/WANT.actual" GOT
+echo OK
+
+echo $N Do it again, bk:// url ......................................$NL
+cd "$HERE"
+bk bkd -q -aPORT -ikill
+M=localhost:`cat PORT`
+trap "bk _kill bk://$M" 0
+rm -fr local
+tar xf local.tar
+cd local
+bk pull -q bk://$M/remote || fail
+bk lock -q || fail
+bk changes -nd:GFILE: -vr+ > GOT
+cmpfiles ../WANT.changes GOT
+# Files were actually pulled
+cd "$HERE"/local/gcc
+bk gfiles > GOT
+cmpfiles "$HERE/WANT.actual" GOT
+echo OK
+
+echo $N Do it again, http:// url ....................................$NL
+cd "$HERE"
+rm -fr local
+tar xf local.tar
+cd local
+bk pull -q http://$M/remote || fail
+bk lock -q || fail
+bk changes -nd:GFILE: -vr+ > GOT
+cmpfiles ../WANT.changes GOT
+# Files were actually pulled
+cd "$HERE"/local/gcc
+bk gfiles > GOT
+cmpfiles "$HERE/WANT.actual" GOT
+echo OK
+
+echo $N Pull with committed new-file conflict in component...........$NL
+cd "$HERE"
+nested project2
+cd ..
+bk clone $Q project2 copy2 || fail clone
+# Add a new file to project2/gcc.
+cd project2/gcc
+echo "from project2" >conflict-test
+bk new $Q conflict-test || fail new
+bk commit $Q -S -y'add conflict-test in project2' || fail commit
+bk -P commit $Q -y'add conflict-test in project2/gcc' || fail prod commit
+# Add a new file with the same name to copy2/gcc.
+cd ../../copy2/gcc
+echo "from copy2" >conflict-test
+bk new $Q conflict-test || fail new
+bk commit -S $Q -y'add conflict-test in copy2' || fail commit
+bk -P commit $Q -y'add conflict-test in copy2/gcc' || fail prod commit
+cd ..
+# Pull project2 into copy2 but do not resolve.
+bk pull $Q -R ../project2 || fail pull
+# Resolve in the Product -- rr is to remove remote file.
+bk resolve -a $Q <<EOF > OUT 2>&1 || fail
+rr
+y
+EOF
+# Should get the new-file cset and a merge cset.
+bk changes -Sfr1.3,1.4 -nd:KEY: > WANT || fail
+cmpfiles WANT BitKeeper/etc/csets-in
+test "`bk log -r1.4 -nd:MERGE:`" = "1.4" || fail
+bk cat gcc/conflict-test >OUT
+grep -q 'from copy2' OUT || fail -f OUT
+cd "$HERE"
+rm -rf project2 copy2
+echo OK
+
+echo $N Pull with uncomitted new-file conflict in component..........$NL
+cd "$HERE"
+nested project2
+cd ..
+bk clone $Q project2 copy2 || fail
+# Add a new file to project2/gcc.
+cd project2/gcc
+echo "from project2" >conflict-test
+bk new $Q conflict-test || fail
+bk commit -S $Q -y'add conflict-test in project2' || fail
+bk -P commit $Q -y'add conflict-test in project2/gcc' || fail
+# Add a new file with the same name to copy2/gcc, but do NOT commit it.
+cd ../../copy2/gcc
+echo "from copy2" >conflict-test
+bk new $Q conflict-test || fail
+cd ..
+# Pull project2 into copy2 but do not resolve.
+bk pull $Q -R ../project2 || fail
+bk resolve -a $Q <<EOF > OUT 2>&1 || fail
+rr
+y
+EOF
+# Should get the new-file cset and a merge cset.
+bk changes -Sfr1.3,1.4 -nd:KEY: > WANT || fail
+cmpfiles WANT BitKeeper/etc/csets-in
+test "`bk log -r1.4 -nd:MERGE:`" = "" || fail
+bk cat gcc/conflict-test | grep -q 'from copy2' || fail
+cd "$HERE"
+rm -rf project2 copy2
+echo OK
+
+echo $N Try a pull that adds a component.............................$NL
+cd "$HERE"
+commercial newcomp
+cd "$HERE/project"
+mv ../newcomp .
+bk attach $Q -N newcomp
+cd "$HERE/copy"
+bk pull >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+# check progressbar
+perl -lne 'print $1 if /(\d\/\d)/' OUT > GOT
+cat <<EOF > WANT
+1/3
+2/3
+3/3
+EOF
+cmpfiles GOT WANT
+test -d newcomp || {
+	echo failed
+	exit 1
+}
+cd newcomp
+bk -r check -av >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+cd ..
+bk -e -r check -av >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Setup for pulling conflict into missing component ...........$NL
+cd "$HERE"
+bk _rm -fr project copy
+nested project
+cd ..
+bk clone $Q project copy
+bk clone $Q -s./gcc project sparse
+# modify both components in both repos in a way which autoresolves
+for i in project copy
+do	for c in gcc gdb
+	do	cd "$HERE/$i/$c"
+		touch $i-$c
+		bk new $Q $i-$c
+		bk commit -S $Q -ywhatever
+	done
+	cd "$HERE/$i"
+	bk commit $Q -S -ywhatever
+done
+echo OK
+
+echo $N Pull of one should work .....................................$NL
+cd "$HERE/sparse"
+# make a conflict in the component that we have
+cd gcc
+touch sparse
+bk new $Q sparse
+bk commit -S $Q -ywhatever
+cd ..
+bk commit $Q -S -ywhatever
+bk pull $Q ../project || {
+	echo pull failed
+	exit 1
+}
+echo OK
+
+echo $N Pull of second one should fail ..............................$NL
+bk pull --unsafe -q ../copy > OUT 2>&1 && {
+	echo should have failed
+	cat OUT
+	exit 1
+}
+cat <<EOF >WANT
+
+The following components need to be merged, are not present in this
+repository, and will need to be populated to complete the pull:
+	gdb
+Please re-run the pull using the --auto-populate option in order
+to get them automatically.
+EOF
+cmpfiles WANT OUT
+bk abort -qf || fail
+echo OK
+
+echo $N Setup N-way pull where a later pull fails ...................$NL
+cd "$HERE"
+bk clone $Q -s. sparse ponly || fail
+cd ponly
+echo junk > junk
+bk new $Q junk
+bk commit $Q -yjunk || fail
+cd ../sparse
+bk pull --unsafe -q ../ponly ../copy 2>ERR && fail
+cat <<EOF > WANT
+
+The following components need to be merged, are not present in this
+repository, and will need to be populated to complete the pull:
+	gdb
+Please re-run the pull using the --auto-populate option in order
+to get them automatically.
+EOF
+cmpfiles WANT ERR
+echo OK
+
+echo $N Try a pull where source did rm -rf component ................$NL
+cd "$HERE"
+bk clone $Q project clone
+cd project/gdb
+touch junk
+bk new $Q junk
+bk commit -S $Q -ywhatever
+cd ..
+bk commit $Q -ywhatever
+cd "$HERE"
+tar cf TAR project clone
+rm -rf project/gdb
+cd clone
+bk pull > OUT 2>&1 && {
+	echo should have failed
+	cat OUT
+	exit 1
+}
+# XXX bad error message
+grep -q 'Pulling gdb failed' OUT || fail -f OUT bad message
+echo OK
+
+echo $N Try a pull where destination did rm -rf component ...........$NL
+cd "$HERE"
+rm -rf project clone
+tar xf TAR
+cd clone 
+rm -rf gdb
+# should auto-fix repo by cloning component
+bk pull $Q || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Try a pull with a moved component............................$NL
+cd "$HERE"
+bk _rm -rf remote local project
+bk clone $Q null-pull project
+# make project a portal again
+(cd project; bk portal $Q .; bk gate $Q .)
+bk clone $Q null-pull remote
+bk clone $Q remote local
+cd "$HERE"/local
+mvcomp gcc gcc4
+bk commit $Q -y'rename component'
+cd "$HERE"/remote/gcc
+for i in 1 
+do
+	bk edit $Q file$i
+	echo "new stuff $i" >> file$i
+	bk delta $Q -y"modify" file$i
+	bk commit -S $Q -y"Add $i to file$i"
+done
+cd "$HERE"/remote
+bk commit $Q -y"remote gcc"
+cd "$HERE"/local
+bk pull $Q ../project || fail
+test -d gcc && {
+	echo should not have made gcc
+	find gcc
+	# exit 1
+}
+echo OK
+
+echo $N Do a pull where the remote is using a new alias .............$NL
+cd ../remote
+bk alias new GCC ./gcc || fail
+bk here add $Q GCC || fail
+cd ../local
+bk pull $Q || fail
+echo OK
+
+echo $N Now unpull and setup a conflict in aliases ..................$NL
+bk unpull $Q -f || fail
+bk alias new GCC ./gdb || fail
+bk here add $Q GCC || fail
+bk pull $Q || fail
+# show that GCC alias is now the merge of both sides
+bk alias -k GCC > GOT
+(bk --cd=gcc4 id -S; bk --cd=gdb id -S) | bk _sort > WANT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Now that HERE has GCC alias, pull any cset ..................$NL
+cd ../remote
+touch foo
+bk new $Q foo
+bk commit $Q -f
+cd ../local
+bk pull $Q || fail
+echo OK
+
+echo $N Try a tag-only pull .........................................$NL
+cd ../remote
+bk tag $Q -r1.3 badbug || fail
+cd ../local
+bk pull $Q || fail
+echo OK
+
+echo $N Now pull tag along with another cset ........................$NL
+bk unpull -f $Q || fail
+cd ../remote
+touch tagf
+bk new $Q tagf || fail
+bk commit $Q -ytagf || fail
+cd ../local
+bk pull $Q || fail
+echo OK
+
+# XXX - test in product and then test in component
+echo $N Test that bk pull -u shows local work and does not pull .....$NL
+cd "$HERE/remote"
+touch remote-file
+bk new $Q remote-file
+bk commit $Q -yremote || fail
+cd ../local
+touch local-file
+bk new $Q local-file
+bk commit $Q -ylocal || fail
+bk pull -u > OUT 2>&1 && fail -f OUT should have failed
+grep -q 'Not updating due to the following' OUT || fail -f OUT bad message
+echo OK
+
+echo $N Same thing with local work in the component only ............$NL
+cd "$HERE"
+rm -rf local
+bk clone -q -r1.8 -sHERE remote local
+cd remote/gcc
+touch gcc-file1
+bk new $Q gcc-file1
+bk commit -S $Q -ygcc || fail
+cd ..
+bk commit $Q -ygcc || fail
+cd ../local/gcc
+touch gcc-file
+bk new $Q gcc-file
+bk commit -S $Q -ygcc || fail
+cd ..
+bk pull -q -u > OUT 2>&1 && fail -f OUT should have failed
+cat <<EOF > WANT
+takepatch: gcc has uncommitted changes.
+Please commit pending changes with "bk commit" and reapply the patch.
+takepatch: patch left in PENDING
+==============================================================================
+Pull failed: takepatch exited 1.
+EOF
+sed 's/PENDING.*/PENDING/g' < OUT > GOT
+cmpfiles WANT GOT
+echo OK
+
+# # XXX - we should check that the repo is cleaned up but we need the nested
+# # abort/cleanup code first.
+
+echo $N Test pull in a component goes up to the product..............$NL
+cd "$HERE"
+rm -rf local
+bk clone -q -r1.8 -sHERE remote local
+cd local/gcc
+bk pull $Q 2>ERR || fail -f ERR pull should have worked
+echo OK
+
+echo $N Try pulling from unrelated product...........................$NL
+cd "$HERE"
+fresh_nested n1
+cd "$HERE"
+fresh_nested n2
+bk pull $Q "$HERE/n1" 2>ERR && fail -f ERR should have failed
+grep -q "You are trying to pull from an unrelated package." ERR \
+	|| fail -f ERR wrong error msg
+echo OK
+
+echo $N Try pulling from nested to non-nested........................$NL
+cd "$HERE"
+fresh_commercial nn
+bk pull $Q "$HERE/n1" 2>ERR && fail -f ERR should have failed
+grep -q "You are trying to pull from an unrelated package." ERR \
+	|| fail -f ERR wrong error msg
+echo OK
+
+echo $N Try pulling from non-nested to nested........................$NL
+cd "$HERE/n2"
+bk pull $Q "$HERE/nn" 2>ERR && fail -f ERR should have failed
+grep -q "You are trying to pull from an unrelated package." ERR \
+	|| fail -f ERR wrong error msg
+echo OK
+
+echo $N Update-only pull does not commit pending.....................$NL
+cd "$HERE"
+nested parent
+cd gcc
+echo `date` > afile
+bk new $Q afile
+bk commit -S $Q -yafile
+bk -P commit $Q -yafile
+cd "$HERE"
+bk clone $Q parent child
+# add cset to parent
+cd "$HERE/parent/gcc"
+bk edit $Q afile
+echo new stuff > afile
+bk delta $Q -yafile-parent
+bk commit -S $Q -yafile-parent
+bk -P commit $Q -yafile-parent
+# add pending to child (that does not conflict)
+cd "$HERE/child/gcc"
+echo `date` > bfile
+bk new $Q bfile
+bk commit -S $Q  -ybfile
+# pull should fail (we have a pending)
+bk -P pull $Q 2>ERR && fail should have failed
+grep -q "gcc has uncommitted changes" ERR || fail -f ERR
+# we should have no local changes
+test -n "`bk -P changes -qL`" && fail local changes found
+echo OK
+
+echo $N Setup pull with a conflict in product and quit ..............$NL
+cd "$HERE/parent/gcc"
+echo hi > cfile
+bk new $Q cfile
+bk commit -S $Q -ycfile
+cd ..
+echo hi > conflict
+bk new $Q conflict
+bk commit $Q -yparent
+
+cd ../child
+echo hi2 > conflict
+bk new $Q conflict
+bk commit $Q -ychild
+
+bk changes -v -r+ > BEFORE
+(echo q; echo y) | bk pull $Q 2>ERR && fail
+bk abort -qf
+bk -e -r check -ac || fail
+bk changes -v -r+ > AFTER
+# this shouldn't change
+cmpfiles BEFORE AFTER
+echo OK
+
+echo $N Now repeat conflicting pull with abort ......................$NL
+(echo a; echo y) | bk pull $Q 2>ERR && fail
+bk -e -r check -ac || fail -f ERR
+bk changes -v -r+ > AFTER
+# this shouldn't change
+cmpfiles BEFORE AFTER
+echo OK
+
+echo $N Now do the pull in two steps with resolve -c ................$NL
+bk pull -R $Q || fail
+cd gcc
+bk resolve -S -c $Q 2>ERR || fail
+cd ..
+bk resolve -S -c $Q 2>ERR && fail
+bk -e -r check -ac || fail
+echo OK
+
+echo $N Set up for urllist pull populates ...........................$NL
+cd "$HERE"/project
+for c in A B C D
+do	bk setup -f $c || fail
+done
+bk clone -sA -sB -sC -sD $Q . ../copy1 || fail
+cd ../copy1
+rm BitKeeper/log/urllist
+bk clone -sA -sC $Q . ../copy2 || fail
+bk here set $Q B D || fail
+cd ../copy2
+bk gate $Q . || fail
+bk alias new TRACK C D || fail
+bk clone $Q -sTRACK . ../copy3 || fail
+bk alias set TRACK A B || fail
+
+bk comps -h | bk _sort > OUT
+cat <<EOF > WANT
+./A
+./C
+EOF
+cmpfiles OUT WANT
+
+cd ../copy3
+
+bk comps -h | bk _sort > OUT
+cat <<EOF > WANT
+./C
+./D
+EOF
+cmpfiles OUT WANT
+cd ..
+bk clone $Q -sD project copy4 || fail
+cd copy4
+bk gate $Q . || fail
+cd ../copy3
+
+echo OK
+
+echo $N Ensure pull fails unpopulate if pending local work present ..$NL
+# Now:
+#    copy1: B,D
+#    copy2: A,C TRACK=A,B gate
+#    copy3: C,D HERE=TRACK=C,D
+#    copy4: D gate
+# A pull of copy2 into copy3 should fail if there is pending local work in
+# C because C then cannot be unpopulated.
+cd C
+date >new-file
+bk new $Q new-file || fail
+bk commit -S $Q -ynew-file || fail
+cd ..
+# record that ./D can be found in copy4
+bk here check -q -@../copy4 ALL 2>ERR && fail -f ERR should fail
+cat <<'EOF' > WANT
+C  : no valid urls found (present)
+gcc: no valid urls found (missing)
+gdb: no valid urls found (missing)
+EOF
+cmpfiles WANT ERR
+bk pull >OUT 2>ERR && fail -f ERR should have failed
+perl -pe "s/.*\r//;s,$HERE,ROOT," < ERR > ERR2
+cat <<EOF > WANT
+.                                  100% |==============================| OK
+pull: unable to remove ./C, it contains csets not committed in product.
+pull: searching ROOT/copy4...ok (gate)
+pull: problem populating components.
+EOF
+cmpfiles WANT ERR2
+bk abort -qf
+# Remove the local work in C for the subsequent tests.
+cd C
+bk undo -Sfr+ $Q || fail
+cd ..
+echo OK
+
+echo $N Demonstrate urllist pull populates ..........................$NL
+# Magic pull that updates TRACK in the HERE alias from C D to A B
+# and only A and C are populated in my parent and B and D have to be found
+# in a different URL:
+bk pull 2>ERR >OUT || fail -f ERR
+# Now:
+#    copy3: A,B HERE=TRACK=A,B
+
+perl -pe "s/.*\r//;s,$HERE,ROOT," < ERR > ERR2
+cat <<EOF > WANT
+.                                  100% |==============================| OK
+pull: searching ROOT/copy2...ok (gate)
+pull: searching ROOT/copy4...ok (gate)
+1/3 A                              100% |==============================| OK
+pull: searching ROOT/copy1...ok
+Source ROOT/copy1
+2/3 B                              100% |==============================| OK
+pull: removing ./D...done
+pull: removing ./C...done
+3/3 .                                1 changeset,   no merges in   2 files
+EOF
+cmpfiles ERR2 WANT
+
+bk comps -h | bk _sort > OUT
+cat <<EOF > WANT
+./A
+./B
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N Show when pull can\'t find a component it needs ..............$NL
+bk unpull -f $Q || fail
+cd ../copy1
+bk unpopulate $Q ./B || fail
+cd ../copy3
+bk pull 2>ERR > OUT && fail -f ERR
+perl -pe "s/.*\r//;s,$HERE,ROOT," < ERR > ERR2
+cat << EOF > WANT
+.                                  100% |==============================| OK
+pull: searching ROOT/copy2...ok (gate)
+pull: searching ROOT/copy4...ok (gate)
+1/3 A                              100% |==============================| OK
+pull: searching ROOT/copy1...ok
+pull: No other sources for ./B known
+pull: problem populating components.
+EOF
+cmpfiles WANT ERR2
+
+bk comps -h | bk _sort > OUT
+cat <<EOF > WANT
+./C
+./D
+EOF
+cmpfiles OUT WANT
+bk abort -qf
+echo OK
+
+echo $N Show when pull can\'t find a component to unpopulate .........$NL
+cd ../copy1
+bk here set $Q ./B || fail
+cd ../copy3
+bk _rm -rf ../copy4
+bk pull 2>ERR > OUT && fail -f ERR
+perl -pe "s/.*\r//;s,$HERE,ROOT," < ERR > ERR2
+cat << EOF > WANT
+.                                  100% |==============================| OK
+pull: searching ROOT/copy2...ok (gate)
+pull: searching ROOT/copy4...repo gone
+pull: ./D cannot be found at a gate
+pull: unable to remove ./D
+pull: problem populating components.
+EOF
+cmpfiles WANT ERR2
+
+bk comps -h | bk _sort > OUT
+cat <<EOF > WANT
+./C
+./D
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N Check paths in changes and pull..............................$NL
+cd "$HERE"
+bk clone $Q project copy4
+bk clone $Q copy4 copy5
+cd copy4
+touch C/copy4_file
+bk --cd=C new $Q copy4_file
+bk --cd=C commit -S $Q -ycopy4_file
+bk commit $Q -ycopy4_file
+cd ../copy5
+touch C/copy5_file
+bk --cd=C new $Q copy5_file
+bk --cd=C commit -S $Q -ycopy5_file
+bk commit $Q -ycopy5_file
+bk --cd=C changes -SRL > GOT
+grep -q "==== changes -L .*/C ====" GOT || fail -f GOT wrong local output
+grep -q "==== changes -R .*/C ====" GOT || fail -f GOT wrong remote output
+bk pull $Q ../copy4 || fail
+bk changes -vr+ > GOT
+grep -q "Merge .*/C" GOT || fail -f GOT wrong remote path
+grep -q "into .*/C" GOT || fail -f GOT wrong local path
+echo OK
+
+echo $N Create a component conflict and see that cleanup works ......$NL
+cd "$HERE"
+nested repo
+touch gcc/foo
+bk new $Q gcc/foo
+bk commit $Q -yfiles
+bk clone $Q . ../repocopy
+bk edit $Q gcc/foo
+echo remote > gcc/foo
+bk delta $Q -fyfiles gcc/foo
+bk commit $Q -yremote
+cd ../repocopy
+bk edit $Q gcc/foo
+echo local > gcc/foo
+bk pull $Q > OUT 2>&1 && fail should have failed
+grep -q "The following files are modified locally and " OUT || fail -f OUT
+bk unedit gcc/foo
+bk pull $Q || fail should have worked
+echo OK
+
+echo $N Pull remote and local change into missing-to-pop comp .......$NL
+cd "$HERE"
+bk _rm -rf project copy
+nested project
+bk gate $Q -r
+bk portal $Q -r
+bk alias set $Q COMPS ./gcc
+touch gdb/foo
+bk new $Q gdb/foo
+bk commit $Q -yfoo
+bk clone $Q -sCOMPS . ../copy
+bk clone $Q -sALL . ../backup
+bk undo $Q -sfr+
+touch gcc/bar gdb/bar
+bk new $Q gcc/bar gdb/bar
+bk commit $Q -yfoo
+cd ../copy
+bk here check -q@../backup || fail
+bk pull --auto-populate >OUT 2>&1 || fail -f OUT
+perl -pe "s/.*\r//;s,$HERE,ROOT," < OUT > OUT2
+cat <<EOF >WANT
+Pull file://ROOT/project
+  -> file://ROOT/copy
+.                                  100% |==============================| OK
+
+The following components need to be merged, are not present in this
+repository, and will need to be populated to complete the pull:
+	gdb
+Adding the following aliases/components:
+	ALL
+pull: searching ROOT/project...ok
+pull: searching ROOT/backup...ok
+Source ROOT/backup
+1/4 gdb                            100% |==============================| OK
+pull: searching ROOT/project...ok
+2/4 gcc                              1 changeset,   no merges in   3 files
+3/4 gdb                              1 changeset,    2 merges in   3 files
+4/4 .                                1 changeset,    1 merge  in   1 file
+EOF
+cmpfiles WANT OUT2
+echo OK
+
+echo $N Pull with local change into missing-to-pop comp .............$NL
+bk unpull $Q -sf
+bk here set $Q --unsafe COMPS
+cd ../project
+bk undo $Q -sfr+
+bk alias add $Q COMPS ./gdb
+cd ../copy
+bk pull >OUT 2>&1 || fail -f OUT
+perl -pe "s/.*\r//;s,$HERE,ROOT," < OUT > OUT2
+cat <<EOF >WANT
+Pull file://ROOT/project
+  -> file://ROOT/copy
+.                                  100% |==============================| OK
+pull: searching ROOT/project...ok
+pull: searching ROOT/backup...ok
+Source ROOT/backup
+1/2 gdb                            100% |==============================| OK
+2/2 .                                1 changeset,    1 merge  in   2 files
+EOF
+cmpfiles WANT OUT2
+echo OK
+
+echo $N Pull with local change does not get confused by gates........$NL
+bk unpull $Q -sf
+bk here set $Q --unsafe ./gcc
+cd ../project
+touch gcc/bar gdb/bar
+bk new $Q gcc/bar gdb/bar
+bk commit $Q -ybar
+cd ../backup
+bk gate $Q .
+cd ../copy
+bk here check -q@../backup || fail
+bk pull --auto-populate ../project >OUT 2>&1 || fail -f OUT
+perl -pe "s/.*\r//;s,$HERE,ROOT," < OUT > OUT2
+cat <<EOF >WANT
+Pull file://ROOT/project
+  -> file://ROOT/copy
+.                                  100% |==============================| OK
+
+The following components need to be merged, are not present in this
+repository, and will need to be populated to complete the pull:
+	gdb
+Adding the following aliases/components:
+	ALL
+pull: searching ROOT/project...ok
+pull: searching ROOT/backup...ok (gate)
+Source ROOT/backup
+1/4 gdb                            100% |==============================| OK
+pull: searching ROOT/project...ok
+2/4 gcc                              1 changeset,   no merges in   3 files
+3/4 gdb                              1 changeset,    2 merges in   3 files
+4/4 .                                2 changesets,   1 merge  in   2 files
+EOF
+cmpfiles WANT OUT2
+echo OK
+
+echo $N Pull that unpopulates does not lose local work ..............$NL
+# Not a severe bug as the set-up has to color outside the lines by
+# rolling back a gate.  On the other hand, it does check.
+bk here set $Q --unsafe COMPS
+# set up the unpopulate
+bk --cd=../project alias rm $Q COMPS ./gdb
+# set up local work that is in a gate
+bk pull $Q ../backup
+bk edit $Q gdb/bar
+bk delta $Q -fyempty gdb/bar
+bk commit $Q -ylocal-gdb-work
+bk push $Q ../backup
+# color outside of the lines - remove local work from gate
+cd ../backup
+bk gate $Q -r
+bk undo $Q -sfr+
+bk gate $Q .
+cd ../copy
+bk pull ../project >OUT 2>&1 && fail -f OUT
+perl -pe "s/.*\r//;s,$HERE,ROOT,;s/,.*,/, DATE TIME,/" < OUT > OUT2
+cat <<EOF >WANT
+Pull file://ROOT/project
+  -> file://ROOT/copy
+.                                  100% |==============================| OK
+pull: searching ROOT/backup...ok (gate)
+pull: searching ROOT/backup...ok (gate)
+pull: ./gdb cannot be found at a gate
+Local changes to ./gdb found:
+ChangeSet@1.4, DATE TIME, bk@bk_regression.bk
+  local-gdb-work
+
+pull: unable to remove ./gdb
+pull: problem populating components.
+EOF
+cmpfiles WANT OUT2
+echo OK
+
+echo $N Add a new component and pull again...........................$NL
+cd "$HERE/parent"
+bk setup -f newcomp
+cd "$HERE/child"
+bk changes -v -r+ > BEFORE
+bk here > HERE_BEFORE
+bk comps -h > COMPS_BEFORE
+(echo q; echo y) | bk pull -T $Q 2>ERR && fail -f ERR
+# the pull screws up the current repo since we pull in-place
+bk repocheck $Q 2>ERR && fail you fixed a bug
+grep -q "It looks like there was a pull in progress." ERR || fail -f ERR
+bk abort -qf
+bk repocheck $Q || fail
+bk changes -v -r+ > AFTER
+bk here > HERE_AFTER
+bk comps -h > COMPS_AFTER
+cmpfiles BEFORE AFTER
+cmpfiles HERE_BEFORE HERE_AFTER
+cmpfiles COMPS_BEFORE COMPS_AFTER
+test -d newcomp && fail
+echo OK
+
+echo $N Now do it again in pull safe mode............................$NL
+bk changes -v -r+ > BEFORE
+bk here > HERE_BEFORE
+bk comps -h > COMPS_BEFORE
+(echo q; echo y) | bk pull $Q --safe 2>ERR && fail -f ERR
+# the pull screws up the current repo since we pull in-place
+bk repocheck $Q 2>ERR && fail you fixed a bug
+grep -q "It looks like there was a pull in progress." ERR || fail -f ERR
+echo OK
+
+echo $N Make sure working pull does not leave PENDING behind ........$NL
+cd "$HERE"
+bk clone $Q project copy6
+cd project/gcc
+touch foo
+bk new $Q foo
+bk commit $Q -f
+cd "$HERE/copy6"
+bk pull $Q
+test -d gcc/PENDING && {
+    ls -l gcc/PENDING > OUT
+    fail -f OUT gcc/PENDING left behind
+}
+echo OK
+
+echo $N Make sure working pull -i does not leave PENDING behind .....$NL
+bk unpull $Q -sf
+bk pull $Q -i
+test -d gcc/PENDING && {
+    ls -l gcc/PENDING > OUT
+    fail -f OUT gcc/PENDING left behind
+}
+echo OK
+
+echo $N Repro key mismatch problem ..................................$NL
+cd "$HERE"
+nested iprod
+bk clone $Q . ../icopy
+touch gcc/foo gdb/foo
+bk new $Q gcc/foo gdb/foo
+bk commit $Q -f
+cd "$HERE/icopy"
+touch gcc/foo gdb/foo
+bk new $Q gcc/foo gdb/foo
+bk commit $Q -f
+touch gdb/bar
+bk new $Q gdb/bar
+bk commit $Q -f
+test -f gdb/bar && chmod +w gdb/bar
+echo blart >> gdb/bar
+# this fails so set -e not so much
+printf "q\nrl\ny\n" | bk --config=autofix:off pull $Q 2>OUT && fail -f OUT
+# Do what the error message said to do
+bk edit $Q -g gdb/bar
+# Run resolve again
+printf "q\n" | bk --config=autofix:off resolve $Q 2>OUT2 && fail -f OUT2
+grep -q "KEY MISMATCH" OUT2 && fail -f OUT2
+bk abort $Q -f
+echo OK
+
+stripHere() {
+	# extract the HERE information from the protocol
+	perl -ne '
+		($doit = /\@HERE\@/), next unless $doit;
+		($doit = 0), next if / \[\@/;
+		s/.* \[//;
+		s/\]$//;
+		print;
+	' | bk _sort
+}
+
+echo $N Try to pull -rREV when a new component has been created .....$NL
+cd ../remote
+bk portal $Q .
+bk alias new $Q GTOOLS ./gcc ./gdb
+bk here set $Q GTOOLS
+bk edit $Q foo
+echo 4 >> foo
+bk ci -y4 $Q foo
+bk commit -y4 $Q
+KEY=`bk prs -hnd:MD5KEY: -r+ ChangeSet`
+bk -e id -S | bk _sort > ../THREE-KEYS
+bk setup -f gas
+cd ../local
+BK_GETLINE=1 bk pull -q -r$KEY 2>&1 | stripHere > GOT
+cmpfiles ../THREE-KEYS GOT
+bk unpull $Q -sf
+echo OK
+
+echo $N Try to pull -rREV when a new component is part of alias .....$NL
+cd ../remote
+# This should work without altering HERE list
+bk alias add GTOOLS ./gas
+bk here set $Q GTOOLS
+cd ../local
+BK_GETLINE=1 bk pull -q -r$KEY 2>&1 | stripHere > GOT
+# Straight up -- not translated to keys
+printf "GTOOLS\nPRODUCT\n" > WANT
+cmpfiles WANT GOT
+bk unpull $Q -sf
+echo OK
+
+echo $N Try to pull -rREV when HERE contains aliases after REV ......$NL
+cd ../remote
+bk edit $Q foo
+echo 4 >> foo
+bk ci -y4 $Q foo
+bk commit -y4 $Q
+bk alias new JUNK ./gcc || fail
+bk here add JUNK
+cd ../local
+BK_GETLINE=1 bk pull -q -r$KEY 2>&1 | stripHere > GOT
+cmpfiles ../THREE-KEYS GOT
+bk unpull $Q -sf
+echo OK
+
+echo $N Try to pull -rREV when HERE@REV has comps not here now ......$NL
+cd ../remote
+bk portal $Q -r
+bk alias set $Q -f GTOOLS ./gas
+bk here set $Q -f GTOOLS
+cd ../local
+BK_GETLINE=1 bk pull -q -r$KEY 2>&1 | stripHere > GOT
+# only PRODUCT:
+bk id > WANT
+cmpfiles WANT GOT
+bk unpull $Q -sf
+echo OK
+
+echo $N Try to pull -rREV before a comp from repo without comp ......$NL
+# Bug fix in nested.c to ignore weave data in uncolored region
+# Tickled by call to nested_init() in bkd_pull.c
+cd ../remote
+# tickle the bug directly
+bk _nested -r1.11 > xxx || fail
+bk here rm $Q -f GTOOLS
+cd ../local
+bk pull $Q -r1.11 ../remote || fail
+echo OK
+
+echo $N Test a pull aborting due to an edited file ..................$NL
+cd "$HERE"/project
+bk clone $Q . ../edited
+bk edit $Q gcc/foo gdb/bar
+bk delta $Q -fynull gcc/foo gdb/bar
+bk commit $Q -yedits
+cd ../edited
+# to hit abcdAQ problem, need a merge
+bk edit $Q gcc/foo
+bk delta $Q -fynull gcc/foo
+bk commit $Q -yfiles
+bk edit $Q gcc/foo
+echo wip > gcc/foo
+bk pull > IGNORE 2> GOT && fail -f GOT should have failed
+grep -q "modified locally and in the patch" GOT || fail -f GOT
+grep -q gdb GOT && fail -f GOT should have no gdb
+echo OK
+
+echo $N Ensure pull abort due to edited file does not check urllist..$NL
+cd "$HERE"
+nested nest
+bk clone $Q . ../one
+cd ../one
+touch gcc/foo
+bk new $Q gcc/foo
+bk commit $Q -yfoo
+bk clone $Q . ../two
+bk edit $Q gcc/foo
+bk delta $Q -fynull gcc/foo
+bk commit $Q -yfoo
+bk push $Q
+cd ../two
+bk edit $Q gcc/foo
+echo x > gcc/foo
+bk pull >OUT 2>&1 && fail -f OUT should have failed
+grep -q "pull: No other sources for ./gcc known" OUT && \
+	fail -f OUT wrong message
+echo OK
+
+# Belt and suspenders:
+# This test should be last
+# Some of the above tests involve pull failing and PENDING
+# dirs being left behind is OK.  Any more than that warrants
+# investigation.
+echo $N Ensure that most of the above tests cleaned up PENDING dirs .$NL
+WANT=7
+cd "$HERE"
+bk find . -name PENDING > OUT
+GOT=`wc -l < OUT`
+test $WANT -eq $GOT || fail -f OUT there should only be $WANT PENDING dirs
+echo OK
+
+addfile(){
+    touch "$@"
+    bk new $Q "$@"
+}
+
+echo $N Check --auto-populate deep nest bug .........................$NL
+nested prod
+bk setup -C -f gcc/sub
+bk setup -C -f gcc/sub/sub
+bk commit $Q -f
+addfile gcc/foo
+addfile gcc/sub/foo
+addfile gcc/sub/sub/foo
+bk commit $Q -f
+bk clone $Q -sgdb . ../gdb-clone-1
+bk clone $Q -sALL . ../clone-1
+cd "$HERE/clone-1"
+addfile gdb/bar
+addfile gcc/bar
+addfile gcc/sub/bar
+addfile gcc/sub/sub/bar
+bk commit $Q -f
+cd "$HERE/gdb-clone-1"
+bk populate $Q gcc/sub/sub
+addfile gdb/gdb.c
+addfile gcc/sub/sub/baz
+bk commit $Q -f
+bk pull --auto-populate ../clone-1 >OUT 2>&1 || fail -f OUT
+echo OK

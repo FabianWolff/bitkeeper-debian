@@ -1,0 +1,63 @@
+# Copyright 2007-2009,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Because some proxy disallow proxy for localhost
+unsetHttpProxy
+
+# Make 100% sure wed don't get stuck on a bk prompt
+# showing us the EULA.
+unset DISPLAY
+
+echo $N Create initial repository ...................................$NL
+# No point running performance numbers across the cluster
+test "$HOSTNAME" = "redhat71.bitkeeper.com" || {
+	echo skipped
+	exit 0
+}
+test -d $TESTDATA/perf || {
+	echo skipped
+	exit 0
+}
+echo y | bk clone $Q $TESTDATA/perf > OUT 2>&1 || {
+	cat OUT
+	echo skipped
+	exit 0
+}
+cd perf
+echo OK
+
+echo $N Time fetching slib.c fully annotated.........................$NL
+EXPECTED=96000.0
+bk bkd -d -lBKD.LOG -aPORT -ikill > STDOUT 2> STDERR || fail
+P=`cat PORT`
+bk tclsh <<EOF >TIME
+	set times 5
+	set t [lindex [split [time {
+		package require http
+		set out [open FETCH w]
+		set token [http::geturl "http://localhost:$P/src/slib.c?PAGE=anno&REV=1.774" -channel \$out -blocksize 4096]
+		close \$out
+	} \$times]] 0]
+	if {\$t > ($EXPECTED + $EXPECTED * 0.15)} {
+		puts \$t
+		exit 1
+	}
+	exit 0
+EOF
+rc=$?
+bk _kill bk://localhost:$P || fail
+test $rc = 0 || {
+	fail "expected $EXPECTED microseconds and got `cat TIME` microseconds"
+}
+echo OK

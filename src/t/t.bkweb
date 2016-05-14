@@ -1,0 +1,175 @@
+# Copyright 2000,2009,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+echo "Top Secret Data" > secrets
+
+echo $N Create initial repository ...................................$NL
+commercial project
+cat << EOF > file1.c
+private	int	sub(int a, int b);
+private	int	sub2(int a, int b);
+
+int
+main(int ac, char *av[])
+{
+	int	ret = sub(1, 2);
+
+	sub2(1, 2);
+	return (ret);
+}
+
+private	int
+sub(int a, int b)
+{
+	// the code
+	return (0);
+}
+EOF
+bk new $Q file1.c
+cat <<EOF > file2.c
+
+/*
+ * test out a C function found in a common style used elsewhere
+ */
+int sub2(int a, int b) {
+	// the code
+	return (0);
+}
+
+EOF
+bk new $Q file2.c
+bk commit $Q -y"file1 and file2"
+echo OK
+
+# Symlinks not on windows.
+if [ "$PLATFORM" != "WIN32" ]; then
+
+echo $N Demonstrate symlink to outside of bkd will error ............$NL
+bk bkd > OUT << EOF
+get /file1.c?PAGE=anno
+EOF
+grep "| [a-z]" OUT | tr -s ' ' > WANT
+
+cd ..
+mkdir repos
+cd repos
+ln -s ../project project
+bk bkd > OUT << EOF && fail
+get /project/file1.c?PAGE=anno
+EOF
+echo "HTTP/1.0 503 Error" > WANT
+head -1 OUT > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Demonstrate a .. to outside of bkd will error with -S .......$NL
+bk bkd -S > OUT << EOF && fail
+get /../project/file1.c?PAGE=anno
+EOF
+echo "HTTP/1.0 503 Error" > WANT
+head -1 OUT > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Demonstrate symlink to outside of bkd will work with -S .....$NL
+bk bkd -S > OUT << EOF || fail
+get /project/file1.c?PAGE=anno
+EOF
+grep "| [a-z]" OUT | tr -s ' ' > GOT
+cmpfiles project/WANT GOT
+echo OK
+
+echo $N Demonstrate symlink to outside of bkd will work with -CS ....$NL
+bk bkd -CS > OUT << EOF || fail -f OUT
+get /project/file1.c?PAGE=anno
+EOF
+grep "| [a-z]" OUT | tr -s ' ' > GOT
+cmpfiles project/WANT GOT
+echo OK
+
+echo $N Demonstrate getting an absolute path fails ..................$NL
+HTTPHERE=`echo "$HERE" | sed 's/ /%20/g'`
+bk bkd > OUT << EOF || fail failed
+get /$HTTPHERE/secrets
+EOF
+grep -q "Top Secret Data" OUT || fail secret did not leak
+# The error message comes out, but should this fail?
+bk bkd -CS > OUT << EOF && fail -f OUT passed
+get /$HTTPHERE/secrets
+EOF
+bk undos < OUT | grep -v Date > GOT
+cat <<EOF > WANT
+HTTP/1.0 403 Error
+Server: bkhttp/0.6
+Content-Type: text/html
+
+<html><head><title>Error!</title></head>
+<body alink=black link=black bgcolor=white>
+<center>
+<table>
+<tr bgcolor=red fgcolor=white>
+  <td align=center>
+<br>
+<h2>Error 403</h2>
+BK/Web cannot access data outside of the directory where the bkd was started.
+  </td>
+</tr>
+</table>
+</center>
+<hr>
+<table width=100%>
+<tr>
+  <th valign=top align=left>bkhttp/0.6 server
+  </th>
+  <td align=right><a href=http://www.bitkeeper.com><img src='/BitKeeper/www/trailer.gif' alt='Learn more about BitKeeper'>  </a>  </td>
+</tr>
+</table>
+</body></html>
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Demonstrate using a symlink to get to abs path is blocked ...$NL
+# make symlinks to file and to dir
+ln -s "$HERE/secrets" data
+ln -s "$HERE" dir
+# File test
+bk bkd -C > OUT << EOF && fail -f OUT passed
+get /data
+EOF
+grep -q "Top Secret Data" OUT && fail -f OUT
+grep -q 'cannot access data outside' OUT || fail -f OUT
+# Dir test
+bk bkd -C > OUT << EOF && fail -f OUT passed
+get /dir/secrets
+EOF
+grep -q "Top Secret Data" OUT && fail -f OUT
+grep -q 'cannot access data outside' OUT || fail -f OUT
+echo OK
+
+echo $N Demonstrate using a symlink to get to abs path with -CS .....$NL
+# File test
+bk bkd -CS > OUT << EOF || fail -f OUT
+get /data
+EOF
+grep -q "Top Secret Data" OUT || fail -f OUT
+# Dir test
+bk bkd -CS > OUT << EOF || fail -f OUT
+get /dir/secrets
+EOF
+grep -q "Top Secret Data" OUT || fail -f OUT
+echo OK
+
+fi # end of everything but on Windows tests

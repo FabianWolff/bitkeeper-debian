@@ -1,0 +1,192 @@
+.so ../bk-macros
+.TH "bk clone" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk clone \- create a new copy of a package
+.SH SYNOPSIS
+.B bk clone
+.[B] \-q 
+.[OPTreq] \-r rev
+.if \n[NESTED] \{\
+.[OPTreq] \-s alias
+.\}
+.[ARG] "more opts"
+.ARG from
+.[ARG] to
+.SH DESCRIPTION
+.LP
+The clone command copies from the 
+.ARG from
+repository and creates a
+copy at
+.ARG to .
+If 
+.ARG to 
+is not specified then the basename of
+.ARG from
+is the implied destination.  This works for fully and partially specified
+pathnames as well as \*(BK URLs.
+See 
+.B bk help url
+for further naming information.
+.LP
+If
+.ARG bam_url
+is specified, it tells the destination repository what to use as a
+BAM server.
+Normally a new repository inherits the BAM server URL from the source
+repository.
+This argument is required when cloning a BAM server to a BKD.
+.LP
+If 
+.ARG rev
+is specified, the cloned repository will include only
+changesets up to and including 
+.ARG rev .
+.if \n[NESTED] \{\
+.LP
+When cloning a product, the set of components to populate is defined
+by the
+.B \-s
+option.  If
+.B \-s
+is not specified on the command line then the alias in the clone_default
+config is used.  Without clone_default, -sALL is used as a default.
+.\}
+.LP
+The cloned repository remembers from which repository it was cloned.
+The 
+.ARG from
+repository is known as the \*(lqparent,\*(rq while the newly cloned
+repository is known as the \*(lqchild.\*(rq
+.LP
+Subsequent updates to the child can be done by running 
+.BR bk\ pull .
+Changes made in the child can be pushed back into the parent by running
+.BR bk\ push .
+.SH NOTE
+Only completed changesets are cloned.  Any pending deltas are removed
+from the child before the clone completes.
+.LP
+On recent (2014) versions of Ubuntu (and other Linux distributions),
+the use of hardlinks has been curtailed for security reasons.  
+Clone will fall back to using copies, see
+http://man7.org/linux/man-pages/man5/proc.5.html
+and search for
+.BR protected_hardlinks .
+Using copies instead of links is slower and takes more disk space so you
+may want to disable this security feature if all of your users are trusted.
+.SH OPTIONS
+.TP \-\-checkout=<mode>
+.OPTreq \-@ base_url
+Use a local repository as a baseline for the clone so that only the
+changes need to be transferred from a remote location.
+.tp
+.OPTreq \-B url
+Set the BAM server url to 
+.ARG url
+in the destination repository.
+.tp
+\fB\-\-checkout\fB=\fR\*<\fImode\fP\*>\fR
+Override any previous setting for the checkout mode.  
+Valid values for
+.ARG mode
+are
+.IR none ,
+.IR get ,
+or
+.IR edit .
+Note that this mode becomes "sticky" in that the checkout mode will
+added to 
+.BR \`bk\ root\`/BitKeeper/log/config .
+If no other config overrides that, then this mode will "stick"
+for subsequent updates.
+.tp
+.B \-\-downgrade
+By default, new clones will use the same storage format as the
+repository being cloned.
+This options forces the new clone to use the older, backwards compatible
+format (at the cost of lower performance).
+.tp
+.OPTequal \-E env val
+Export an environment variable to the 
+.B bkd
+running in the remote \*(BK repository.
+Typically used to pass information to remote triggers.
+Only variables with the prefix
+.V BKU_
+are allowed.
+.if \n[NESTED] \{\
+.tp
+.B \-\-identical
+When cloning a product, have the set of populated aliases be
+identical to the repository where the tip ChangeSet was created.
+This option is incompatible with
+.BR \-s .
+.\}
+.tp
+.OPTreq \-j jobs
+Set the level of parallelism for the unpacking and checking out of
+files.
+.tp
+.B \-\-no\-hardlinks
+Clone nomally uses hard links whenever it can.  This option will
+prevent this and is useful to create an archive of a repository that
+copies every file.
+.tp
+.B \-\-parents
+Instead of setting the parent to the 
+.ARG from
+url, use 
+.ARG from's 
+parents.
+Useful when you want to pull from/push to the same places as
+.ARG from .
+.tp
+.B \-q
+Run quietly.
+.tp
+.OPTreq \-r rev
+Clone the repository up to and including cset 
+.ARG rev .
+A changeset number or changeset key can be used to specify
+.ARG rev .
+See
+.B bk help terms
+for more information.
+.if \n[NESTED] \{\
+.tp
+.OPTreq \-s alias
+When cloning a product, limit the components to the subset implied by
+.ARG alias .
+If this option is repeated the implied subset is the union of all
+specified components.
+.ARG alias
+may be a component or an alias for a set of components.
+The option
+.B \-sTHERE
+can be use to make the destination of the clone have the same
+components populated as the source.
+.\}
+.tp
+.B \-\-upgrade
+By default, new clones will use the same storage format as the
+repository being cloned.
+This option forces the new clone to upgrade to the latest storage
+format.
+In bk-6.0, the storage format was changed to support higher performance.
+.SH "SEE ALSO"
+.SA alias
+.SA bam
+.SA bkd
+.SA parent
+.SA pull
+.SA push
+.SA relink
+.SA terms
+.SA triggers
+.SA url
+.SH CATEGORY
+.B Common
+.br
+.B Repository
+.\" help://lclone

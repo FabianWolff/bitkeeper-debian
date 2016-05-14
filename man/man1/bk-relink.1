@@ -1,0 +1,75 @@
+.so ../bk-macros
+.\" help://hardlink
+.TH "bk relink" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk relink \- recreate broken hard links
+.SH SYNOPSIS
+.B bk relink
+.[B] \-q
+.ARG from
+.[ARG] from2\ .\|.\|.
+.ARG to
+.br
+.B bk relink
+.[B] \-q
+.SH DESCRIPTION
+The relink command is used to conserve disk space.  It is typical for
+a single user to have many repositories, each one representing a different
+work in progress.  It is also typical to use the
+.Q \-l
+option to
+.B bk clone
+to create hard-linked repositories.
+A hard-linked repository uses much less space than a copied repository.
+As files are modified, the links are broken.
+As the same set of changes come into a set of repositories, the links
+could be restored.
+That is what the relink command does.
+.LP
+The relink command looks at each \*(BK file in the
+.ARG from
+repository and if it is the same as the same file in the
+.ARG to 
+repository, it replaces the file in the 
+.ARG from
+repository
+with a hard link to the file in the
+.ARG to
+repository.
+.LP
+If no repositories are specified, then 
+.ARG from
+defaults to the current repository and
+.ARG to
+defaults to all parent[s] of the current repository.
+.SH OPTIONS
+.TP 
+.B \-q
+Run quietly.
+.SH WARNINGS
+While hard-linked repositories are less disk intensive than replicated
+repositories, they are also more vulnerable to disk or file system
+corruption.  It is advisable to always have at least one recent copy
+of a repository, rather than 100% hard-linked repositories.
+.LP
+It is possible to break all the links by recomputing the per file
+checksums:
+.DS
+bk repocheck
+bk -A admin -z
+.DE
+.SH NOTE
+This command works only on filesystems which support hard links,
+and only if both repositories are in the same file system.
+.LP
+On recent (2014) versions of Ubuntu (and other Linux distributions),
+the use of hardlinks has been curtailed for security reasons.
+See
+http://man7.org/linux/man-pages/man5/proc.5.html
+and search for
+.BR protected_hardlinks .
+The relink command will fail in this case.
+.SH "SEE ALSO"
+.SA clone
+.SH CATEGORY
+.B Repository

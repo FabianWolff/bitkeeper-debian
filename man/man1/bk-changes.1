@@ -1,0 +1,459 @@
+.so ../bk-macros
+.TH "bk changes" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk changes \- show changeset history
+.SH SYNOPSIS
+.B bk changes
+.[ARG] options
+.[OPTreq] \-r revs " | \-"
+.br
+.B bk changes
+.[ARG] options
+.ARG repo
+.[ARG] repo "\ .\|.\|."
+.br
+.B bk changes 
+.B \-L
+.[ARG] options
+.[ARG] repo "\ .\|.\|."
+.br
+.B bk changes 
+.B \-R
+.[ARG] options
+.[ARG] repo "\ .\|.\|."
+.br
+.B bk changes 
+.B \-L
+.B \-R
+.[ARG] options
+.[ARG] repo "\ .\|.\|."
+.SH DESCRIPTION
+The changes command is used to get an overview of the changes made to
+a repository.  There are options to search for particular changesets,
+view only tagged changesets, limit the search to a particular user,
+view only local changes, view only remote changes, view changes relative
+to a set of repositories, etc.
+.LI 
+The first form shown above shows changes in the local repository.
+If the last argument is a \*(lq\-\*(rq then the revisions to be listed are 
+specified, as keys, tags, and/or revisions, on stdin.
+.li
+The second form shown above shows changes in the named repository.
+.\" XXX: this was in 3.2.x, but was not implemented:
+.\" If the second to the last argument is a "-" then the revisions to be
+.\" listed are specified, as keys, tags, and/or revisions, on stdin.
+.li
+The third form shown above lists changes found in the local repository
+but not in the remote repository.
+If the remote repository is not specified, the outgoing parent[s] of the
+local repository is/are used, i.e.,
+the listing is what would be sent on a push (when used with
+.QR \-a ).
+.li
+The fourth form shown above lists changes found in the remote repository
+but not in the local repository.
+If the remote repository is not specified, the incoming parent[s] of the
+local repository is/are used, i.e.,
+the listing is what would be received on a pull (when used with
+.QR \-a ).
+.li
+The fifth form shown above lists changes unique to either the remote or the 
+local repository.
+The local changes are listed first, then the remote changes, and both
+sets of changes have a title line to separate them.
+.LP
+In all but the second form, the changes command must be run from within
+a repository, and that repository is the local repository while the
+named repository is the remote repository.  All the other selection
+options are applied to the list of local or remote only changesets.
+.LP
+The changesets to be listed may be limited to a revision, a range of
+revisions, the last (or first) N changesets, or a list of revisions on stdin.
+The default is all revisions.
+Specifying revisions is incompatible with the 
+.Q \-R/\-L
+options.
+.SH OPTIONS
+.de Tp
+.TP \fB\-\-dspecf\=\fP\*<file\*>
+..
+.Tp
+.OPTreq \- n
+A numeric argument that limits the number of changesets printed.
+.Tp
+.OPTreq \-/ str \fB/\fP[\fBig\fP]
+List only those changesets whose comments contain the string
+.ARG str .
+.ARG str
+may be a regular expression, or if the
+.ARG g
+option is specified, a glob.
+If there is a trailing \*(lqi\*(rq then ignore case in the search.
+.\" Pulling these docs because tag search is N^2 or worse.  lm3di
+.\" If there is a trailing \*(lqt\*(rq then search only in tag names.
+.Tp
+.B \-a
+List all deltas, including tag deltas.
+The default is to list the tag name on the changeset implied by the tag.
+Implies
+.QR \-e .
+An additional
+.Q \-e
+after this option will turn off the listing of the empty merge deltas (the
+.Q \-e 
+option is inverted from its previous value each time the option is seen).
+.Tp
+.OPTreq \-c dates
+Specifies the changesets to be listed as a date range, i.e.,
+.Q \-c\-6W.\|.
+lists the last 6 weeks worth of changes.
+.Tp
+.B \-D
+When showing local or remote only changes and there are multiple local or
+remote repositories specified (or implied via the parent pointer[s]),
+there may be duplicate changesets which are present in more than one
+repository.
+If this option is specified, then the duplicates are filtered out such
+that the changesets listed are a unique set.
+This option combined with
+.QR \-aL
+or
+.QR \-aR
+is used to answer the questions: \*(lqWhat is only in this
+repository relative to all of the specified repositories?\*(rq or \*(lqWhat is
+only in one or more of the remote repositories but not in this local
+repository?\*(rq respectively.
+.Tp
+.OPTreq \-d dspec
+Override the default dspec, allows for arbitrary output formats.
+.Tp
+.OPTreq \-\-dspecf\= file
+Like
+.B \-d
+but read the dspec from a file.
+.Tp
+.B \-e
+Show empty merge changesets.  By default, these are not shown.
+.Tp
+.B \-f
+print the changes in forward (oldest to newest) order.  The default is
+backwards in time, i.e., most recent to least recent order.
+.Tp
+.B \-\-html
+Produce html as output.  May not be combined with
+.QR \-d .
+.Tp
+.OPTreq \-i pat
+Include information only from changesets involving files matching
+.ARG pat
+pattern (see below).
+.Tp
+.B \-k
+Produce a list of matching changeset keys, usually for scripts.
+Equivalent to 
+.QR \-Dnd:KEY: .
+.Tp
+.B \-L
+List only those changesets which are unique to the local repository.
+Requires either a BK url or a valid repository parent.
+Will not report tags, or empty merges.
+Use with
+.QR \-a
+to see tags and empty merges,
+i.e., everything which would be sent back with a bk push.
+.Tp
+.B \-\-lattice
+Restrict the changesets to those on the lattice between the two range
+endpoints.  Unlike a range, the lower bound is included in the output.
+.Tp
+.B \-\-longest
+Restrict the changesets to those on the longest line between the two range
+endpoints.  Unlike a range, the lower bound is included in the output.
+.Tp
+.B \-m
+Do not show any merge changesets, empty or not.
+.Tp
+.B \-n
+add a newline to each printed record (sometimes useful with
+.QR \-d ).
+.Tp
+.B \-q
+When listing local/remote changes from multiple parents (or remote
+repositories) do not print the location of the remote repositories.
+This option is implied by
+.QR \-D .
+.Tp
+.OPTreq \-r revs
+Specifies the changesets to be listed, i.e., 1.100..
+.Tp
+.B \-R
+List only those changesets which are unique to the remote repository,
+Requires either a BK url or a valid repository parent.
+Will not report tags, or empty merges.
+Use with
+.QR \-a
+to see tags and empty merges,
+i.e., everything which would be brought over with a bk pull.
+.Tp
+.B \-\-sparse\-ok
+When using include/exclude patterns (\c
+.B \-i\c
+/\c
+.B \-x\c
+) and the patterns could match in a component that is not
+populated, BitKeeper will refuse to perform the search and
+print an error. This option allows searching in sparse products
+(with some components not populated) without erroring.
+.if \n[NESTED_NOT_YET] \{\
+.Tp
+.OPTreq \-s alias
+In a nested collection, limit the changesets listed to those 
+specified by the 
+.ARG alias .
+If no 
+.B \-s
+is specified, the default is
+.B HERE
+when combined with 
+.BR \-v ,
+and 
+.B PRODUCT
+otherwise.
+See product notes below for examples.
+.\}
+.if \n[NESTED] \{\
+.Tp
+.B \-S
+.tp
+.B \-\-standalone
+When used in a nested collection, treat the repository as if it were
+detached rather than as part of the collection.
+Pathnames will be printed relative to the repository root, 
+revisions are based on the repository changeset, not the product
+changeset (if in a component),
+pending changesets, if any, will be listed (again, if in a component).
+.if \n[NESTED_NOT_YET] \{\
+May not be combined with 
+.BR \-s .
+.\}
+See product notes below for examples.
+.\}
+.Tp
+.B \-t
+Only list changesets which are tagged.
+.Tp
+.B \-T
+Sort the deltas in a changeset in time order.
+The default is to sort by current file name.
+This option only affects verbose (\c
+.QR \-v )
+output.
+.Tp
+.OPTreq \-u user
+Only list changesets created by
+.ARG user .
+This option may appear multiple times in which case the changeset is listed
+if it matches any of the specified users.
+.Tp
+.OPTreq \-U user
+Only list changesets created by someone other than
+.ARG user .
+This option may appear multiple times in which case the changeset is not
+listed if it matches any of the specified users.
+.Tp
+.B \-v
+Shows individual file change history as well as changeset history.
+.Tp
+.B \-vv
+Same as
+.Q \-v
+except that each file's change history is followed by unified diffs
+for that change (using the :DIFFS_UP: keyword).
+.Tp
+.Tp
+.OPTreq \-x pat
+Exclude information from changesets involving files matching
+.ARG pat
+pattern (see below).
+.SH
+INCLUDE/EXCLUDE PROCESSING
+.LP
+Include and/or exclude patterns are used to control which
+changesets are selected for printing.
+There may be multiple include and/or exclude patterns.
+The patterns are a file glob as used by 
+.B bk ignore.
+Patterns are matched against the partial pathname from the root
+of the repository.
+If the partial pathname matches any of the exclude patterns then
+the changeset is skipped.
+If there are one or more include patterns but the partial
+pathname does not match any of the include patterns then the
+changeset is skipped.
+Exclude processing takes precedence over include processing.
+.LP
+When reporting information there can be ambiguity as to which name is used 
+for include/exclude processing because some files may have been moved 
+since the changeset in question.
+The include/exclude processing always applies to the file name as it was
+as of the changeset in question.
+For example, suppose you have a file that is currently deleted but
+at the time of the changeset was in
+.BR src/foo.c .
+If you told the system to report
+.B src/*
+then the file will be in the set.
+.LP
+.if \n[NESTED] \{\
+.SH PRODUCT USAGE
+This command has been extended to handle nested
+collections of repositories.
+.LP
+The default behavior is identical to that of a traditional
+standalone repository, the changesets of the product are listed.
+The various options behave as expected, the command treats the
+entire collection as one large repository so a 
+.B \-v
+will show the product's changesets and files as well as the component's
+changesets and files.
+.if \n[NESTED_NOT_YET] \{\
+.SS
+SUBSETS
+It is possible to limit what is printed to a subset of the nested
+collection, viewing just the changes to the subset.
+If your nested collection had an alias like so:
+.DS
+kernel => K-core K-x86 K-ppc K-fs K-net K-disk K-misc
+.DE
+(probably not a realistic partitioning, but you get the idea).
+If you wanted to see all the changes in all parts of the kernel:
+.DS
+$ bk changes -skernel
+.DE
+would give you what you want.
+If you want the product's changesets as well, but only those that touch
+the kernel:
+.DS
+$ bk changes --filter -skernel
+.DE
+If you want only the product changesets that touch the kernel:
+.DS
+$ bk changes --filter=kernel
+.DE
+.SS REVISIONS
+Even if the subset does not explicitly contain the product changeset
+files, the revisions used to select what to print are product revisions.
+In other words, if you wanted to see the changes in the kernel since the 
+last tagged release in the product, you would say:
+.DS
+$ bk changes -skernel -r\*<TAG\*>..
+.DE
+.\}
+.SS
+SINGLE REPOSITORY
+There are times when you may want to treat a repository as if it were
+detached from the nested collection, i.e., just show the history of
+this component and nothing else.
+An example of that might be to see what changes are available to be 
+ported out:
+.DS
+$ bk changes --standalone -L \*<URL\*>
+.DE
+That form of changes is restricted to just that repository;
+pathnames revert back to repository root relative (rather than product
+root relative),
+revisions are based on the repository changeset, not the product's changeset,
+and all changesets, even those that are not committed to the product, are
+listed.
+.if \n[NESTED_NOT_YET] \{\
+.LP
+People frequently think that 
+.DS
+$ bk changes --standalone
+$ bk changes -s. 
+.DE
+are the same but they are subtly different when run in a component.
+They both mean just the component, but the second one
+means just that one component but in the context of the product.
+For most purposes the two are quite similar.
+.\}
+.SS
+EXAMPLES
+The most common uses are listed below:
+.LP
+.ne 4
+List only product changesets:
+.DS
+$ bk changes
+.DE
+.ne 4
+Convert a product changeset to a key:
+.DS
+$ bk changes -r1.1234 -nd:KEY:
+.DE
+.if \n[NESTED_NOT_YET] \{\
+.ne 4
+List only changesets but both product and components:
+.DS
+$ bk changes -sHERE
+.DE
+.\}
+.ne 4
+List the product changesets and component changesets as well as files from both:
+.DS
+$ bk changes -v
+.DE
+.ne 4
+same as previous but include diffs:
+.DS
+$ bk changes -vv
+.DE
+.ne 4
+List only the changes in a component:
+.DS
+$ cd src/component
+$ bk changes --standalone
+.DE
+.\}
+.SH EXAMPLES
+Sample output:
+.DS
+ChangeSet@1.607, 2000-02-21 14:05:25-08:00, awc@bitkeeper.com
+  update citool to use the "bk unedit" interface. 
+
+ChangeSet@1.606, 2000-02-21 13:35:21-08:00, awc@bitkeeper.com
+  Allow \*(BK to be installed in an alternate directory.
+  The install directory is computed from the $PATH variable and 
+  the bk symlink.
+
+ChangeSet@1.605, 2000-02-20 01:32:19-08:00, lm@bitkeeper.com
+  Fix a diagnostic in pull.
+  An aborted attempt at key compression.
+.DE
+.if \n[NESTED] \{\
+.SH BUGS
+Consider this query in a nested collection:
+.DS
+bk changes -i'source_component/*' -x'test_component/*'
+.DE
+The expectation is that you would only get changesets that touched 
+the source component if they did not touch the test component.
+As of now, the include will win whether the test component was
+or was not changed.
+.\}
+.SH "SEE ALSO"
+.SA commit
+.SA glob
+.SA pending
+.SA log
+.SA pcre
+.SA pull
+.SA push
+.SA range
+.SA revtool
+.SA sccslog
+.SA set
+.SH CATEGORY
+.B Common
+.br
+.B Repository

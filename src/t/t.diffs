@@ -1,0 +1,634 @@
+# Copyright 1999-2007,2012-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+commercial project
+echo '%A%' > Mydiffs
+echo 1.1 >> Mydiffs
+bk new -q Mydiffs
+# D 1.2 93/03/11 00:50:40.000 butthead 2 1  9/2/44
+# C added 4.x etc targets
+for i in 2 3 4 5 6 7 8 9 10
+do	bk co $Q -l Mydiffs
+	echo 1.$i >> Mydiffs
+	echo "D 1.$i 20/03/11 00:00:0$i butthead a b c/d/e" | sed s/010/10/ | cat > Init
+	echo "c Rev $i" >> Init
+	echo "------------------------------------------------" >> Init
+	bk delta $Q -IInit Mydiffs
+done
+echo $N Checking diff against edited file ...........................$NL
+bk co $Q -l Mydiffs
+echo foo >> Mydiffs
+bk diffs --normal Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.10 vs edited =====
+11a12
+> foo
+EOF
+cmp -s D W
+if [ $? -ne 0 ]; then echo Failed to get correct diffs.; exit 1; fi
+echo OK
+
+echo $N Checking -F option to diffs..................................$NL
+bk diffs -F^1 Mydiffs | grep -v ^+++ | grep -v ^--- > GOT
+cat <<EOF > WANT
+===== Mydiffs 1.10 vs edited =====
+@@ -9,3 +9,4 @@ 1.10
+ 1.8
+ 1.9
+ 1.10
++foo
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Checking diff -r1.8 against edited file .....................$NL
+bk diffs --normal -r1.8 Mydiffs > D || fail -f D
+bk undos > W <<EOF
+===== Mydiffs 1.8 vs edited =====
+9a10,12
+> 1.9
+> 1.10
+> foo
+EOF
+cmpfiles D W
+echo OK
+
+echo $N Checking diff filename\|1.8..1.9 with edited gfile ...........$NL
+bk diffs --normal 'Mydiffs|1.8..1.9' > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.8 vs 1.9 =====
+9a10
+> 1.9
+EOF
+cmpfiles D W
+echo OK
+
+echo $N Checking diff -R - with edited gfile ........................$NL
+echo 'Mydiffs|1.9' | bk diffs --normal -R - > D || fail
+cmp -s D W
+if [ $? -ne 0 ]; then echo Failed to get correct diffs.; exit 1; fi
+echo OK
+
+echo $N Checking diff -r1.8 w/ no file ..............................$NL
+bk unedit Mydiffs
+bk diffs --normal -r1.8 Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.8 vs 1.10 =====
+9a10,11
+> 1.9
+> 1.10
+EOF
+cmpfiles D W
+echo OK
+
+echo $N Checking diff -R1.8 w/ no file ..............................$NL
+bk unedit Mydiffs
+bk diffs --normal -R1.8 Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.7 vs 1.8 =====
+8a9
+> 1.8
+EOF
+cmp -s D W
+if [ $? -ne 0 ]; then echo Failed to get correct diffs.; exit 1; fi
+echo OK
+
+echo $N Checking diff -r1.8 -r1.9 ...................................$NL
+bk diffs --normal -r1.8 -r1.9 Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.8 vs 1.9 =====
+9a10
+> 1.9
+EOF
+cmp -s D W
+if [ $? -ne 0 ]; then echo Failed to get correct diffs.; exit 1; fi
+echo OK
+
+echo $N Checking diff filename\|1.8..1.9 .............................$NL
+bk diffs --normal 'Mydiffs|1.8..1.9' > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.8 vs 1.9 =====
+9a10
+> 1.9
+EOF
+cmpfiles D W
+echo OK
+
+echo $N Checking diff -r1.7 -r1.9 with no gfile .....................$NL
+bk diffs --normal -r1.7 -r1.9 Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.7 vs 1.9 =====
+8a9,10
+> 1.8
+> 1.9
+EOF
+cmp -s D W
+if [ $? -ne 0 ]; then echo Failed to get correct diffs.; diff D W; exit 1; fi
+echo OK
+
+echo $N Checking diff -r1.7 -r1.9 with wrong gfile ..................$NL
+bk _get $Q -r1.1 Mydiffs || fail
+bk diffs --normal -r1.7 -r1.9 Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.7 vs 1.9 =====
+8a9,10
+> 1.8
+> 1.9
+EOF
+cmp -s D W
+if [ $? -ne 0 ]; then echo Failed to get correct diffs.; diff D W; exit 1; fi
+echo OK
+
+echo $N Checking diff -r1.7 -r1.9 with edited gfile .................$NL
+bk edit $Q Mydiffs || fail
+echo foo >> Mydiffs
+bk diffs --normal -r1.7 -r1.9 Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.7 vs 1.9 =====
+8a9,10
+> 1.8
+> 1.9
+EOF
+cmp -s D W
+if [ $? -ne 0 ]; then echo Failed to get correct diffs.; diff D W; exit 1; fi
+echo OK
+
+echo $N Checking diff -R1.7 .........................................$NL
+bk diffs --normal -R1.7 Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.6 vs 1.7 =====
+7a8
+> 1.7
+EOF
+cmp -s D W
+if [ $? -ne 0 ]; then echo Failed to get correct diffs.; cat D; exit 1; fi
+echo OK
+
+echo $N Checking diffs with no gfile ................................$NL
+bk unedit $Q Mydiffs
+bk diffs Mydiffs > D 2>E || fail
+if [ -s D ]; then echo Failed to get correct diffs.; cat D; exit 1; fi
+## XXX This prints "diffs: no such file: Mydiffs"
+##     Is that OK?
+echo OK
+
+echo $N Checking diffs with readonly wrong gfile ....................$NL
+bk _get $Q -r1.1 Mydiffs || fail
+bk diffs -r+ Mydiffs > D || fail
+if [ -s D ]; then echo Failed to get correct diffs.; cat D; exit 1; fi
+echo OK
+
+echo $N Checking diffs -r1.8 with readonly wrong gfile ..............$NL
+bk _get $Q -r1.1 Mydiffs || fail
+bk diffs --normal -r1.8 Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.8 vs 1.10 =====
+9a10,11
+> 1.9
+> 1.10
+EOF
+cmp -s D W
+if [ $? -ne 0 ]; then echo Failed to get correct diffs.; cat D; exit 1; fi
+echo OK
+
+echo $N Checking diffs -r+ with no gfile ............................$NL
+bk clean Mydiffs
+bk diffs -r+ Mydiffs > D || fail
+if [ -s D ]; then echo Failed to get correct diffs.; cat D; exit 1; fi
+echo OK
+
+echo $N Checking diffs -r+ with readonly wrong gfile ................$NL
+bk _get $Q -kr1.1 Mydiffs || fail
+bk diffs --normal -r+ Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.10 vs ? =====
+3,11d2
+< 1.2
+< 1.3
+< 1.4
+< 1.5
+< 1.6
+< 1.7
+< 1.8
+< 1.9
+< 1.10
+EOF
+cmp -s D W
+if [ $? -ne 0 ] 
+then 	echo 'failed (bug 2002-02-08-004)'
+else	echo 'bug 2002-02-08-004 passing!  update testcase.'
+fi
+
+echo $N Checking diffs with readonly wrong gfile - want nothing .....$NL
+test -w Mydiffs && {
+	echo 'why is this writable?'
+	exit 1
+}
+bk diffs Mydiffs > D || fail
+test -s D && {
+	echo should not have produced output, should have skipped this file
+	cat D
+	exit 1
+}
+echo OK
+
+echo $N Checking diffs -f with readonly wrong gfile - should work ...$NL
+bk diffs --normal -f Mydiffs > D || fail
+test -s D || {
+	echo should have produced output
+	exit 1
+}
+bk undos > W <<EOF
+===== Mydiffs 1.10 vs ? =====
+3,11d2
+< 1.2
+< 1.3
+< 1.4
+< 1.5
+< 1.6
+< 1.7
+< 1.8
+< 1.9
+< 1.10
+EOF
+cmp -s D W || {
+	echo should be the same
+	diff D W
+	exit 1
+}
+echo OK
+
+echo $N Checking diffs -r+ with edited gfile ........................$NL
+bk edit $Q Mydiffs || fail
+echo foo >> Mydiffs
+bk diffs --normal -r+ Mydiffs > D || fail
+bk undos > W <<EOF
+===== Mydiffs 1.10 vs edited =====
+11a12
+> foo
+EOF
+cmp -s D W
+if [ $? -ne 0 ]; then echo Failed to get correct diffs.; cat D; exit 1; fi
+echo OK
+
+echo $N Checking diffs with non-versioned file ......................$NL
+mkdir -p sub/dir/junk
+cat > sub/dir/junk/file <<EOF
+1
+2
+3
+EOF
+bk diffs -Nu sub/dir/junk/file > DIFFS
+grep -q "^+++ project/sub/dir/junk/file" DIFFS || {
+	echo failed to put in proper header for patch
+	cat DIFFS
+	exit 1
+}
+echo OK
+
+echo $N Checking diffs with non-versioned read-only file ............$NL
+chmod -w sub/dir/junk/file
+bk diffs -Nu sub/dir/junk/file > DIFFS
+grep -q "^+++ project/sub/dir/junk/file" DIFFS || {
+	echo failed to put in proper header for patch
+	cat DIFFS
+	exit 1
+}
+echo OK
+
+echo $N Checking diff on lines with many carriage returns ...........$NL
+echo > a
+echo > b
+bk diff --ignore-trailing-cr a b > DIFF || {
+	echo Fail same
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+printf "\r\n" > b
+bk diff --ignore-trailing-cr a b > DIFF || {
+	echo Fail simple
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+bk diff --ignore-trailing-cr b a > DIFF || {
+	echo Fail simple
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+printf "\r\r\n" > b
+bk diff --ignore-trailing-cr a b > DIFF || {
+	echo Fail multiple cr
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+bk diff --ignore-trailing-cr b a > DIFF || {
+	echo Fail multiple cr
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+printf "\ra\r\n" > a
+printf "\r\ra\r\n" > b
+bk diff -q --ignore-trailing-cr a b > DIFF && {
+	echo Fail multiple cr
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+bk diff -q --ignore-trailing-cr b a > DIFF && {
+	echo Fail multiple cr
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+printf "\ra\r\n" > a
+bk new $Q a
+bk edit $Q a
+printf "\ra\r\r\r\n" > a
+bk clean $Q a || {
+	echo Fail clean
+	exit 1
+}
+echo OK
+
+echo $N Checking diff with ignore-to-str option .....................$NL
+echo > a
+echo > b
+bk diff --ignore-to-str=x a b > DIFF || {
+	echo Fail same no char
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+echo 'x' > b
+bk diff --ignore-to-str=x a b > DIFF || {
+	echo Fail simple match
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+echo 'xa' > b
+
+bk diff -n --ignore-to-str=x a b > DIFF && {
+	echo Fail simple nonmatch
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+cat <<EOF > CMP
+d1 1
+a1 1
+a
+EOF
+cmp -s DIFF CMP || {
+	echo Fail nonmatch value
+	echo "==" Desired
+	cat CMP
+	echo "==" Actual
+	cat DIFF
+	exit 1
+}
+printf "this is a xax text \r\r\r\n" > a
+printf "this is b xbx text \r\n" > b
+bk diff --ignore-to-str='x ' --ignore-trailing-cr a b > DIFF || {
+	echo Fail
+	echo Same string with ignore-trailing set
+	echo output of diff:
+	cat DIFF
+	exit 1
+}
+echo OK
+
+echo $N Checking diffs -f with a pfile but not gfile ................$NL
+cd "$HERE/project"
+rm a
+bk edit $Q a || fail
+bk diffs -f a || fail
+rm a
+bk diffs -f a || fail
+echo OK
+
+echo $N Checking date in diffs header is delta date .................$NL
+mkdir date || fail
+cd date || fail
+ZONE="+00:00"
+DATE="97/05/20 18:48:02"
+echo foo > foo
+TZ=GMT BK_DATE_TIME_ZONE=$DATE bk new $Q foo
+DATE="98/05/20 16:23:17"
+bk edit $Q foo
+echo bar > foo
+TZ=GMT BK_DATE_TIME_ZONE=$DATE bk delta -fydate $Q foo
+TZ=GMT bk diffs -R1.2 foo > GOT
+cat - <<'EOF' > WANT
+===== foo 1.1 vs 1.2 =====
+--- 1.1/date/foo	1997-05-20 18:48:02 +00:00
++++ 1.2/date/foo	1998-05-20 16:23:17 +00:00
+@@ -1 +1 @@
+-foo
++bar
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N diffs -u should emit the same relative path for both sides ..$NL
+cd "$HERE"
+rm -rf project
+commercial project
+bk clone $Q . ../copy
+echo hi > junk
+bk new $Q -b junk
+bk commit $Q -yjunk
+mkdir -p sub/dir
+cd sub/dir
+cat <<EOF > file
+This is a file
+EOF
+bk new $Q file
+bk edit $Q file
+echo Some new stuff >> file
+# Should be something like
+#     +++ edited/sub/dir/file
+bk diffs -N | fgrep '+++ edited/file' > /dev/null && {
+	echo failed
+	bk diffs -N
+	exit 1
+}
+echo OK
+
+echo $N Demonstrate diffs -Lrepo ....................................$NL
+bk -U diffs --normal -L"$HERE"/copy > OUT || fail
+cat <<EOF > WANT
+===== ../../junk 1.0 vs 1.1 =====
+0a1
+> hi
+===== file 1.0 vs edited =====
+0a1,2
+> This is a file
+> Some new stuff
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N Check -L error messages .....................................$NL
+bk -U diffs -L../junk 2>ERR && fail -f ERR should fail
+cat <<EOF > WANT
+diffs: invalid url ../junk
+EOF
+cmpfiles ERR WANT
+
+# not perfect, but OK
+bk parent $Q -r || fail
+bk -U diffs -L 2> ERR && fail -f ERR should fail
+cat <<EOF > WANT
+This repository has no parent.  You must set a parent with "bk parent" or
+specify a repository on the command line for this command to work.
+diffs: connection to parent failed
+EOF
+cmpfiles ERR WANT
+
+cd "$HERE"
+bk diffs -L copy/junk 2>ERR && fail -f ERR should fail
+cat <<EOF > WANT
+diffs: must be run in a repository
+EOF
+cmpfiles ERR WANT
+
+cd "$HERE"
+bk clone $Q copy copy2
+cd copy
+bk parent $Q -ao ../project
+bk parent $Q -a ../copy
+bk diffs -L 2>ERR && fail -f ERR should fail
+cat <<EOF >WANT
+diffs: multiple parents, -L requires a url
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N Check a modified file that was not checked out...............$NL
+cd "$HERE/project"
+echo hello > foo
+bk new $Q foo
+bk edit $Q foo
+echo bye > foo
+bk ci -u -yy $Q foo
+chmod +w foo
+echo goodbye > foo
+bk diffs --normal foo > GOT
+cat <<EOF > WANT
+===== foo 1.2 vs edited =====
+1c1
+< bye
+---
+> goodbye
+EOF
+cmpfiles WANT GOT
+bk diffs --normal -r+ foo > GOT
+cmpfiles WANT GOT
+bk diffs --normal -r1.1 foo > GOT
+cat <<EOF > WANT
+===== foo 1.1 vs edited =====
+1c1
+< hello
+---
+> goodbye
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test diffs -s................................................$NL
+COLUMNS=46 bk diffs -s foo > GOT
+cat <<EOF > WANT
+===== foo 1.2 vs edited =====
+bye                   | goodbye
+EOF
+cmpfiles WANT GOT
+echo OK
+
+if [ X$PLATFORM != XWIN32 ]
+then
+echo $N Replacing an edited file with a symlink should work .........$NL
+cd "$HERE"/project/sub/dir
+rm file
+ln -s /nonexistant file
+bk diffs --normal file > DIFFS || fail
+cat <<EOF > WANT
+===== file 1.1 vs edited =====
+1c1
+< This is a file
+---
+> SYMLINK -> /nonexistant
+EOF
+cmpfiles DIFFS WANT
+echo OK
+fi
+
+echo $N Check that all extra files fed in on stdin get diffed .......$NL
+cd "$HERE"
+commercial proj2
+bk clone $Q . ../proj2-copy
+mkdir dir
+echo stuff > dir/extra1
+echo stuff > dir/extra2
+echo stuff > dir/extra3
+bk sfiles -cxg dir | bk diffs -u -N - > ../GOT
+GOT=`wc -l < ../GOT`
+WANT=15
+test $GOT -eq $WANT || fail -f ../GOT wrong output
+echo OK
+
+echo $N Show the same thing a different way .........................$NL
+bk -Ucx diffs -N > ../GOT
+GOT=`wc -l < ../GOT`
+WANT=15
+test $GOT -eq $WANT || fail -f ../GOT wrong output
+echo OK
+
+echo $N Test bk diffs -NL............................................$NL
+rm -f ../WANT ; touch ../WANT
+bk diffs -L../proj2-copy > ../GOT
+cmpfiles ../WANT ../GOT
+bk diffs -NL../proj2-copy > ../OUT
+perl -pe "s,^---.*,--- /dev/null,g ; s,^\+\+\+ ([a-z0-9/]+).*,+++ \\1,g" < ../OUT > ../GOT
+cat <<EOF > ../WANT
+===== New file: dir/extra1 =====
+--- /dev/null
++++ proj2/dir/extra1
+@@ -0,0 +1 @@
++stuff
+===== New file: dir/extra2 =====
+--- /dev/null
++++ proj2/dir/extra2
+@@ -0,0 +1 @@
++stuff
+===== New file: dir/extra3 =====
+--- /dev/null
++++ proj2/dir/extra3
+@@ -0,0 +1 @@
++stuff
+EOF
+cmpfiles ../WANT ../GOT
+echo OK
+
+echo $N Test diffs -R+ file for non-existent file....................$NL
+bk diffs -R+ this-file-does-not-exist > GOT
+cat <<EOF > WANT
+EOF
+cmpfiles WANT GOT
+echo OK

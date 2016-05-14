@@ -1,0 +1,91 @@
+# Copyright 2001,2004-2006,2009-2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+OUT="$HERE/out"
+DOTBK=`bk dotbk`
+CONFIG="$DOTBK/config-gui"
+
+# Things that need to be added
+# 
+
+echo $N Create some data ............................................$NL
+commercial project
+mkdir src
+cd src || exit 1
+echo new > "foo"
+echo foo > 'foo bar'
+echo baz > baz
+bk new $Q 'foo bar' baz foo
+bk commit $Q -ybaseline
+echo OK
+
+echo
+echo Comment one file, press commit, and you should see a message about
+echo not being able to commit because all files need to be commented.
+echo Press control-L and comment the other file, then press commit twice.
+echo $N Make sure cannot commit before all files are commented ......$NL
+cd "$HERE"
+bk clone $Q project copy || exit 1
+cd project/src
+bk edit $Q 'foo bar' baz
+echo project > 'foo bar'
+echo project > baz
+bk delta $Q -yproject 'foo bar' baz
+bk commit $Q -yproject
+cd "$HERE/copy/src"
+bk edit $Q 'foo bar' baz
+echo copy > 'foo bar'
+echo copy > baz
+bk delta $Q -ycopy 'foo bar' baz
+bk commit $Q -ycopy
+cd ..
+bk pull $Q -R
+cd RESYNC/src
+bk edit $Q -M 'foo bar' baz
+bk edit $Q -M 'foo bar' baz
+echo resolve > 'foo bar'
+echo resolve > baz
+cd ../..
+bk resolve $Q
+echo OK
+
+echo
+echo Just comment the one file and then commit.
+echo $N Make sure ci.rescan is ignored in the resolver ..............$NL
+test -f "$DOTBK" || mkdir -p "$DOTBK"
+echo "set gc(ci.rescan) 1" >> "$CONFIG"
+cd "$HERE"
+bk clone $Q project copy2 || exit 1
+cd "$HERE/project/src"
+bk edit $Q foo
+echo foo > foo
+bk delta $Q -yfoo foo
+bk commit $Q -yfoo
+cd "$HERE/copy2/src"
+bk edit $Q foo
+echo bar > foo
+bk delta $Q -ybar foo
+bk commit $Q -ybar
+cd ..
+bk pull $Q -R
+cd RESYNC/src
+bk edit $Q -M foo
+echo resolve > foo
+cd ../..
+bk resolve $Q >"$OUT" 2>&1
+grep -q "No files found to checkin" "$OUT" && {
+    echo failed
+    exit 1
+}
+echo OK

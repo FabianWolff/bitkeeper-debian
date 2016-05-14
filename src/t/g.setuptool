@@ -1,0 +1,86 @@
+# Copyright 2004-2007,2010,2013,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+OUT="$HERE/out"
+RC="`bk dotbk`/setup.rc"
+
+echo $N Simple startup and exit......................................$NL
+bk guitest setuptool >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Cancel
+    test_die 99
+EOF
+err=$?
+if [ -s "$OUT" ] ; then echo failed; cat "$OUT"; exit 1 ; fi
+if [ $err -ne 1 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo OK
+
+# at present setuptool doesn't create an rc file.
+#echo $N Create dotbk/setup.rc .......................................$NL
+#test -f "$RC" && rm -f "$RC"
+#bk guitest setuptool >"$OUT" 2>&1 <<'EOF'
+#    test_buttonPress Cancel
+#    test_die 99
+#EOF
+#test -f "$RC" || { echo "failed"; ls -l `bk dotbk`; exit 1; }
+#echo "OK"
+
+echo $N Creating a Pro repository ...................................$NL
+# note the lack of single quotes around EOF, which is a bit unusual.
+# we want HERE to be expanded in the script
+bk guitest setuptool >"$OUT" 2>&1 <<EOF
+    focus -force .
+    test_buttonPress "Next >"
+    test_focus
+    test_inputString "$HERE/repo"
+    test_inputString \t
+    test_inputString "this is the description"
+    test_inputString \t
+    test_inputString nobody@nowhere.bk
+    test_buttonPress "Next >"  ;# takes us to checkout mode
+    test_buttonPress "Next >"  ;# takes us to timestamp database
+    test_buttonPress "Next >"  ;# takes us to partial check options
+    test_buttonPress "Next >"  ;# takes us to last step
+    test_buttonPress "Finish"  ;# do it!
+    after 5000 [list test_buttonPress OK] ;# darn confirmation popup :-(
+    test_die 99
+EOF
+test $? -eq 0 || {
+	echo failed
+	echo guitest returned with non-zero exit status
+	exit 1
+}
+grep -q 'The repository was successfully created.' "$OUT" || {
+	echo failed 
+	cat "$OUT" 
+	exit 1 
+}
+cat > "$OUT" <<EOF
+description: this is the description
+email: nobody@nowhere.bk
+autofix: yes
+checkout: edit
+clock_skew: on
+partial_check: on
+EOF
+CONFIG="$HERE/repo/BitKeeper/etc/config"
+test -f "$CONFIG" || {
+	echo "failed to make config file" 
+	exit 1 
+}
+bk undos < "$CONFIG" > "$HERE/config"
+checkfiles "$OUT" "$HERE/config"
+echo OK
+

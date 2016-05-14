@@ -1,0 +1,203 @@
+# Copyright 2008-2010,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Tests for product rclone.
+
+echo $N Create initial ensemble......................................$NL
+nested project
+bk tag $Q TIP
+# Now add some stuff
+for r in gcc gdb
+do
+	cd $r
+	for i in 1 2 3 4
+	do
+		echo $i > file$i
+		bk new $Q file$i
+	done
+	bk commit -S $Q -y"add some files"
+	cd ..
+done
+bk setup -Cf "A new component"
+bk commit $Q -y"Added files to gcc & gdb"
+echo OK
+
+echo $N Clone the product using rclone ..............................$NL
+cd "$HERE"
+bk bkd -d -aPORT -ikill > "$HERE/BKD" 2>&1 || fail
+PORT=`cat PORT`
+trap "bk _kill bk://localhost:$PORT" 0
+bk clone $Q project bk://localhost:$PORT/copy || {
+	echo failed
+	cd copy 
+	bk cmdlog -a
+	exit 1
+}
+cd copy || fail
+bk $Q -e -r check -a || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Add BAM to product and try cloning again ....................$NL
+cd ../project
+echo junk > binfile
+bk new -b $Q binfile
+bk commit $Q -yBAM
+cd ..
+bk clone $Q project bk://localhost:$PORT/copy3 || fail
+echo OK
+
+echo $N Clone the product using rclone -r ...........................$NL
+cd "$HERE"
+bk clone $Q -rTIP project bk://localhost:$PORT/rollback || fail
+cd rollback || fail
+bk $Q -e -r check -a || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Test that components have no parent pointer..................$NL
+cd "$HERE/copy" || fail
+for r in gcc gdb
+do
+	cd $r || fail
+	P=`bk parent -l`
+	EP="This repository has no parent."
+	test "$P" = "$EP" || {
+		echo failed
+		echo "expected: $EP"
+		echo "got     : $P"
+		exit 1
+	}
+	cd ..
+done
+echo OK
+
+echo $N Test that rclone on a component fails .......................$NL
+cd "$HERE"
+bk clone $Q project/gcc bk://localhost:$PORT/mynewgcc 2> ERR && {
+	echo failed
+	exit 1
+}
+grep -q "clone of a component is not allowed" ERR || {
+	echo wrong msg
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Clone partial product using rclone, should be fine ..........$NL
+cd "$HERE"
+rm -rf copy/gcc
+bk clone $Q -sgdb copy bk://localhost:$PORT/copy2 || {
+	echo failed
+	cd copy2
+	bk cmdlog -a
+	exit 1
+}
+cd copy2 || fail
+bk $Q -e -r check -a || {
+	echo failed
+	exit 1
+}
+test -d gdb || fail
+test -d gcc && fail
+echo OK
+
+echo $N Test that -skey clones work .................................$NL
+cd "$HERE"
+cd project
+bk sfiles -R | grep -v gcc > ../LIST
+cd ..
+KEY=`bk changes -Sr+ -q -d:ROOTKEY: project/gcc`
+rm -rf mynewgcc
+bk clone $Q -s"$KEY" project bk://localhost:$PORT/mynewgcc || {
+	echo failed
+	exit 1
+}
+test -d mynewgcc -a -d mynewgcc/gcc || {
+	echo did not bring gcc alias across
+	cat ERR
+	exit 1
+}
+for i in `cat LIST`
+do	test -d mynewgcc/$i && {
+		echo should not have brought $i
+		cat ERR
+		exit 1
+	}
+done
+echo OK
+
+echo $N Test that we can clone using the COMPONENTS file ............$NL
+rm -rf mynewgcc
+cd project
+bk alias new justgcc gcc || fail
+cd ..
+bk clone $Q -sjustgcc project bk://localhost:$PORT/mynewgcc || {
+	echo failed
+	exit 1
+}
+test -d mynewgcc -a -d mynewgcc/gcc || {
+	echo did not bring gcc alias across
+	cat ERR
+	exit 1
+}
+for i in `cat LIST`
+do	test -d mynewgcc/$i && {
+		echo should not have brought $i
+		cat ERR
+		exit 1
+	}
+done
+echo OK
+
+echo $N Test that we can clone just that component with -s./gcc .....$NL
+rm -rf mynewgcc
+bk clone $Q -s./gcc project bk://localhost:$PORT/mynewgcc || {
+	echo failed
+	exit 1
+}
+test -d mynewgcc -a -d mynewgcc/gcc || {
+	echo did not bring gcc alias across
+	exit 1
+}
+for i in `cat LIST`
+do	test -d mynewgcc/$i && {
+		echo should not have brought $i
+		exit 1
+	}
+done
+echo OK
+
+echo $N Make sure that the COMPONENTS file is correct ...............$NL
+cd mynewgcc
+bk alias -k here > GOT
+(echo PRODUCT; cd gcc; bk id -S) > WANT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Long line in bkd protocol: _rclone -sHERE 60comps ...........$NL
+# Note: repo has no license (so nothing to expire).
+# Works because leases fetched from previous tests.
+if [ -d "$TESTDATA/60comps" ]
+then	bk _rclone $Q -sHERE "$TESTDATA/60comps" "$HERE/60comps" 2> ERR && fail
+	grep -q 'Trigger "pre-outgoing" (exit status was 19)' ERR \
+	    || fail -f ERR
+	echo OK
+else	echo skipped
+fi

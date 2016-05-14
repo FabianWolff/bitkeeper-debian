@@ -1,0 +1,100 @@
+# Copyright 2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# based on: https://tahoe-lafs.org/~zooko/badmerge/simple.html
+
+echo $N Setup repo ..................................................$NL
+commercial project
+echo <<EOF > file
+A
+B
+C
+D
+E
+EOF
+bk new $Q file
+bk commit $Q -ya || fail
+bk clone $Q . ../b
+bk clone $Q . ../c
+
+cd ../b
+bk edit $Q file
+echo <<EOF > file
+G
+G
+G
+A
+B
+C
+D
+E
+EOF
+bk ci $Q -l -yb1 file
+bk commit $Q -yb1 || fail
+
+echo <<EOF > file
+A
+B
+C
+D
+E
+G
+G
+G
+A
+B
+C
+D
+E
+EOF
+
+bk ci $Q -l -yb2 file
+bk commit $Q -yb2 || fail
+
+cd ../c
+bk edit $Q file
+echo <<EOF > file
+A
+B
+X
+D
+E
+EOF
+bk ci $Q -l -yc1
+bk commit $Q -yc1 || fail
+echo OK
+
+echo $N Do badmerge example .........................................$NL
+
+# pull will automerge
+bk pull $Q ../b || fail
+
+# verify expected result
+echo <<EOF > WANT
+A
+B
+C
+D
+E
+G
+G
+G
+A
+B
+X
+D
+E
+EOF
+cmpfiles WANT file
+echo OK

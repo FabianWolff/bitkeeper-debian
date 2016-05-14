@@ -1,0 +1,268 @@
+.so ../bk-macros
+.TH "bk grep" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk grep \- search some/all revisions of one or more files for a pattern
+.SH SYNOPSIS
+.B bk grep 
+[\fIoptions\fP]
+.ARG pattern
+.BKARGS
+.SH DESCRIPTION
+.LP
+The
+.B bk grep
+command searches the named files (or standard input if the file
+name \*(lq\-\*(rq is given) for lines containing a match to the given 
+.IR pattern .
+The pattern may be a perl compatible
+.IR "regular expression" .
+By default,
+.B bk grep
+prints the matching lines.
+.LP
+While designed to be command line compatible with GNU
+.BR grep ,
+.B bk grep
+can search in the most recent revision of a file,
+all revisions of a file, a subset of revisions of a file,
+or the checked out and (possibly) modified version of a file.
+By default,
+.B bk grep
+searches the checked out version of a file and if that is
+not present then it searches the most recent version of the file.
+The 
+.QR \-r ,
+.QR \-R ,
+and 
+.Q \-c
+options are used to control where in a file's history to search.
+.LP
+The printed lines may be annotated with file names,
+dates, revision numbers, line numbers, and/or user names.
+.SH OPTIONS
+.TP \-A\*<dnpru\*>n
+.OPTreq \-A num
+Print 
+.I num
+lines of trailing context after matching lines.
+Places a line containing \*(lq\-\|\-\*(rq between contiguous groups of matches.
+(Like GNU
+.BR grep .)
+.tp
+.OPTreq \-A bdnpru
+Annotate the output with information from the revision history.
+Each annotation is aligned in a column.
+The option argument[s] turn on one
+or more annotations as a prefix to each line.
+The order of fields is fixed (no matter what order you 
+specify them) and is the same as the order listed below:
+.RS
+.tp
+.B p
+Prefix each line with the pathname of the file relative to the current working
+directory.
+The name is always the current name of the file even if it has been renamed.
+.tp
+.B d
+Prefix each line with the date of last modification.
+.tp
+.B u
+Prefix each line with the name of the user who last modified it.
+.tp
+.B r
+Prefix each line with the revision of last modification.
+.tp
+.B n
+Prefix each line with its line number.
+.LP
+This option is incompatible with the -A/-B/-C context options, use -a if
+you need more lines of context.
+.RE
+.tp 
+.OPTreq \-a dnpru
+Similar to
+.Q \-A
+but each annotation is followed by a colon rather than a set of spaces
+aligning the output.
+The order of fields is fixed (no matter what order you 
+specify them) and is: pathname, date, user, revision, line number.
+.tp
+.OPTreq \-B num
+Print
+.I num
+lines of leading context before matching lines.
+Places a line containing \*(lq\-\|\-\*(rq between contiguous groups of matches.
+(Like GNU
+.BR grep .)
+.tp
+.OPTopt \-C num
+Print
+.I num
+lines of output context. 
+Places a line containing \*(lq\-\|\-\*(rq between contiguous groups of matches.
+If no value is given defaults to 2.
+(Like GNU
+.BR grep .)
+.tp
+.OPTreq \-c dates
+Select the versions to search as all deltas created in the specified 
+range of dates.  (Different than GNU
+.BR grep .)
+.tp
+.B \-h
+Do not print filenames with matches when multiple files are searched.
+Normally, if more than one file is searched the results are prefixed
+with the filename.
+(Like GNU
+.BR grep .)
+.tp
+.B \-H
+Print the file name even if there is only one file being searched.
+Normally, if only one file is searched, then the file name is skipped
+unless it was explicitly selected.
+(Like GNU
+.BR grep .)
+.tp
+.B \-i
+Ignore case distinctions in both the
+.I pattern
+and the input files.
+(Like GNU
+.BR grep .)
+.tp
+.B \-l
+Suppress normal output; instead print the name of each input file from which
+output would have normally been produced.
+(Like GNU
+.BR grep .)
+.tp
+.B \-L
+Suppress normal output; instead print the name of each input file from which
+no output would have normally been produced.
+(Like GNU
+.BR grep .)
+.tp
+.B \-n
+Prefix each line with the line number from its input file.
+(Like GNU
+.BR grep .)
+.tp
+.B \-q
+Do not produce any output.
+Exit immediately with zero status if any match is  found.
+(Like GNU
+.BR grep .)
+.tp
+.OPTreq \-r rev
+Only look in revision
+.ARG rev
+for the pattern.  
+.tp
+.OPTopt \-R rev
+Only look in range of revisions
+.ARG rev
+for the pattern.  If
+.ARG rev
+is not specified, that implies all versions of the file[s].
+The difference between this option and the previous option
+is that in this case
+.B "bk grep"
+looks in the lines 
+.B added
+by the specified revision, but in the 
+.Q \-r
+case, the entire contents of the specified version is searched.
+.tp
+.B \-v
+Invert the sense of matching, to select non-matching lines.
+(Like GNU
+.BR grep.)
+.tp
+.B \-x
+Select only those matches that exactly match the whole line.
+(Like GNU
+.BR grep .)
+.SH EXIT STATUS
+.B bk grep
+returns exit status:
+.TP
+0
+if any matches were found
+.tp
+1
+if no matches were found
+.tp
+2
+if an error occurred
+.SH EXAMPLES
+Look for a pattern in the working copy of a file:
+.DS
+$ bk grep pattern foo.c
+.DE
+Look for a pattern in the most recent checked in version of a file:
+.DS
+$ bk grep -r+ pattern foo.c
+.DE
+Look for a pattern in all checked in versions of a file (this searches
+every line ever present in the file, even if some lines have been deleted):
+.DS
+$ bk grep -R pattern foo.c
+.DE
+Look for a pattern in all files in the current working directory:
+.DS
+$ bk grep pattern
+.DE
+Look for a pattern
+in any version of any file in your tree (including deleted files; if
+this doesn't find it then pattern was never present in your history):
+.DS
+$ bk -A grep -R pattern
+.DE
+To see if it occurs in the most recent version of of any file of your tree:
+.DS
+$ bk -A grep -r+ pattern
+.DE
+To see if it occurs anywhere in any of your checked out files (this may
+be substantially faster than searching all files because it skips files
+not checked out):
+.DS
+$ bk -UG grep pattern
+.DE
+To see if it was added by the most recent delta
+made in of any active (undeleted) file of your tree:
+.DS
+$ bk -U grep -R+ pattern
+.DE
+See if a pattern was added in the last year (skips deleted files):
+.DS
+$ bk -U grep -c-1y pattern
+.DE
+See if a pattern was added between June 1 of 2010 and July 31 of 2010:
+.DS
+$ bk -U grep -c2010/06..2010/07
+.DE
+See if a pattern was added between two tagged releases:
+.DS
+$ bk -U grep -Rbk-4.6..bk-5.0
+.DE
+See if you left some debugging in the modified files
+(we tend to add fprintf(stderr, "DEBUG stuff\n")
+statements but left justify them so we can find them):
+.DS
+$ bk -cU grep '^fprintf'
+.DE
+.SH BUGS
+The ways of specifying which versions to search are non-obvious.  You
+need to read the examples carefully.  We made the default be the most
+useful/common one.
+.LP
+Binary files are never searched, they are silently ignored.
+.SH "SEE ALSO"
+.SA annotate
+.SA bk
+.SA cat
+.SA co
+.SA pcre
+.SA range
+.SH CATEGORY
+.B File

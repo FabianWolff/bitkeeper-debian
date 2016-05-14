@@ -1,0 +1,248 @@
+.so ../bk-macros
+.TH "bk difftool" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk difftool \- \*(BK graphical differences viewer
+.SH SYNOPSIS
+.B bk difftool [<opts>]
+.br
+.B bk difftool [<opts>] \*<dir\*>
+.br
+.B bk difftool [<opts>] \-
+.br
+.B bk difftool [<opts>]
+.ARG file
+.br
+.B bk difftool  [<opts>]
+.OPTreq \-r rev
+.ARG file
+.br
+.B bk difftool [<opts>]
+.OPTreq \-r rev1
+.OPTreq \-r rev2
+.ARG file
+.br
+.B bk difftool [<opts>]
+.ARG file1
+.ARG file2
+.br
+.B bk difftool [<opts>]
+.ARG path/to/file1
+.ARG dir
+.br
+.B bk difftool [<opts>]
+.OPTreq \-r @cset1
+.OPTreq \-r @cset2
+.br
+.B bk difftool [<opts>]
+.[B] \-S
+.OPTopt \-L url
+.SH DESCRIPTION
+.LP
+The
+.B bk difftool
+command is a side-by-side differences viewer that shows the files
+being compared in separate windows. The differences are color coded,
+but as you move to a new diff, that diff becomes highlighted in a
+bold font.  You can move back and forth through the diffs using the
+keys described below.
+.SH "OPTIONS"
+.TP "\-\-standalone "
+.B \-b
+Ignore changes in amount of white space.
+.tp
+.OPTopt \-L url
+Show changes that are unique to this repository relative to the
+(outgoing) parent or 
+.ARG url .
+.tp
+.OPTreq \-s comp
+In a nested collection, limit the files processed to the set of 
+component[s] (or aliases of components) specified.  This option
+may repeat.
+.tp
+.B \-S
+.tp
+.B \-\-standalone
+When  used in a nested collection, treat  the  repository as  if  it were
+detached rather than as part of the  collection.  This option limits the
+files  being  considered to those in the current component (or product).
+.tp
+.B \-w
+Ignore white space when comparing lines.
+
+.SH ARGUMENTS
+.LP
+If no arguments are given, 
+.B bk difftool
+finds all the modified files in the repository and allows
+the user to select the files they are
+interested in via a pull-down menu.
+Keyboard accelerators may also be be used to navigate between the files.
+.LP
+If a directory,
+.ARG dir ,
+is given as an argument,
+.B bk difftool
+looks for changes in and only in that directory.
+.LP
+If a dash (\c
+.QR \- )
+is given as an argument, 
+.B bk difftool
+takes a list of files to view from stdin. For example, 
+.DS
+$ bk gfiles -cU | bk difftool -
+$ bk -cgU difftool
+.DE
+.LP
+If only one file is specified and that file is a locked and modified file,
+.B bk difftool
+will diff the most recent revision against the locked version.
+.LP
+If a revision and a checked out file are specified,
+.B bk difftool
+diffs that version against the checked out file.
+.LP
+If two revisions and a file are specified,
+.B bk difftool
+diffs those two versions of the file.
+.LP
+If two files are specified,
+.B bk difftool
+diffs those two files.
+.LP
+If a file (or a path with a filename) are given as the first argument
+and a directory is given as the second argument, then the basename of
+the first argument is appended to the second argument. The purpose
+of this calling convention is to save typing. For example, if I have
+multiple-related repositories at the same level in the filesystem
+and I want to diff a file in the local repository against the same
+file in another version of the repository, I can do the following:
+.DS
+bk difftool src/filename.c ../../repo/src
+.DE
+The above command is equivalent to doing the following:
+.DS
+bk difftool src/filename.c ../../repo/src/filename.c
+.DE
+If two revs are specified in changeset format, i.e.,
+.BR \-r@cset ,
+then the set of files displayed is based on the two changesets;
+each file that is different as of the specified changesets
+is shown.
+This output format can be very useful for reviewing, see examples
+below.
+If a file has been renamed, difftool will show the difference in contents
+as well as the change in the name.
+Note that this format works in nested repositories as well as standalone
+repositories.
+.LP
+If the \-L option is given, show all the changes unique to this repository
+relative to the (outgoing) parent or 
+.ARG url
+if one was specified.
+This is similar to:
+.DS
+bk difftool -r@`bk repogca [\*<url\*>]` -r@+
+.DE
+but not identical in that the -L option will also show any work in
+progress, such as files that are modified or have pending deltas (not
+yet committed to a changeset).
+.LP
+Use \-S with \-L when in a nested component and you want the component
+to act like a standalone repository.
+.SH "DISCARDING FILES"
+When a file that is being viewed is in the checked out state, a button
+labelled
+.Q discard
+will be enabled. You may click this button to
+discard your changes (see
+.BR "bk unedit" ).
+To perform the discard you must
+click on the
+.Q discard
+button twice. After the first click you will be
+prompted to make a second click. If you click anywhere other than the
+.Q discard
+button, or wait 10 seconds, the discard will be cancelled.
+.LP
+Once a file has been discarded, it's corresponding entry in the
+.Q Files
+menu will be disabled. 
+.SH EXAMPLES
+To see all the changes between two arbitrary changesets:
+.DS
+bk difftool -r@<rev1> -r@<rev2>
+.DE
+That form can be useful to "collapse" multiple changesets that may have
+added and then deleted content to the same file[s].
+.LP
+In a nested collection, to do the same as the previous example but limit
+the output to a particular component or alias:
+.DS
+bk difftool -s<alias> -r@<rev1> -r@<rev2>
+.DE
+.LP
+In a nested collection, to limit showing changes to a particular component
+or alias:
+.DS
+bk difftool -s<alias> 
+.DE
+.SH "KEY BINDINGS"
+.TP 16
+.B Home
+Scroll both files to the top
+.tp
+.B End
+Scroll both files to the bottom
+.tp
+.B PageUp
+Scroll both files one screen up
+.tp
+.B PageDown
+Scroll both files one screen down
+.tp
+.B UpArrow
+Scroll both files one line up
+.tp
+.B DownArrow
+Scroll both files one line down
+.tp
+.B Left
+Scroll both files to the left
+.tp
+.B Right
+Scroll both files to the right
+.tp
+.B Control-q
+Quit
+.tp
+.B space
+Next diff
+.tp
+.B n
+Next diff
+.tp
+.B p
+Previous diff
+.tp
+.B .
+Center the current diff on the screen
+.tp
+.B Control-n
+Go to then next file
+.tp
+.B Control-p
+Go to the previous file
+.SH SEE ALSO
+.LP
+.SA config-gui
+.SA diffs
+.SA fmtool
+.SA range
+.SH CATEGORY
+.B Common
+.br
+.B GUI-tools
+.br
+.B Repository

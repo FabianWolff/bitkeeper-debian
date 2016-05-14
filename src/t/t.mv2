@@ -1,0 +1,114 @@
+# Copyright 2004-2005,2009-2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+commercial project
+echo $N Make sure we do not move SCCS top directories ...............$NL
+mkdir foo
+bk mv SCCS foo > OUT 2>&1
+bk _test -d SCCS || {
+	echo should not have moved the SCCS directory
+	find .
+	exit 1
+}
+grep -q 'SCCS is not a movable directory' OUT || {
+	echo bad error message
+	cat OUT
+}
+echo OK
+
+echo $N Make sure we do not move SCCS sub directories ...............$NL
+mkdir bar
+cd bar
+date > xyz
+bk new $Q xyz
+bk mv SCCS foo > OUT 2>&1
+bk _test -d SCCS || {
+	echo should not have moved the SCCS directory
+	find .
+	exit 1
+}
+grep -q 'SCCS is not a movable directory' OUT || {
+	echo bad error message
+	cat OUT
+}
+echo OK
+
+echo $N Make sure that SCCS is not a valid destination ..............$NL
+cd ..
+bk mv bar/xyz SCCS > OUT 2>&1
+bk _test -f SCCS/s.xyz && {
+	echo should not have moved the file
+	find .
+	exit 1
+}
+grep -q 'SCCS is not a legal destination' OUT || {
+	echo bad error message
+	cat OUT
+}
+echo OK
+
+echo $N Make sure that bar/SCCS is not a valid destination ..........$NL
+date > abc
+bk new $Q abc
+bk mv abc bar/SCCS > OUT 2>&1
+bk _test -f bar/SCCS/s.abc && {
+	echo should not have moved the file
+	find .
+	exit 1
+}
+grep -q 'SCCS is not a legal destination' OUT || {
+	echo bad error message
+	cat OUT
+}
+echo OK
+
+echo $N Make sure that BitKeeper cannot be moved ....................$NL
+bk mv BitKeeper junk > OUT 2>&1
+test -d BitKeeper || {
+	echo should not have moved BitKeeper
+	find .
+	exit 1
+}
+test -d junk && {
+	echo should not have created junk
+	find .
+	exit 1
+}
+echo OK
+
+echo $N Make sure that we can move a trigger ........................$NL
+mkdir BitKeeper/triggers
+touch BitKeeper/triggers/foo
+bk new $Q BitKeeper/triggers/foo
+bk mv BitKeeper/triggers/foo BitKeeper/triggers/bar 2>ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Make sure that we cannot move stuff into other BK dirs ......$NL
+touch pre-outgoing
+bk new $Q pre-outgoing
+bk mv pre-outgoing BitKeeper/log 2>ERR && {
+	echo failed
+	cat ERR
+	exit 1
+}
+bk mv BitKeeper/triggers/bar BitKeeper/log 2>ERR && {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK

@@ -1,0 +1,94 @@
+# Copyright 2001,2004-2006,2009 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Things that need to be added
+# 
+MYHOST="`bk gethost`"
+
+echo $N Test setuptool ..............................................$NL
+bk setuptool > /dev/null 2>&1
+echo OK
+
+echo $N Create some data ............................................$NL
+commercial project
+cd "$HERE/project/BitKeeper/etc"
+mkdir "$HERE/project/src"
+cd "$HERE/project/src"
+perl <<'EOF' > foo
+print "Test File %W%\n";
+for (1 .. 640) { print "stuff\n"; }
+EOF
+bk ci $Q -i foo 
+bk edit $Q foo
+perl <<'EOF' > foo
+print "Test File %W%\n";
+for (1 .. 98) { print "stuff\n"; }
+for (1 .. 21) { print "more stuff\n"; }
+for (1 .. 79) { print "stuff\n"; }
+for (1 .. 101) { print "more stuff with a really long line\n"; }
+for (1 .. 99) { print "stuff\n"; }
+for (1 .. 21) { print "yuck\n"; }
+for (1 .. 221) { print "stuff\n"; }
+EOF
+bk ci $Q  -y"test of difftool" foo 
+bk commit $Q -y"test of difftool"
+echo OK
+echo $N Test revtool ................................................$NL
+bk revtool
+echo OK
+echo $N Test citool .................................................$NL
+bk edit $Q foo
+echo foo > foo
+bk citool
+echo OK
+echo $N Test difftool ...............................................$NL
+bk difftool
+echo OK
+echo $N Test renametool .............................................$NL
+echo -e "foo\nbar" | bk renametool
+echo OK
+echo $N Test fmtool .................................................$NL
+cd "$HERE/project/src"
+bk edit $Q
+echo foo >> foo
+echo foo > foobar
+echo foo > foobaz
+echo foobaz >> foobaz
+echo foobar >> foobar
+bk ci $Q -i foobar foobaz
+bk ci $Q -y"added a line" foo
+bk co $Q
+bk fmtool foo foobar out > /dev/null 2>&1
+echo OK
+echo $N Test fm3tool ................................................$NL
+cd "$HERE/project/src"
+bk edit $Q foobaz
+echo local >> foobaz
+bk delta -ywhatever $Q foobaz
+bk _get -er1.1 $Q foobaz
+echo remote >> foobaz
+bk delta -ywhatever $Q foobaz
+bk fm3tool -l1.2 -r1.1.1.1 foobaz
+echo OK
+echo $N Test csettool ...............................................$NL
+cd "$HERE/project/src"
+bk csettool -r1.2 > /dev/null 2>&1
+echo OK
+echo $N Test old color scheme........................................$NL
+echo 'set gc(classicColors) 1' > "`bk dotbk`"/config-gui
+bk revtool
+bk citool
+bk fmtool foo foobar out > /dev/null 2>&1
+bk fm3tool -l1.2 -r1.1.1.1 foobaz
+echo OK

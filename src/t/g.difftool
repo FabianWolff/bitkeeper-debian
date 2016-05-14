@@ -1,0 +1,522 @@
+# Copyright 2001,2004-2011,2013 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+OUT="$HERE/out"
+RC="`bk dotbk`/diff.rc"
+
+echo $N Create a nested repo ........................................$NL
+nested project
+create_test_files "$HERE/project"
+create_test_files "$HERE/project/gcc"
+echo OK
+
+echo $N Simple startup with no args and nothing to diff..............$NL
+bk guitest difftool >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+test "X$PLATFORM" != XWIN32 && {
+	expected='No files found with differences'
+	grep -q "$expected" "$OUT" || {
+		echo failed
+		echo "expected: '$expected'"
+		echo "  actual: '`cat "$OUT"`'" 
+		exit 1 
+	}
+}
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo OK
+
+# this tests that the gui properly creates the rc file.
+# this requires that there's something to diff since the tool doesn't
+# save the prefs unless the GUI fully starts up.
+echo $N Create dotbk/diff.rc ........................................$NL
+test -f "$RC" && rm -f "$RC"
+bk get $Q file1 file2
+# echo "this is file 1" > file1
+# echo "this is file 2" > file2
+bk guitest difftool file1 file2 >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+test -f "$RC" || (echo ".rc wasn't created" ; exit 1; )
+echo "OK"
+
+echo $N Proper count of diffs and files when there is only 1.........$NL
+bk guitest difftool file1 file2 >"$OUT" 2>&1 <<'EOF'
+    test_diffCount 1
+    test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+echo $N Test BK_GUI_LEVEL handling messages correctly ...............$NL
+bk guitest difftool file1 file2 >"$OUT" 2>&1 <<'EOF'
+	if {$::env(BK_GUI_LEVEL) != 1} {
+		puts "BK_GUI_LEVEL should be 1, but it's $::env(BK_GUI_LEVEL)"
+		exit 1
+	}
+
+	## Call difftool with no diffs, which should end in
+	## an error message being output.  In regression tests,
+	## an error message with a BK_GUI_LEVEL > 1 should append
+	## the level to the output that we can check.
+	set msg [exec bk difftool 2>@1]
+
+	## We should be 2 levels deep in the GUIs.
+	if {![regexp {LEVEL: ([0-9]+)} $msg -> lvl] || $lvl != 2} {
+		puts "Invalid BK_GUI_LEVEL"
+		if {[info exists lvl]} {
+			puts "Expected level 2 but got $lvl"
+		}
+		exit 1
+	}
+	test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+## Create two revisions for testing and make a local change to test out the
+## various command-line options for difftool.
+echo "foo" > foo
+echo "bar" > bar
+bk ci -a -y'checkin comment' foo bar 2> /dev/null
+bk commit $Q -y'commit comment' 2> /dev/null
+
+bk edit foo bar 2> /dev/null
+echo "foo foo" > foo
+echo "bar bar" > bar
+bk ci -a -y'checkin comment' foo bar 2> /dev/null
+bk commit $Q -y'commit comment' 2> /dev/null
+
+bk edit foo bar 2> /dev/null
+echo "foo" > foo
+
+echo $N "Testing command line (<file>) ...............................$NL"
+bk guitest difftool foo >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+if [ -s "$OUT" ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo "OK"
+
+echo $N "Testing command line (bk difftool .) ........................$NL"
+bk guitest difftool . >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+if [ -s "$OUT" ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo "OK"
+
+echo $N "Testing command line (bk difftool <dir>) ....................$NL"
+bk edit $Q gcc/file1
+echo FOO >> gcc/file1
+bk guitest difftool gcc >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+if [ -s "$OUT" ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+bk unedit $Q gcc/file1
+echo "OK"
+
+echo $N "Testing command line (-r<rev> <file>) .......................$NL"
+bk guitest difftool -r1.1 foo >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+if [ -s "$OUT" ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo "OK"
+
+echo $N "Testing command line (-r<rev1> -r<rev2> <file>) .............$NL"
+bk guitest difftool -r1.1 -r1.2 foo >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+if [ -s "$OUT" ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo "OK"
+
+echo $N "Testing command line (<file1 <file2>) .......................$NL"
+bk guitest difftool foo bar >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+if [ -s "$OUT" ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo "OK"
+
+echo $N "Testing command line (<path/file1 <path/file2>) .............$NL"
+bk guitest difftool "$PWD/foo" "$PWD/bar" >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+if [ -s "$OUT" ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo "OK"
+
+echo $N "Testing command line (-r<rev1> -r<rev2>) ....................$NL"
+bk guitest difftool -r1.1 -r1.2 >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+if [ -s "$OUT" ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo "OK"
+
+echo $N "Testing command line (-r@<rev1>..@<rev2>) ...................$NL"
+bk guitest difftool -r@1.1..@1.2 >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+EOF
+err=$?
+if [ -s "$OUT" ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ $err -ne 0 ]; then echo failed; echo "exited $err expected 0"; exit 1; fi
+echo "OK"
+
+echo $N "Testing key bindings (N) ....................................$NL"
+bk unedit foo
+bk edit $Q file3 file4
+echo foo >> file3
+echo bar >> file4
+bk guitest difftool >"$OUT" 2>&1 <<'EOF'
+	## Make sure N moves to the next file.
+	test_currentFile "file3"
+	test_inputString "N"
+	test_currentFile "file4"
+
+	## N again should do nothing since there are no more files.
+	test_inputString "N"
+	test_currentFile "file4"
+
+	test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+echo $N "Testing key bindings (P) ....................................$NL"
+bk edit $Q file3 file4
+echo foo >> file3
+echo bar >> file4
+bk guitest difftool >"$OUT" 2>&1 <<'EOF'
+	## N moves to the next file.
+	test_currentFile "file3"
+	test_inputString "N"
+	test_currentFile "file4"
+
+	## P should move us back.
+	test_inputString "P"
+	test_currentFile "file3"
+
+	## P again should do nothing since we're on the first file.
+	test_inputString "P"
+	test_currentFile "file3"
+
+	test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+echo $N "Testing key bindings (Control-n) ............................$NL"
+bk edit $Q file3 file4
+echo foo >> file3
+echo bar >> file4
+bk guitest difftool >"$OUT" 2>&1 <<'EOF'
+	## Make sure N moves to the next file.
+	test_currentFile "file3"
+	test_inputString "^n"
+	test_currentFile "file4"
+
+	## N again should do nothing since there are no more files.
+	test_inputString "^n"
+	test_currentFile "file4"
+
+	test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+echo $N "Testing key bindings (Control-p) ............................$NL"
+bk edit $Q file3 file4
+echo foo >> file3
+echo bar >> file4
+bk guitest difftool >"$OUT" 2>&1 <<'EOF'
+	## Make sure N moves to the next file.
+	test_currentFile "file3"
+	test_inputString "^n"
+	test_currentFile "file4"
+
+	## P should move us back.
+	test_inputString "^p"
+	test_currentFile "file3"
+
+	## P again should do nothing since we're on the first file.
+	test_inputString "^p"
+	test_currentFile "file3"
+
+	test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+## Create a couple of long dummy files for testing moving around in the diffs.
+bk help config-gui | head -99 > long1
+bk help config-gui | head -99 > long2
+echo "	FOO" >> long1
+echo "        FOO" >> long2
+bk help config-gui | head -9 >> long1
+bk help config-gui | head -9 >> long2
+echo "testing subline highlighting on char *foo" >> long1
+echo "testing subline highlighting on const char *foo" >> long2
+bk help config-gui | head -99 >> long1
+bk help config-gui | head -99 >> long2
+echo "This is a subline highlight test" >> long1
+echo "This is a subline highlighting test" >> long2
+bk help config-gui | head -100 >> long1
+bk help config-gui | head -100 >> long2
+
+## Set the top margin to 0 so that our diffs are always right up against
+## the top line of the view instead of scrolled down a few lines.  This
+## gives us an easier line count to work with.
+echo "set gc(diff.topMargin) 0" >> "$BK_DOTBK/config-gui"
+
+echo $N "Testing key bindings (n) ....................................$NL"
+bk guitest difftool long1 long2 >"$OUT" 2>&1 <<'EOF'
+	test_currentDiff 1
+	test_inputString "n"
+	test_currentDiff 2
+	test_inputString "n"
+	test_currentDiff 3
+	test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+echo $N "Testing key bindings (p) ....................................$NL"
+bk guitest difftool long1 long2 >"$OUT" 2>&1 <<'EOF'
+	test_currentDiff 1
+	test_inputString "n"
+	test_currentDiff 2
+	test_inputString "n"
+	test_currentDiff 3
+	test_inputString "p"
+	test_currentDiff 2
+	test_inputString "p"
+	test_currentDiff 1
+	test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+echo $N "Testing key bindings (space) ................................$NL"
+bk guitest difftool long1 long2 >"$OUT" 2>&1 <<'EOF'
+	test_currentDiff 1
+	test_inputString " "
+	test_currentDiff 2
+	test_inputString " "
+	test_currentDiff 3
+	test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+echo $N "Testing key bindings (.) ....................................$NL"
+bk guitest difftool long1 long2 >"$OUT" 2>&1 <<'EOF'
+	test_currentDiff 1
+	test_topLine 100
+	test_keyPress "PageDown"
+	test_inputString "."
+	test_topLine 100
+	test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+echo $N "Testing centering diffs .....................................$NL"
+bk guitest difftool long1 long2 >"$OUT" 2>&1 <<'EOF'
+	## Test to see which line is at the top of the view.
+	## Should be 101, the first diff.
+	test_topLine 100
+	test_currentDiff 1
+
+	## Move to the next diff, but since it's on the same screen
+	## as the first, the top line should not move.
+	test_inputString "n"
+	test_topLine 100
+	test_currentDiff 2
+
+	## Move to the next one.  This one should shift the view and
+	## bring the next diff to the top of the view.
+	test_inputString "n"
+	test_topLine 210
+	test_currentDiff 3
+
+	test_inputString "p"
+	test_topLine 110
+	test_currentDiff 2
+
+	test_inputString "p"
+	test_topLine 100
+	test_currentDiff 1
+
+	test_buttonPress Quit
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo "OK"
+
+echo $N Test -L option ..............................................$NL
+cd "$HERE"
+bk clone $Q project clone
+mkdir clone/dir
+cd clone/dir
+echo foo > foo
+echo bar > bar
+echo baz > baz
+bk new $Q foo bar baz
+bk commit $Q -f
+bk edit $Q bar baz
+echo bar >> bar
+echo baz >> baz
+bk ci $Q -ybar bar
+bk guitest difftool -L >"$OUT" 2>&1 <<EOF
+	test_currentFile "dir/bar"
+	test_inputString "N"
+	test_currentFile "dir/baz"
+	test_inputString "N"
+	test_currentFile "dir/foo"
+	test_buttonPress Quit
+EOF
+test $? -eq 0 || fail -f "$OUT"
+echo OK
+
+echo $N Test -LURL option ...........................................$NL
+# As above but with the URL on the command line
+bk guitest difftool -L"file://$HERE/project" >"$OUT" 2>&1 <<EOF
+	test_currentFile "dir/bar"
+	test_inputString "N"
+	test_currentFile "dir/baz"
+	test_inputString "N"
+	test_currentFile "dir/foo"
+	test_buttonPress Quit
+EOF
+test $? -eq 0 || fail -f "$OUT"
+echo OK
+
+echo $N Test -L when there are multiple parents .....................$NL
+cd "$HERE"
+bk clone $Q clone clone2
+cd clone2
+bk edit $Q dir/foo
+echo foo >> dir/foo
+bk parent $Q -ao "$HERE/project"
+bk guitest difftool -L >"$OUT" 2>&1 <<EOF
+	test_buttonPress Quit
+EOF
+test $? -eq 0 && fail -f "$OUT" should fail
+cat <<EOF > WANT
+Could not get repo GCA:
+repogca: multiple parents, -L requires a url
+
+EOF
+cmpfiles "$OUT" WANT
+echo OK
+
+echo $N Test binary and text files together .........................$NL
+## Make some binary files
+echo FOO > foo.txt
+perl -e 'printf "b\000b\n"' > foo.bin
+bk ci -a -y'checkin comment' foo.txt foo.bin 2>/dev/null
+bk commit $Q -y'commit comment' 2>/dev/null
+bk edit $Q foo.txt foo.bin
+echo FOO >> foo.txt
+echo FOO >> foo.bin
+bk guitest difftool >"$OUT" 2>&1 <<'EOF'
+	set diffs [test_getLeftDiffs]
+	if {![string match -nocase "*binary files differ*" $diffs]} {
+		puts "Should have gotten binary file message"
+		exit 1
+	}
+	test_inputString "N" ; ## Move to the next file
+	set diffs [test_getLeftDiffs]
+	if {[string match -nocase "*binary files differ*" $diffs]} {
+		puts "Should show file contents, but we got the binary message"
+		exit 1
+	}
+
+	test_buttonPress Quit
+EOF
+test $? -eq 0 || fail -f "$OUT"
+echo OK
+
+if [ "$PLATFORM" = "WIN32" ]; then
+	echo $N Testing windows path in command line.........................$NL
+	cd "$HERE"/project
+	echo "some stuff" > afile
+	bk new $Q afile
+	bk commit $Q -ycomment
+	WINFILE=$(bk pwd -w "`pwd`")\\afile
+	BKFILE=$(bk pwd "`pwd`")/afile
+	bk difftool "$WINFILE" >GOT 2>&1
+	err=$?
+	if [ $err -ne 1 ]; then
+	    echo failed
+	    echo "exited $err; expected 1"
+	    exit 1
+	fi
+	echo "$BKFILE is the same as the checked in version." > WANT
+	cmpfiles WANT GOT
+	echo OK
+
+	echo $N Testing windows path from stdin..............................$NL
+	cd "$HERE"/project
+	WINFILE=$(bk pwd -w "`pwd`")\\afile
+	BKFILE=$(bk pwd "`pwd`")/afile
+	echo "$WINFILE" | bk difftool - >GOT 2>&1
+	err=$?
+	if [ $err -ne 1 ]; then
+	    echo failed
+	    echo "exited $err; expected 1"
+	    exit 1
+	fi
+	echo "$BKFILE is the same as the checked in version." >WANT
+	cmpfiles WANT GOT
+	echo OK
+fi

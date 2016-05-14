@@ -1,0 +1,328 @@
+.so ../bk-macros
+.TH "bk import" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    ================= Importing files into BitKeeper =================
+.SH NAME
+bk import \- import files or changes into a \*(BK package
+.SH SYNOPSIS
+.B bk import \-tpatch 
+.[ARG] options
+.ARG patch
+.ARG destination
+.br
+.B bk import \-temail
+.[ARG] destination
+.B <
+.ARG mbox
+.br
+.B bk import \-tplain
+.[ARG] options
+.ARG directory
+.ARG destination
+.br
+.B bk import \-tCVS
+.[ARG] options
+.ARG directory
+.ARG destination
+.br
+.B bk import \-tMKS
+.[ARG] options
+.ARG directory
+.ARG destination
+.br
+.B bk import \-tRCS
+.[ARG] options
+.ARG directory
+.ARG destination
+.br
+.B bk import \-tSCCS
+.[ARG] options
+.ARG directory
+.ARG destination
+.SH DESCRIPTION
+.LP
+Use
+.B bk import
+to put plain text files, patches (\c
+.QR "diff \-Nur" ),
+patches and comments in the form of email messages, SCCS files, and 
+RCS/CVS files (in this document RCS will mean CVS, MKS and RCS)
+into a \*(BK package.  For file (text, SCCS, RCS, etc) imports,
+.B bk import
+does its work outside of your original tree
+thus leaving the original files intact while importing them into a 
+\*(BK package.
+.LP
+Patch and email imports are the only type of import which may be done
+repeatedly in the same destination package.
+.LP
+See below for information specific types of imports.
+.\"You can import files by specifying the directory
+.\"containing files for import (Note: All files under the directory will
+.\"be imported.  If a subset is desired, specify using a list or run 
+.\"interactively.)
+.\".DS
+.\"bk import /path/to/src_files /path/to/package
+.\".DE
+.\".LP
+.\"You may also specify files to import using an external list.  The
+.\"path names of files in the list must be relative to the source directory.
+.\".DS
+.\"bk import -l/tmp/list ~/src/files ~/package
+.\".DE
+.\"bk import can be run interactively to include and exclude files using
+.\"regular expressions.
+.\".DS
+.\"bk import -i ~/src_files ~/package
+.\"End patterns with "." by itself or EOF
+.\"Include>> *.c
+.\"Include>> *.h
+.\"Include>> Makefile
+.\"Include>> .
+.\".DE
+.\"To import from a CVS tree:
+.\".DS
+.\"bk import -v -tCVS warehouse new
+.\".DE
+.SH OPTIONS
+.TP \-H\*<hostname\*>
+.B \-C
+Do not commit the ChangeSet.
+.tp
+.B \-f
+Force; do not prompt for list editing.
+.tp
+.B \-F
+Fast; run more quickly for large imports.
+.B NOTICE:
+use this option 
+.B only
+when you know that this is the only \*(BK activity you are doing. 
+Using this option on two parallel imports may cause \*(BK consistency
+problems.
+.tp
+.OPTreq \-g gap
+Change or disable the gap used to cluster changeset grouping.  A gap
+of 0 clusters all changes into one big changeset; a gap of non-zero
+clusters changes which happen less than that time span apart.
+The value is in minutes with the default set to 10.
+.tp
+.OPTreq \-H hostname
+Set the hostname used for the creation of any new deltas during the import.
+.tp
+.B \-i
+Prompts for a regular expression to apply to the list of files.
+All matches are included. (For use with all types except patches.)
+.tp
+.OPTreq \-l file
+Use the list of files in 
+.ARG file .
+(For use with all types except patches.)
+.tp
+.B \-q
+Be quiet.
+.tp
+.OPTreq \-S sym
+Add tag 
+.ARG sym
+to the changeset created around the import
+.tp
+.OPTreq \-t type
+Specify import file type.  
+.ARG type
+can be one of:
+.RS
+.TP \fBpatch\fP
+.B plain
+Import plain text files
+.tp
+.B patch
+Import a patch (diffs)
+.tp
+.B RCS
+Import RCS files
+.tp
+.B CVS
+Import CVS files. The only difference from
+.Q \-tRCS
+is that Attic directories
+are processed and deleted files are detected.
+All RCS options may be used with CVS imports.
+.tp
+.B MKS
+Import MKS Source Integrity files.  The files are stripped of the 
+.I ext
+field, moved from 
+.I rcs
+directories to
+.I RCS
+directories,
+a
+.I ,v
+suffix is added and then the normal RCS processing is applied.
+All RCS options may be used with MKS imports.
+.tp
+.B SCCS
+Import SCCS files
+.RE
+.tp
+.B \-v
+Be verbose.
+.tp
+.B \-x
+Prompts for a regular expression to apply to the list
+of files.  All matches are excluded.  (For use with all types except patches.)
+.SH "RCS OPTIONS"
+.TP \-H\*<hostname\*>
+.B \-h 
+turn off verification of contents (faster, less safe).
+.tp
+.B \-T
+Do not import tags. The default is to import tags.
+.tp
+.B \-u
+Run files through
+.B bk undos
+first; this will convert
+DOS style end of lines to Unix style end of lines.
+.SH "PATCH OPTIONS"
+.TP \-H\*<hostname\*>
+.OPTreq \-p num
+Strip  the  smallest prefix containing
+.ARG num
+leading slashes from each file name found in the patch file.
+.tp
+.B \-r
+Do not do rename processing when doing patch imports.
+.tp
+.B \-R
+If a patch fails to apply cleanly, back out the entire operation
+and exit with a failure.
+.tp
+.OPTreq \-y comment
+Set the message for the delta comments for all files to
+.B <comment>
+rather than \*(lqImport patch PATCHNAME.\*(rq
+.tp
+.OPTreq \-z fuzz
+Control the acceptance of fuzz by
+.B bk patch
+by passing the argument
+.Qreq \-F fuzz
+to
+.B bk patch
+rather than the default
+.Q \-F0
+, which indicates strict matching.  See the
+.B bk help patch
+man page for further information. 
+.SH "IMPORTING PATCHES"
+.LP
+\*(BK can be used to track external work by importing patches (\c
+.QR "diff \-Nur" )
+into a \*(BK package.  \*(BK can help with patch import problems, namely that
+renames are not tracked well and that there generally aren't very good comments 
+if any at all attached to the changes being made.
+.\" XXX - I don't know
+.\" if the above is a completely true and pertinent statement.
+A rename in a patch is viewed as the deletion of one file and the
+creation of another file, so to track these,
+.B bk import
+will launch
+.B bk renametool
+which is the graphical tool used to manually 
+match the deleted files with the newly created files.
+.SH "IMPORTING EMAILS"
+.LP
+\*(BK can import patches contained in email messages.  This style of import
+is an additional layer over the normal patch import.  The usage for this
+version of
+.B bk import
+is
+.DS
+bk import -temail repo < mailbox
+.DE
+where 
+.I mailbox
+may contain multiple messages, each containing a patch.  The user and
+hostname are taken from the email header
+and the subject line 
+is used as the checkin comment for each file, as well as the first
+line of the changeset comment.  If there is any preamble above the patch,
+that is used as the rest of the changeset comments.  Note that importing 
+an email patch records the name of the importer as well as the name of
+author (which is derived from the email).  The importer name is available
+via the :IMPORTER: key word, see
+.B bk help log
+for more information.
+.LP
+This part of import makes use of code copyrighted by Linus Torvalds
+and is used with permission.
+.SH "IMPORTING RCS (AND CVS OR MKS) FILES"
+.LP
+The default branch of the RCS tree is the one that will be imported.
+No other branches are imported, branch imports are on a consulting basis
+only.
+All metadata, such as dates, times, user names, checkin comments, and
+symbolic tags are preserved on import.
+.LP
+This type of import requires RCS 5.6 or later to be installed on the importing
+system.
+.SH "IMPORTING PLAIN TEXT"
+.LP
+Importing a plain text file into a \*(BK package can only be done once.
+If there is already a file in the package that has the same name as a
+file to be imported the import will fail.  
+.LP
+If a package is already
+populated with files use the
+.QR "\-i" ,
+.Q \-x
+or
+.Q \-l
+options to avoid trying to import files already in the package.
+Because of the preceding constraints, import does not catch
+renames with plain text files.
+If a file has been renamed, it can be imported, but the original
+file will still exist in the package so it is necessary to remove
+the original file from the package tree after the import of the
+renamed file.
+.LP
+Plain text files can be imported from a directory, 
+.DS
+bk import /path/to/src_files ~/package
+.DE
+from a list of files relative to the source directory, 
+.DS
+bk import -l/tmp/list /path/to/src_files ~/package
+.DE
+or by using regular expressions in interactive mode
+.DS
+bk import -ix ~/src_files ~/package
+End patterns with . by itself or EOF
+File name pattern to include>> *.c
+File name pattern to include>> *.h
+File name pattern to include>> Makefile
+File name pattern to include>> .
+End patterns with . by itself or EOF
+File name pattern to exclude>> *.o
+File name pattern to exclude>> .
+.DE
+.SH "IMPORTING SCCS FILES"
+.LP
+Teamware and other SCCS files can be imported.  The history of the file is
+preserved, but the unmerged branches are discarded.  This is okay because 
+the necessary metadata is in the mainline.  
+.LP
+Importing \*(BK files is not supported; use
+.BR "bk clone" .
+.SH "ERROR HANDLING"
+.LP
+Import does not handle all errors in a robust way.  If unsuccessful, import
+may leave work half done in the destination package.  It is suggested that
+the import destination repository is a clone of the original package in case of
+a failed import.
+.SH "SEE ALSO"
+.SA log
+.SA undos
+.SH CATEGORY
+.B Repository

@@ -1,0 +1,129 @@
+# Copyright 2001-2002,2004-2007 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+if [ "$PLATFORM" = "WIN32" ]
+then
+	echo "For non win32 only ..........................................skipped"
+	exit 0
+fi
+
+echo $N symlink checksum in null delta ..............................$NL
+umask 0
+commercial project
+echo whatever > testfile
+ln -s testfile ./link.to.testfile
+bk new $Q link.to.testfile
+bk commit $S -yxxx
+bk clone $Q "$HERE/project" "$HERE/copy"
+bk -r check || fail
+bk admin -fEXPAND1 link.to.testfile
+bk -r check || fail
+bk edit $Q link.to.testfile
+rm -f ./link.to.testfile
+ln -s target1 ./link.to.testfile
+bk delta $Q -yxxx link.to.testfile
+bk commit $S -ytarget1 ...........$NL
+echo OK
+
+echo $N processing of symlink target conflict .......................$NL
+cd "$HERE/copy"
+bk edit $Q link.to.testfile
+rm -f ./link.to.testfile
+ln -s target2 ./link.to.testfile
+bk delta $Q -yxxx link.to.testfile
+bk -r check || fail
+bk commit $S -ytarget2
+# We should get a merge conflict here
+bk pull $Q "$HERE/project" 
+status=$?
+# Make sure we do not get a checksum bug on the merged node
+bk get $Q link.to.testfile || { echo exit failed; exit 1; }
+if [ $status -eq 0 ]
+then	echo failed \(bug 2002-02-08-007\)
+else	echo 'bug 2002-02-08-007 passing! update testcase.'; exit 1
+fi
+
+echo $N Bug 2007-06-21-001, attempt to tickle slib.c rpath assert ...$NL
+cd "$HERE"
+mkdir adir
+cd adir
+commercial project2
+touch foo
+bk new $Q foo
+bk commit $Q -f -y"Added foo"
+bk edit $Q foo
+echo foo >> foo
+cd "$HERE"
+ln -s "$HERE"/adir/project2 myrepo
+bk diffs "$HERE"/myrepo/foo > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Bug 2007-06-21-001, make sfiles -v dump core ................$NL
+bk sfiles -v myrepo/foo > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Check the checksum of a symlink .............................$NL
+# there are two places where checksum is computed: checkin and sccs_delta
+# The BAM code broke the sccs_delta one. Make sure to check both.
+cd "$HERE/project"
+ln -s somename checksumtest
+bk new $Q checksumtest
+SUM=`bk prs -r+ -hnd:DSUM: checksumtest`
+test "$SUM" -eq 853 || {
+	echo failed
+	echo "for a new file: WANTED 853 and GOT '$SUM'"
+	exit 1
+}
+bk edit $Q checksumtest
+rm checksumtest
+ln -s someothername checksumtest
+bk delta $Q -y'change linkto path' checksumtest
+SUM=`bk prs -r+ -hnd:DSUM: checksumtest`
+test "$SUM" -eq 1399 || {
+	echo failed
+	echo "delta of file: WANTED 1399 and GOT '$SUM'"
+	exit 1
+}
+echo OK
+
+echo $N Switch a symlink into a file using BK_NO_TYPECHECK ..........$NL
+cd "$HERE/project"
+ln -s foo link-to-file
+bk new $Q link-to-file
+bk edit $Q link-to-file
+rm link-to-file
+echo file > link-to-file
+BK_NO_TYPECHECK=1 bk delta $Q -yfoo link-to-file || fail
+bk get $Q link-to-file
+test -f link-to-file || fail
+echo OK
+
+echo $N Switch a file into a symlink using BK_NO_TYPECHECK ..........$NL
+echo file > file-to-link
+bk new $Q file-to-link
+bk edit $Q file-to-link
+rm file-to-link
+ln -s foo file-to-link
+BK_NO_TYPECHECK=1 bk delta $Q -yfoo file-to-link || fail
+bk get $Q file-to-link
+test -h file-to-link || fail
+echo OK

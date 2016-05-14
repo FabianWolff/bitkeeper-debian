@@ -1,0 +1,68 @@
+.if \n[NESTED] \{\
+.so ../bk-macros
+.TH "bk populate" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk populate \- fill in components in a sparse product repository
+.SH SYNOPSIS
+.B bk populate
+.[B] \-q
+.[OPTreq] \-@ url \ ...
+.ARG alias \ ...
+.SH DESCRIPTION
+.LP
+The populate command is used to add components to a sparse product,
+or to re-populate any components previously populated and then 
+manually removed.
+.LP
+When cloning a product, it is possible to clone a subset of it by 
+specifying one or more component names or aliases.
+If later you want to add another component or alias, the populate command
+can help:
+.DS
+$ bk clone -sDEV-TOOLS bk://server/big-product
+$ cd big-product
+$ bk populate DEBUGGER
+.DE
+After running the above, the cached components list will be
+"DEV-TOOLS" and "DEBUGGER" (and may be named with the "HERE" alias).
+Normally BitKeeper tracks where components were populated from so
+it can find them later.
+However if the list of remembered URLs is no longer correct,
+and/or the URLs are behind a slow connection, one or
+more URLs can be passed with the
+.B \-@
+option and those locations will be tried first.
+.DS
+$ bk populate -@bk://uk-server/big-product BLIMEY
+.DE
+.LP
+Normally in addition to fetching the components implied by the aliases
+on the command line the populate command will also fetch any components
+that should have been present, but were missing for some reason.
+With no options, just those missing components will be restored.
+.SH OPTIONS
+.TP \-@\*<url\*>
+.tp
+.OPTreq \-@ URL
+When fetching new components try fetching from this
+.B url
+first.  The
+.B URL
+is a BitKeeper URL to a nested product.
+.tp
+.B \-q
+Run quietly.
+.SH "NOTE"
+The populate command is really an alias for 'bk alias add HERE ARGS'
+.SH "SEE ALSO"
+.SA alias
+.SA bkd
+.SA clone
+.SA parent
+.SA relink
+.SA triggers
+.SA unpopulate
+.SA url
+.SH CATEGORY
+.B Nested
+.\}

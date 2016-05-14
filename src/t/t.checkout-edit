@@ -1,0 +1,115 @@
+# Copyright 2008-2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Create some data, setup checkout:edit .......................$NL
+bk edit $Q "$HERE/project/BitKeeper/etc/config"
+grep -v checkout <  BitKeeper/etc/config > c
+cat c > BitKeeper/etc/config
+echo "checkout:edit" >> BitKeeper/etc/config
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+bk new $Q foo.c bar.c h.h
+test -f foo.c -a -f bar.c -a -f h.h || {
+	echo failed to save files
+	exit 1
+}
+test -w foo.c -a -w bar.c -a -w h.h || {
+	echo failed to save files RW
+	exit 1
+}
+echo OK
+
+echo $N Test plock problem...........................................$NL
+rm -f bar.c
+bk edit $Q bar.c >OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Test command line override of checkout mode .................$NL
+echo 'checkout: edit!' >> "$BK_DOTBK/config"
+cd ..
+bk ci $Q -ysnap BitKeeper/etc/config
+bk commit $Q -ysnap 
+cd ..
+bk clone $Q --checkout=none project none
+test -f none/src/foo.c && {
+	echo "foo.c should not be checked out"
+	exit 1
+}
+cd none
+test `bk config checkout` = none || {
+	echo failed to make mode sticky
+	bk config -v
+	exit 1
+}
+cd ..
+bk clone $Q --checkout=get project get
+test -f get/src/foo.c || {
+	echo "foo.c should be checked out"
+	exit 1
+}
+test -w get/src/foo.c && {
+	echo "foo.c should not be read-write"
+	ls -l get/src/foo.c
+	exit 1
+}
+bk clone $Q --checkout:get project get2
+test -f get2/src/foo.c || {
+	echo "foo.c should be checked out"
+	exit 1
+}
+test -w get2/src/foo.c && {
+	echo "foo.c should not be read-write"
+	ls -l get2/src/foo.c
+	exit 1
+}
+bk clone $Q --checkout:none project none2
+test -f none2/src/foo.c && {
+	echo "foo.c should not be checked out"
+	exit 1
+}
+cd none2
+test `bk config checkout` = none || {
+	echo failed to make mode sticky
+	bk config -v
+	exit 1
+}
+cd ..
+echo OK
+
+echo $N Test only the product is set ................................$NL
+cd "$HERE"
+nested nest
+cd ..
+bk clone $Q --checkout=edit nest ncopy
+cd ncopy
+test -f gcc/BitKeeper/log/config -o -f gcc/BitKeeper/log/config && fail
+echo 'checkout:edit!' > WANT
+cmpfiles WANT BitKeeper/log/config
+echo OK

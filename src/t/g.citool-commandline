@@ -1,0 +1,147 @@
+# Copyright 2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+OUT="$HERE/out"
+RC="`bk dotbk`/ci.rc"
+
+doFiles() {
+	for f in file1 file2 file3 file4 file5 ; do
+		echo "this is $1/$f" > $f
+		bk ci $Q -i -y'new file' $f || fail
+	done
+	bk commit $Q -y'initial checkin' || fail
+}
+
+echo $N Create a nested repo ........................................$NL
+nested project deep
+cd "$HERE/project"
+doFiles
+cd "$HERE/project/gcc"
+doFiles gcc
+cd "$HERE/project/gdb"
+doFiles gdb
+cd "$HERE/project/gui/bin"
+doFiles gui/bin
+cd "$HERE/project/gui/lib"
+doFiles gui/lib
+cd "$HERE/project"
+bk commit $Q -y'commit components' || fail
+echo OK
+
+echo $N Test with no arguments ......................................$NL
+bk edit $Q file1
+echo FOO >> file1
+bk edit $Q gcc/file2
+echo FOO >> gcc/file2
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_fileIsInList "file1"
+	test_fileIsInList "gcc/file2"
+	test_buttonPress "Quit"
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo OK
+
+echo $N Test with . as a single argument ............................$NL
+bk guitest citool . > "$OUT" 2>&1 <<'EOF'
+	test_fileIsInList "file1"
+	test_fileIsNotInList "file2"
+	test_fileIsNotInList "gcc/file2"
+	test_buttonPress "Quit"
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo OK
+
+echo $N Test with a directory as a single argument ..................$NL
+bk guitest citool gcc > "$OUT" 2>&1 <<'EOF'
+	test_fileIsInList "file2"
+	test_fileIsNotInList "file1"
+	test_buttonPress "Quit"
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo OK
+
+echo $N Test with stdin should fail in a nested repo ................$NL
+bk guitest citool - > "$OUT" 2>&1 <<'EOF'
+	test_buttonPress "Quit"
+EOF
+err=$?
+test $err -ne 1 && fail
+cat >WANT <<EOF
+Reading files from stdin not supported in a nested repository.
+EOF
+cmpfiles WANT "$OUT"
+echo OK
+
+echo $N Test with -sgui .............................................$NL
+bk edit $Q gui/file1
+echo FOO > gui/file1
+bk edit $Q gcc/file1
+echo FOO > gcc/file1
+bk guitest citool -sgui > "$OUT" 2>&1 <<'EOF'
+	test_fileIsInList "gui/file1"
+	test_fileIsInList "gui ChangeSet"
+	test_fileIsNotInList "gcc/file1"
+	test_fileIsNotInList "gcc ChangeSet"
+	test_fileIsInList "ChangeSet"
+	test_buttonPress "Quit"
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo OK
+
+echo $N Test with -s^PRODUCT ........................................$NL
+bk edit $Q gui/file1
+echo FOO > gui/file1
+bk edit $Q gcc/file1
+echo FOO > gcc/file1
+bk guitest citool -s^PRODUCT > "$OUT" 2>&1 <<'EOF'
+	test_fileIsInList "gui/file1"
+	test_fileIsInList "gui ChangeSet"
+	test_fileIsInList "gcc/file1"
+	test_fileIsInList "gcc ChangeSet"
+	test_fileIsNotInList "ChangeSet"
+	test_buttonPress "Quit"
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo OK
+
+echo $N Test with -sgui -s^PRODUCT ..................................$NL
+bk edit $Q gui/file1
+echo FOO > gui/file1
+bk edit $Q gcc/file1
+echo FOO > gcc/file1
+bk guitest citool -sgui -s^PRODUCT > "$OUT" 2>&1 <<'EOF'
+	test_fileIsInList "gui/file1"
+	test_fileIsInList "gui ChangeSet"
+	test_fileIsNotInList "gcc/file1"
+	test_fileIsNotInList "gcc ChangeSet"
+	test_fileIsNotInList "ChangeSet"
+	test_buttonPress "Quit"
+EOF
+err=$?
+test -s "$OUT" && fail -f "$OUT"
+test $err -ne 0 && fail
+echo OK

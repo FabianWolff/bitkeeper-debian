@@ -1,0 +1,52 @@
+# Copyright 2007-2009,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Setup .......................................................$NL
+commercial project
+mkdir nest
+touch nest/foo
+bk new $Q nest/foo || fail
+bk commit $Q -y1 || fail
+bk clone $Q ../project ../copy || fail
+bk edit $Q nest/foo || fail
+echo hi > nest/foo
+bk delta $Q -y2 nest/foo || fail
+bk commit $Q -y2 || fail
+
+bk _mv nest old || fail
+commercial nest
+mkdir nest
+bk _mkdir nest/SCCS
+bk _mv ../old/SCCS/s.foo nest/SCCS/s.foo
+bk admin -D nest/foo || fail
+bk sfiles -P > /dev/null
+bk mv nest/foo foo || fail
+bk commit -ynest $Q || fail
+cd ..
+
+KEY=`bk prs -hnd:KEY: -r1.0 nest/foo`
+bk gone $Q $KEY || fail
+bk commit $Q -ygone || fail
+bk -r check -acf || fail
+echo OK
+
+echo $N Do pull .....................................................$NL
+cd "$HERE"/copy
+bk pending
+BK_CONFIG=partial_check:off! bk pull $Q 2> GOT || fail
+cat > WANT <<EOF
+Marked gone (bk help chk1): nest/foo
+EOF
+cmpfiles WANT GOT
+echo OK

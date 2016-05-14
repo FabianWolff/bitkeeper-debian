@@ -1,0 +1,44 @@
+# Copyright 2006,2009 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+OUT="$HERE/out"
+
+echo $N Calling citool outside of a repo.............................$NL
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	exit 0
+EOF
+echo OK
+
+echo $N Calling csettool outside of a repo...........................$NL
+bk guitest csettool > "$OUT" 2>&1 <<'EOF'
+	exit 0
+EOF
+echo OK
+
+echo $N Calling difftool outside of a repo...........................$NL
+bk guitest difftool >GOT 2>&1 <<'EOF'
+	exit 0
+EOF
+test "X$PLATFORM" != XWIN32 && {
+	echo "There were no files available to diff" > WANT
+	cmpfiles WANT GOT
+}
+echo OK
+
+echo $N Calling revtool outside of a repo............................$NL
+bk guitest revtool > "$OUT" 2>&1 <<'EOF'
+	exit 0
+EOF
+echo OK
+

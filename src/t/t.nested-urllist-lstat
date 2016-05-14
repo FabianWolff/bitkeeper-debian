@@ -1,0 +1,49 @@
+# Copyright 2012 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Look for lstats of bogus urllist paths in clone .............$NL
+test `uname -s` = "Linux" -a -x /usr/bin/strace || {
+    echo skipped
+    exit 0
+}
+if [ `uname -m` = "x86_64" ]
+then
+    LSTAT=lstat
+else
+    LSTAT=lstat64
+fi
+# Make a gate
+nested prod
+# Make a bogus gate
+cd "$HERE"
+bk clone $Q prod prod-bogus-gate
+cd prod-bogus-gate
+bk gate $Q .
+cd ..
+# Clone the bogus gate (bogus will be in clone's
+# urllist
+bk clone $Q prod-bogus-gate prod-clone
+# Make bogus unreachable
+rm -rf prod-bogus-gate
+bk bkd -q -d -aPORT -ikill >"$HERE/BKD" 2>&1 || fail bkd failed to start
+P=`cat PORT`
+trap "bk _kill bk://localhost:$P" 0
+# Clone the clone, trace the lstat calls
+strace -e trace=$LSTAT -o"$HERE/strace.out" \
+    bk clone $Q bk://localhost:$P/prod-clone prod-clone2
+# Filter out the ones looking at the bogus gate
+# Desired number is zero
+grep bogus "$HERE/strace.out" > BOGUS
+test -s BOGUS && fail -f BOGUS should be zero lstats
+echo OK

@@ -1,0 +1,74 @@
+# Copyright 2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo ---- Test pre-commit trigger ----
+commercial project
+for f in file1.c file3.c file6.c file7; do
+	echo "this is $f" > $f
+	echo foo > c.$f
+	bk _mv c.$f SCCS/c.$f
+done
+echo foo > c.ChangeSet
+bk _mv c.ChangeSet SCCS/c.ChangeSet
+mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/pre-commit <<EOF
+#!/bin/sh
+set > "$HERE/project/OUT"
+
+msg="Pick 'back to citool' to test pre-commit failing back to citool"
+bk prompt -y'back to citool' -n'continue' "\$msg" && exit 2
+
+exit 0
+EOF
+chmod +x BitKeeper/triggers/pre-commit
+echo $N ... commit, see prompt,  citool should stay up ..............$NL
+bk citool
+echo OK
+
+echo ---- Test pre-commit trigger in a nested repo ----
+cd "$HERE"
+rm -rf project trigger-turd
+nested prod
+cd gcc
+for f in file1.c file3.c file6.c file7; do
+	echo "this is $f" > $f
+	echo bar > c.$f
+	bk _mv c.$f SCCS/c.$f
+done
+echo bar > c.ChangeSet
+cd ..
+bk _mv c.ChangeSet SCCS/c.ChangeSet
+for f in file1.c file3.c file6.c file7; do
+	echo "this is $f" > $f
+	echo foo > c.$f
+	bk _mv c.$f SCCS/c.$f
+done
+echo foo > c.ChangeSet
+bk _mv c.ChangeSet SCCS/c.ChangeSet
+mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/pre-commit <<EOF
+#!/bin/sh
+
+# only run in the product
+bk repotype -q || exit 0
+
+msg="Pick 'back to citool' to test pre-commit failing back to citool"
+bk prompt -y'fail commit' -n'force commit' "\$msg" && exit 1
+
+exit 0
+EOF
+chmod +x BitKeeper/triggers/pre-commit
+echo $N ... commit, see prompt,  citool should exit .................$NL
+bk citool
+echo OK

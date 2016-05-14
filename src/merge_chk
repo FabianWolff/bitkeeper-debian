@@ -1,0 +1,103 @@
+#!/bin/sh
+# Copyright 1999-2000 BitMover, Inc
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+PRS=
+FM=NO
+MERGE=NO
+RMERGE=NO
+DIFF=YES
+SDIFF=NO
+RGCA=NO
+LGCA=NO
+PMERGE=
+while getopts bc:fglmnRrs opt
+do	case "$opt" in
+	    g)	PMERGE="-g $PMERGE"
+	    	;;
+	    r)	RGCA=YES
+	    	;;
+	    l)	LGCA=YES
+	    	;;
+	    R)	RMERGE=YES
+	    	;;
+	    m)	MERGE=YES
+	    	;;
+	    f)	FM=YES
+	    	;;
+	    s)	SDIFF=YES
+	    	;;
+	    n)	DIFF=NO
+	    	;;
+	    b)
+	    	PRS="-$opt $PRS"
+		;;
+	    c)	PRS="-c$OPTARG $PRS"
+	    	;;
+	esac
+done
+shift `expr $OPTIND - 1`
+for i in $*
+do	F=`basename $i`
+	bk prs $PRS -hd'$if(:MERGE:){:REV: :PARENT: :GCA: :MPARENT:\n}\c' $i |
+	while read rev l g r
+	do	
+		echo ------- $F $l vs $r --------
+		bk get -qkpr$l $i > /tmp/L-$F
+		bk get -qkpr$g $i > /tmp/G-$F
+		bk get -qkpr$r $i > /tmp/R-$F
+		cp /tmp/L-$F /tmp/M-$F
+		/usr/bin/merge /tmp/M-$F /tmp/G-$F /tmp/R-$F
+		mv /tmp/M-$F /tmp/RCS-$F
+		cp /tmp/L-$F /tmp/M-$F
+		echo "bk pmerge $PMERGE /tmp/M-$F /tmp/G-$F /tmp/R-$F"
+		bk pmerge $PMERGE /tmp/M-$F /tmp/G-$F /tmp/R-$F
+		mv /tmp/M-$F /tmp/PMERGE-$F
+		cmp -s /tmp/RCS-$F /tmp/PMERGE-$F
+		if [ $? != 0 ]
+		then	
+			# fm the left vs gca
+			if [ $LGCA = YES ]
+			then	bk fm /tmp/G-$F /tmp/L-$F /dev/null &
+			fi
+			# fm the right vs gca
+			if [ $RGCA = YES ]
+			then	bk fm /tmp/G-$F /tmp/R-$F /dev/null &
+			fi
+			# fm the rcs vs pmerge
+			if [ $FM = YES ]
+			then	bk fm /tmp/RCS-$F /tmp/PMERGE-$F /dev/null &
+			fi
+			# fm pmerge vs actual delta
+			if [ $MERGE = YES ]
+			then	bk get -qkpr$rev $i > /tmp/${F}-$rev
+				bk fm /tmp/${F}-$rev /tmp/PMERGE-$F /dev/null &
+			fi
+			# fm rcs merge vs actual delta
+			if [ $RMERGE = YES ]
+			then	bk get -qkpr$rev $i > /tmp/${F}-$rev
+				bk fm /tmp/${F}-$rev /tmp/RCS-$F /dev/null &
+			fi
+			if [ $DIFF = YES ]
+			then	diff /tmp/RCS-$F /tmp/PMERGE-$F
+			fi
+			# sdiff the left and right
+			if [ $SDIFF = YES ]
+			then	sdiff -w80 /tmp/L-$F /tmp/R-$F | more
+			fi
+			wait
+		fi
+	done
+done

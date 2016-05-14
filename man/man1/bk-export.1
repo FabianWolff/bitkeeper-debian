@@ -1,0 +1,144 @@
+.so ../bk-macros
+.TH "bk export" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME 
+bk export \- export a patch or version of a \*(BK repository
+.SH SYNOPSIS
+.B bk export \-tpatch
+.[B] \-hpST
+.[OPTreq] \-s alias
+.[OPTreq] \-i pat
+.[OPTreq] \-x pat
+.OPTreq \-r r1\fB,\fPr2
+.br
+.B bk export \-tplain
+.[B] \-kSTvw
+.[OPTreq] \-s alias
+.[OPTreq] \-i pat
+.[OPTreq] \-x pat
+.OPTreq \-r rev
+.ARG to
+.SH DESCRIPTION
+.LP
+The
+.B bk export
+command generates a directory tree alongside the \*(BK
+repository which contains checked-out copies of all the files under
+\*(BK control.  It can also generate traditional
+.RB ( diff
+.BR \-Nur )
+patches between any two revisions of the source tree.
+By default,
+.B bk export
+only exports user files.  Files under
+the BitKeeper directory are not exported.  This behavior can be
+changed with the 
+.Q \-i
+and 
+.Q \-x
+options.
+.SH OPTIONS
+.TP "\\fB\\-\\-standalone \\fP"
+.B \-h
+Disable patch header.
+.tp
+.OPTreq \-i pat
+Export only pathnames matching 
+.ARG pat
+pattern (see below).
+.tp 
+.B \-k
+Do not expand keywords (default is to expand keywords).
+.tp
+.B \-p
+Do procedural diffs when exporting a patch (see diff(1)).
+.tp
+.OPTreq \-r rev
+Export the tree as of revision 
+.ARG rev .
+.if \n[NESTED] \{\
+.tp
+.B \-S
+.tp
+.B \-\-standalone
+Just export the current component.
+This has no effect in a traditional standalone repository,
+but in a nested collection, processes just the current component
+and not the entire nested collection.
+.tp
+.OPTreq \-s alias
+In a nested collection,
+.B export
+can recurse into some or all of the populated components.
+Using the 
+.OPTreq \-s alias
+option limits the repositories processed to those specified by
+.ARG alias .
+If this option is repeated the implied subset is the union of all
+specified components.
+If no
+.ARG alias
+is specified that is taken to be the same as
+.BR \-sHERE .
+.\}
+.tp
+.B \-T
+Set gfile modification time to check-in time.
+.tp
+.OPTreq \-t type
+Select export format via 
+.ARG type :
+.RS
+.\" Makes the helptool version more clear
+.TP 12
+.B plain 
+Export file in plain text to a directory tree. 
+.tp
+.B patch 
+Export file in gnu patch format.
+.RE
+.tp
+.B \-v
+Be verbose.
+.tp
+.B \-w
+Make files writable (default is read-only).
+.tp
+.OPTreq \-x pat
+Export all pathnames not matching 
+.ARG pat
+pattern (see below).
+.SH
+INCLUDE/EXCLUDE PROCESSING
+.LP
+Include and/or exclude patterns may be used to control which
+files are exported.
+There may be multiple include and/or exclude patterns.
+The patterns are a file glob the same as used by 
+.BR "bk glob" .
+Patterns are matched against the partial pathname from the root
+of the repository.
+If the partial pathname matches any of the exclude patterns then
+the file is skipped.
+If there are one or more include patterns but the partial
+pathname does not match any of the include patterns then the
+file is skipped.
+Exclude processing takes precedence over include processing.
+.LP
+When exporting patches there can be ambiguity as to which name is used 
+for include/exclude processing because some files may have been moved 
+in the changes implied by the exported patch.
+The include/exclude processing always applies to any of file names
+contained in the changes implied by the patch.
+For example, suppose you have a file that is currently deleted but
+at the time of the patch was in
+.BR src/foo.c .
+If you told the system to export
+.B src/*
+then the file will be in the set.
+.SH SEE ALSO
+.BR diff (1),
+.BR patch (1),
+.SA glob
+.SA rset
+.SH CATEGORY
+.B Compat

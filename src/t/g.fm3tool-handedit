@@ -1,0 +1,120 @@
+# Copyright 2004-2006,2012 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+export _BK_PREVENT_RESOLVE_RERUN=YES
+OUT="$HERE/out"
+RC="`bk dotbk`/fm3.rc"
+
+echo $N Create some data ............................................$NL
+commercial project
+cd "$HERE/project/BitKeeper/etc"
+mkdir "$HERE/project/src"
+cd "$HERE/project/src"
+cat >file1 <<EOF
+1: this is file1
+2: this is part of the original file
+3: this is part of the original file
+4: this is part of the original file
+5: this is part of the original file
+6: this is part of the original file
+7: this is part of the original file
+8: this is part of the original file
+EOF
+cat >file2 <<EOF
+1: this is file2
+2: this is part of the original file
+3: this is part of the original file
+4: this is part of the original file
+5: this is part of the original file
+6: this is part of the original file
+7: this is part of the original file
+8: this is part of the original file
+EOF
+bk ci $Q -i file1 file2 || exit 1
+bk commit $Q -y"initial checkin"
+# create clones
+cd "$HERE"
+bk clone $Q "$HERE/project" "$HERE/remote"
+bk clone $Q "$HERE/project" "$HERE/local"
+# introduce conflicts
+cd "$HERE/remote/src"
+bk get $Q -e file1
+cat >file1 <<EOF
+1: this is file1
+2: this is part of the original file
+3: this has changed in the remote project
+4: this has changed in the remote project
+5: this is part of the original file
+   this has been added in the remote project
+   this has been added in the remote project
+6: this is part of the original file
+7: this has changed in both the local and remote project
+8: this is part of the original file
+EOF
+bk ci $Q -y"introduced conflicts" file1
+bk commit $Q -y"introduced conflicts in file1"
+cd "$HERE/local/src"
+bk get $Q -e file1
+cat >file1 <<EOF
+1: this is file1
+2: this is part of the original file
+3: this has changed in the local project
+4: this is part of the original file
+5: this is part of the original file
+6: this is part of the original file
+7: this has changed in both the local and remote project
+8: this is part of the original file
+EOF
+bk ci $Q -y"introduced conflicts" file1
+bk commit $Q -y"introduced conflicts in file1"
+# pushing remote changes to parent
+cd "$HERE/remote"
+bk push $Q
+# pulling changes to local
+cd "$HERE/local"
+bk pull $Q 2>pull.err
+if [ ! -d RESYNC ]; then echo failed to create RESYNC directory; exit 1; fi
+echo OK
+echo $N Hand-edit that joins block with previous line................$NL
+cd "$HERE/local/RESYNC"
+bk guitest fm3tool -o merge.raw -f -l1.1.1.1 -r1.2 src/file1 >"$OUT" 2>&1 <<'EOF'
+    test_rewindMergeCursor
+    test_clickLineInMerge "<<<<<<"
+    # we should be at start of merge block; simulate backspace which
+    # causes this line to be joined to the preceeding line
+    test_inputInMerge "\010"
+    test_exitMerge
+    test_invokeMenu "File->Save"
+EOF
+err=$?
+cat > expected <<EOF
+1: this is file1
+2: this is part of the original file
+5: this is part of the original file
+   this has been added in the remote project
+   this has been added in the remote project
+6: this is part of the original file
+7: this has changed in both the local and remote project
+8: this is part of the original file
+EOF
+bk undos merge.raw > merge
+cmp -s expected merge || {
+	echo bad merge
+	diff -u expected merge
+	exit 1
+}
+echo OK

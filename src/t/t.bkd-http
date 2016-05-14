@@ -1,0 +1,35 @@
+# Copyright 2009 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository....................................$NL
+commercial project
+echo "new file" > new_file
+bk new $Q -y. new_file
+bk commit $Q -y. new_file
+echo OK
+
+echo $N Make sure an http get sends no SIB...........................$NL
+bk bkd -q -d -aPORT -ikill > "$HERE/BKD" 2>&1 || fail could not start bkd
+P=`cat PORT`
+bk tclsh >GOT <<EOF
+package require http
+set token [http::geturl "http://localhost:$P/" -channel stdout]
+upvar #0 \$token state
+parray state
+exit 0
+EOF
+test $? = 0 || fail -f ERR
+grep -q "@SERVER INFO@" GOT && fail -f GOT got Server info block on http get
+bk _kill bk://localhost:$P || fail
+echo OK

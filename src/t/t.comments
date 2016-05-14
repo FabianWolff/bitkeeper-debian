@@ -1,0 +1,138 @@
+# Copyright 2004-2007,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Modify comments from stdin ..................................$NL
+commercial proj
+touch bar.c
+bk new $Q bar.c
+bk commit $Q -ynew
+cat >c <<EOF
+### Comments for ChangeSet|1.2
+modified comment
+EOF
+cat c | bk comments - || fail
+bk -R prs -r+ -hnd:C: ChangeSet | grep -q "modified comment" || fail
+echo OK
+
+echo $N Demonstrate that comments must follow format ................$NL
+
+echo "hi bob" | bk comments - 2>ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q "Illegal format" ERR || {
+	echo wrong error message
+	cat ERR
+	exit 1
+}
+echo OK
+
+cd "$HERE"
+rm -rf proj
+#BUGID 2004-01-08-001
+OUT="$HERE/out"
+REF="$HERE/ref"
+
+echo $N check cntl-A in -Y comment ..................................$NL
+commercial proj
+touch foo bar woo
+bk new $Q foo bar woo || fail
+bk commit $Q -yfoo || fail
+bk edit $Q foo || fail
+echo "222" > foo
+echo -e "\001 gggg" > cmt
+bk delta -Ycmt foo 2>"$OUT" && fail
+grep -q "Non-printable" "$OUT" || { echo failed; exit 1; }
+echo OK
+
+echo $N check char with high bit set in -Y comment ..................$NL
+echo -e "high bit set :\370:" > cmt
+bk delta $Q -Ycmt foo || fail
+echo OK
+
+echo $N check cntl-A in -y comment ..................................$NL
+bk edit $Q bar || fail
+echo "xxx" > bar
+echo -e "\001 gggg" > cmt
+bk delta -y"`cat cmt`" bar 2>"$OUT" && fail
+grep -q "Non-printable" "$OUT" || { echo failed; exit 1; }
+echo OK
+
+echo $N check cntl-A in stdio comment ...............................$NL
+bk edit $Q woo || fail
+echo "yyy" > woo
+echo -e "\001 gggg\nThis is a comment\n.\n" > cmt
+cat cmt | bk delta woo 2>"$OUT"
+grep -q "Non-printable" "$OUT" || { echo failed; exit 1; }
+grep -q "Skipped." "$OUT" || { echo failed; exit 1; }
+bk prs -hnr+ -d:C: woo >"$OUT" || fail
+cat >"$REF" <<EOF
+This is a comment
+EOF
+checkfiles "$REF" "$OUT"
+echo OK
+
+echo $N Check that line splitting is idempotent .....................$NL
+# script inspired by Martin Dorey's bug report with no bug number yet
+# The comments file gets filtered twice for a changeset because
+# of trigger processing.  A split line was getting split again.
+perl -e 'print "1234567890"x111, "\n"' > CMT
+bk edit $Q foo
+bk delta -q -f -YCMT foo 2> FILE
+bk commit -q -YCMT 2> CSET
+checkfiles FILE CSET
+test `bk log -r+ -d'$each(:C:){\n}' foo | wc -l` -eq 2 || fail
+test `bk changes -r+ -d'$each(:C:){\n}' | wc -l` -eq 2 || fail
+echo OK
+
+echo $N Test editing c.file in remmapped tree .......................$NL
+cat <<EOF > "$HERE"/myvi.sh
+#!/bin/sh
+
+cat "\$1" > "$HERE"/file
+
+echo myedit > "\$1"
+exit 0
+EOF
+chmod +x "$HERE"/myvi.sh
+
+bk edit $Q foo || fail
+echo junk > foo
+echo before > c
+bk _cp c SCCS/c.foo
+(echo e; echo u) | EDITOR=../myvi.sh bk ci $Q foo >OUT || fail
+test "`bk prs -r+ -hnd:C: foo`" = "myedit" || fail
+cmpfiles "$HERE"/file c
+echo OK
+
+echo $N Now edit from commit ........................................$NL
+mkdir BitKeeper/triggers
+cat <<EOF > BitKeeper/triggers/pre-commit
+#!/bin/sh
+
+echo "\$BK_COMMENTFILE" > "$HERE"/cfile1
+cat  "\$BK_COMMENTFILE" > "$HERE"/cfile2
+exit 0
+EOF
+chmod +x BitKeeper/triggers/pre-commit
+rm ../file
+bk _cp c SCCS/c.ChangeSet
+(echo e; echo u) | EDITOR=../myvi.sh bk commit $Q >OUT || fail -f OUT
+test "`bk prs -r+ -hnd:C: foo`" = "myedit" || fail
+cmpfiles "$HERE"/file c
+cd ..
+grep -q 'c.ChangeSet' cfile1 && fail -f cfile1
+grep -q 'SCCS/c.' cfile1 && fail -f cfile1
+grep -q myedit cfile2 || fail -f cfile2
+echo OK

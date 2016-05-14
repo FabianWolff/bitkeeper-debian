@@ -1,0 +1,398 @@
+.so ../bk-macros
+.TH "bk bkd" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk bkd \- the \*(BK daemon
+.SH SYNOPSIS
+.B bk bkd
+.[ARG] options
+.SH DESCRIPTION
+.LP
+The \*(BK daemon,
+.BR bkd ,
+is used to synchronize and query repositories.
+It is typically run in one of the following ways:
+.LI
+automatically started when accessing a remote repository via rsh, ssh, HTTP,
+and/or the file system;
+.li
+automatically started via ssh as a login shell;
+.li
+manually started as a long running stand-alone daemon;
+.li
+automatically started as a long running service at boot time.
+.LP
+The method used usually depends on how the remote repository is named.
+See 
+.B bk help url
+for details on the naming syntax.
+.LP
+The stand-alone daemon method has no security, other than the
+ability to run in read-only mode and/or the ability to limit chdir.
+If security is a requirement, use 
+.B ssh
+to access the daemon.  See below for information on
+configuring the daemon as a login shell.
+.SH "ANONYMOUS ACCESS"
+.LP
+The most common use of the stand-alone daemon is for anonymous access
+to a repository.  To provide read-only, anonymous access, you can run:
+.DS
+bk bkd \-d \-xpush
+.DE
+.LP
+This will allow anyone to read (but not write) all repositories at or below
+the directory in which the
+.B bkd
+was started.
+.LP
+If you want to export a single repository, pick a port number, and 
+do this:
+.DS
+cd /home/bk/linux-2.6
+bk bkd \-d \-p5555 \-xcd \-xpush
+.DE
+.LP
+This says to run in daemon mode, bind to port 5555, and disallow the
+"cd" and "push" commands.  By disallowing the "cd" command, the daemon
+at port 5555 is tied to the repository in the current working directory
+.RB ( bkd
+needs to be run at the root of the repository).  By disallowing the
+"push" command, the repository is protected from updates.
+.LP
+Clients can get to this repository by using the BK URLs of
+.DS    
+bk://host.domain:5555
+http://host.domain:5555
+.DE
+.br
+i.e.,
+.DS
+$ bk clone bk://host.domain:5555 my_tree
+.DE
+These HTTP URLs allow access through most firewalls.  \*(BK supports
+accessing repositories through HTTP proxies, including authenticated
+proxies.
+.SH SECURED ACCESS VIA SSH
+Secure access is provided via 
+.BR ssh .
+There two ways to invoke 
+.BR ssh :
+.TP
+a)
+[\c
+.ARGc user
+.Bc @
+]\c
+.ARGc host
+.Bc :
+.ARG pathname
+.tp
+b)
+.Bc ssh://
+[\c
+.ARGc user
+.Bc @
+]\c
+.ARGc host
+[\c
+.Bc :
+.ARGc port
+]\c
+[\c
+.Bc /
+.ARGc pathname
+]\c
+.LP
+Using either form,
+.B ssh
+will be called to run
+.B bk bkd
+on the remote host.  When the client command completes, the 
+.B ssh 
+connection is broken and the 
+.B bkd
+daemon goes away.
+.LP
+.SS BKD LOGIN SHELL
+To add security when using
+.B ssh\c
+,
+run the
+.B bk bkd
+as the login shell.
+.LP
+On Red Hat Linux, the following steps are necessary to add a \*(BK 
+daemon login shell:
+create a simple shell script, call it 
+.BR bkd_login , 
+put it someplace like 
+.BR /usr/libexec/bitkeeper/bkd_login ,
+add the full path to the script in 
+.BR /etc/shells ,
+and add a user with that path as their shell.
+.LP
+An example 
+.B bkd_login
+shell script:
+.DS
+#!/bin/sh
+exec bk bkd -C -xcd
+.DE
+.LP
+.B Note:
+using the bkd as a login shell when accessing the system using
+.B rsh 
+is unsupported and is known not to work due to a long standing rsh bug.
+.SH BK/WEB
+The
+.B bkd
+is a self-contained HTTP server which provides the
+BK/Web feature of \*(BK.
+.LP
+To access the BK/Web interface, use a web browser to go to the \s-1URL\s0:
+.DS
+http://\*<host\*>:\*<port\*>/
+.DE
+where
+.ARG port
+is the port on which the
+.B bkd
+is listening (see the
+.Q \-p
+option, below).
+.SH WINDOWS BASED BKD
+.LP
+It is possible to install a one or more bkd's as Windows services,
+see 
+.B bk help service.
+.SH OPTIONS
+.TP \fB\-p\fP\*<addr\*>\fB:\fP[\*<port\*>]
+.B \-C
+This option provides a slightly more secure mode of
+operation in that the bkd will refuse to change directories up out of 
+the directory in which it was started.
+.tp
+.B \-d
+Run as a daemon, typically in the background (but see the next option).
+.tp
+.B \-D
+Debug mode, do not fork and run in the background.
+.tp
+.B \-h
+For all outgoing
+.BR "bk push" ,
+.BR "bk pull" ,
+and
+.B bk clone
+operations, wrap command responses in HTTP protocol.
+Use when
+.B bk bkd
+is called from a CGI script.
+.tp
+.OPTreq \-l log
+Log accesses in 
+.ARG log ;
+if
+.ARG log
+is not specified, then log to stderr.
+.tp
+.OPTreq \-P pfile
+Write the pid of daemon process into this file at startup.
+.tp
+\fB\-p\fP\*<addr\*>\fB:\fP[\*<port\*>]
+.tp
+.OPTreq \-p port
+Specify an alternative address and/or port.
+By default, the 
+.B bkd
+allows connection requests from any host on port 0x3962 (aka 14690).
+If
+.ARG addr
+is specified, the
+.B bkd
+will bind to that address, limiting the hosts which are allowed to connect.
+The most common usage is to bind to localhost (127.0.0.1) which means that
+any local process may connect but no remote processes may connect.
+.B Note:
+When specifying an address, the trailing colon
+is required even when
+.ARG port
+is omitted.
+This option implies
+.QR \-d .
+.tp
+.OPTreq \-i cmd
+Include
+.ARG cmd
+from the by default excluded command list.
+.tp
+.B \-S
+Run in "symlinks are allowed" safe mode.
+This is similar to -C, with the addition of allowing paths that are
+symlinks under the bkd root and resolve to outside of the bkd root.
+This is useful to be able to run this sequence of commands:
+.DS
+mkdir /repos
+ln -s /mnt/disk1/repos/myrepo /repos/myrepo
+cd /repos
+bk bkd -S
+cd $HOME
+bk clone bk://machine/myrepo
+.DE
+Note: a user could check in a symlink to anywhere, then push their
+repo to the master, then follow that symlink.  This option is useful
+for organizations where that is acceptable.
+.tp
+.B \-U
+Run in "unsafe" mode.
+Any non-interactive \*[BK] command may be run remotely.
+The
+.B bkd
+runs the command at the request of a remote \*[BK] client.
+If the client does not have access to the machine on which the
+.B bkd
+is running then this option allows far more access than is usually
+prudent.
+On the other hand, if the client has remote login privileges to the
+machine (or if the client is on the same machine) then there is no
+security issue with allowing this feature.
+Accordingly, this option is turned on automatically for any
+.B bkd
+started by the client via the file://, rsh://, or ssh:// access
+methods.
+If your environment is secured then running a long lived
+.B bkd 
+with this option provides more \*[BK] functionality to your users.
+.tp
+.OPTreq \-x cmd
+Exclude 
+.ARG cmd
+from the allowed command list.  The list of commands which may be excluded
+currently are:
+abort,
+cd,
+check,
+clone,
+get,
+httpget,
+pull,
+push,
+pwd,
+rclone,
+rootkey,
+status,
+synckeys,
+and
+version.
+.SH EXAMPLES
+.LP
+We use the following in 
+.B /var/bitkeeper/repositories
+to provide anonymous read only access to some \*(BK repositories:  
+.DS
+#----------------------\ cut\ here\ --------------------------
+nobody /home/bk/bk-3.2.x -C -xpush -p3200
+nobody /home/bk/bk-3.3.x -C -xpush -p3300
+#----------------------\ cut\ here\ --------------------------
+.DE
+.LP
+The following init script is known to work on Red Hat Linux based systems.
+The init script shown can be generated with a 
+.DS
+$ bk getmsg bitkeeper.init
+#----------------------\ cut\ here\ --------------------------
+#!/bin/sh
+#
+# chkconfig: 2345 24 84
+# description: BitKeeper server
+
+# Source networking configuration.
+if [ \-f /etc/sysconfig/network ]
+then	. /etc/sysconfig/network
+
+	# Check that networking is up.
+	[ ${NETWORKING} = "no" ] && exit 0
+fi
+[ \-x /usr/bin/bk ] || exit 0
+VAR=/var/bitkeeper
+
+case "$1" in
+    start_msg)	echo "Start BitKeeper daemons"
+		;;
+    stop_msg)	echo "Stop BitKeeper daemons"
+		;;
+    restart)	$0 stop
+			$0 start
+		;;
+    start)	cd $VAR || exit 1
+		test \-f repositories || {
+			echo Nothing advertised
+			exit 0
+		}
+		while read user dir opts
+		do	(
+			cd $dir || exit 1
+			F=\`basename $dir\`
+			CMD="bk bkd \-d $opts \-l$VAR/log.$F \-P$VAR/pid.$F"
+			su -c "$CMD" $user 2>> $VAR/errors
+			echo Started $CMD in $dir
+			)
+		done < repositories
+	    	;;
+
+    stop)	
+		cd $VAR || exit 1
+		echo Shutting down BitKeeper daemons
+		for i in pid.*
+		do	kill \`cat $i\`
+			rm $i
+		done
+		;;
+
+    status)	cd $VAR || exit 1
+		for i in pid.*
+		do	echo This pid should be running: \`cat $i\`
+		done
+		ps \-axf | grep bkd
+		
+		;;
+
+    *)		echo "Usage: bitkeeper {start|stop}"
+    		exit 1
+		;;
+esac
+
+exit 0
+#----------------------\ cut\ here\ --------------------------
+.DE
+.SH BUGS/NOTES
+Needs 
+.B ssh
+to provide access controlled, authenticated users.
+One could argue that this is code reuse rather than a bug.
+.LP
+\*(BM
+does not ship
+.B ssh
+since it is widely available.
+.LP
+On Windows the bkd service does not work when started from a network drive.
+.LP
+On Windows the bkd service does not work when started from a subst'ed drive.
+.SH "SEE ALSO"
+.SA parent
+.SA service
+.SA url
+.SA Howto-bkd
+.\" help://anonymous
+.\" help://deamon
+.\" help://daemon
+.\" help://demon
+.\" help://security
+.\" help://secure
+.\" help://bkweb
+.\" help://bk/web
+.SH CATEGORY
+.B Repository
+.br
+.B Admin

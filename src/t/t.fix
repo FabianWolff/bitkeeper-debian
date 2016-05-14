@@ -1,0 +1,574 @@
+# Copyright 1999-2002,2004-2006,2010-2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Check bk fix to re-edit a file ..............................$NL
+commercial project
+date > FILE
+bk ci $Q -i FILE
+bk co $Q -l FILE
+echo "New changes that I want to modify" >> X
+bk undos X > FILE
+cp FILE SAVE
+bk ci $Q -y'Oops' FILE
+bk fix $Q FILE || fail
+if bk _test ! -f SCCS/p.FILE; then echo Failed to edit FILE; exit 1; fi
+writable FILE || { echo Failed to edit File; exit 1; }
+cmp -s SAVE FILE
+if [ $? != 0 ]; then echo failed to restore FILE; diff FILE SAVE; exit 1; fi
+set `bk _cat SCCS/p.FILE`
+if [ "X$1" != "X1.1" ]; then echo failed to restore revision; exit 1; fi
+
+## unfortunately this test doesn't seem to work everywhere, sunx86
+## still wants to rebuild the file
+#make FILE > /dev/null || {
+#	echo FILE should be newer than SCCS/s.FILE
+#	ls -l --full-time FILE SCCS/s.FILE
+#	exit 1
+#}
+echo OK
+
+echo $N Make sure that we can not fix a committed delta .............$NL
+bk ci $Q -y'OK' FILE || fail
+bk commit $Q -y'commit' || fail
+echo "fix: can't fix committed delta FILE@1.2" > X
+bk undos X > CMP1
+bk fix $Q FILE 2> CMP2
+cmp -s CMP1 CMP2
+if [ $? != 0 ]; then echo failed to fail stripdel; diff CMP1 CMP2; exit 1; fi
+echo OK
+
+echo $N Make sure file was not left edited or writable ..............$NL
+test -w FILE && {
+	echo FILE is writeable
+	exit 1
+}
+bk _test -f SCCS/p.FILE && {
+	echo FILE is locked
+	exit 1
+}
+echo OK
+
+echo $N Make sure cset lists changes in latest .. earliest order ....$NL
+echo foo > ORDER
+bk new $Q ORDER
+bk unedit FILE
+for i in 2 3 4 5
+do	bk edit $Q FILE ORDER
+	echo $i >> FILE
+	echo $i >> ORDER
+	bk delta $Q -ywhatever$i FILE ORDER
+done
+bk commit $Q -y'ChangeSet comments'
+cat > WANT <<EOF
+ORDER|1.5
+ORDER|1.4
+ORDER|1.3
+ORDER|1.2
+ORDER|1.1
+ORDER|1.0
+EOF
+bk cset -r+ | grep ORDER > REVS
+cmp -s WANT REVS || {
+	echo cset listed wrong order or incorrect list
+	cat WANT
+	echo ====== got ======
+	cat REVS
+	exit 1
+}
+cat > WANT <<EOF
+FILE|1.6
+FILE|1.5
+FILE|1.4
+FILE|1.3
+EOF
+bk cset -r+ | grep FILE > REVS
+cmp -s WANT REVS || {
+	echo cset listed wrong order or incorrect list
+	cat WANT
+	echo ====== got ======
+	cat REVS
+	bk cset -r+
+	exit 1
+}
+echo OK
+
+# We'll need this later
+bk clone $Q "$HERE/project" "$HERE/save"
+
+echo $N Make sure we do not attempt a fix with repository locked ....$NL
+cd "$HERE/save"
+bk -r prs -hnd:MD5KEY: -r+ | sort > WANT
+mkdir RESYNC
+bk fix -c > OUT 2>&1 && fail -f OUT should have exited with an error
+grep -q RESYNC OUT || fail -f OUT bad error message
+bk -r prs -hnd:MD5KEY: -r+ | sort > GOT
+cmp -s WANT GOT || {
+	echo Some files were changed
+	diff WANT GOT
+	exit 1
+}
+test -z "`bk -cr`" || {
+	echo Some files left edited
+	bk -cr
+	exit 1
+}
+rmdir RESYNC
+cd "$HERE/project"
+echo OK
+
+echo $N Make sure ChangeSet is not left edited by fix -c ............$NL
+bk fix $Q -c || fail
+bk _test -f SCCS/p.ChangeSet && {
+	echo Left a lock file
+	exit 1
+}
+echo OK
+
+echo $N Make sure ChangeSet comments were left by fix -c ............$NL
+bk _test -f SCCS/c.ChangeSet || {
+	echo No comments
+	exit 1
+}
+echo ChangeSet comments > C
+bk _cp SCCS/c.ChangeSet c.ChangeSet
+cmpfiles C c.ChangeSet
+rm -f c.ChangeSet
+echo OK
+
+#echo $N Make sure multiple deltas in same cset undoes top only ......$NL
+#test X`bk prs -hnd:REV: -r+ ORDER` = X1.4 || {
+#	echo Should have left rev 1.4
+#	bk prs ORDER
+#	exit 1
+#}
+#echo OK
+
+#echo $N Make sure multiple deltas in same cset leaves top c.file ....$NL
+#bk _test -f SCCS/c.ORDER || {
+#	echo No comment file found
+#	exit 1
+#}
+#cat > WANT <<EOF
+#whatever5
+#EOF
+#checkfiles SCCS/c.ORDER WANT
+#echo OK
+
+if [ "$PLATFORM" != "WIN32" ]
+then #-----------------------------------------------------------------
+echo $N Make sure permissions are preserved .........................$NL
+bk unedit FILE
+rm ORDER
+bk chmod +x FILE
+bk commit $Q -ychmod
+bk get $Q FILE
+OMODE=`bk prs -hnd:MODE: -r+ FILE`
+test -x FILE || {
+	echo bk chmod did not stick
+	exit 1
+}
+bk clean FILE
+bk fix -c $Q || fail
+NMODE=`bk prs -hnd:MODE: -r+ FILE`
+test -x FILE -o X"$OMODE" != X"$NMODE" || {
+	echo Did not preserve execute
+	exit 1
+}
+echo OK
+fi #------------------------------------------------------------------
+
+echo $N Make sure we may not fix a merge changeset ..................$NL
+cd "$HERE"
+bk clone $Q save clone
+cd save
+bk edit $Q FILE
+bk delta -fysave $Q FILE
+bk commit -ysave $Q
+cd ../clone
+bk edit $Q FILE
+bk delta -fyclone $Q FILE
+bk commit -yclone $Q
+bk pull $Q
+bk fix -c 2>OUT && {
+	echo fix failed to exit with an error
+	cat OUT
+	exit 1
+}
+grep -q ' Unable to fix just ChangeSet\|1.5, it is a merge' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure renames are not stripped but are left pending .....$NL
+cd "$HERE"
+cp -rp clone pending
+cd pending
+bk mv FILE RENAME
+bk commit $Q -yrename
+bk fix -c $Q || {
+	echo fix should not have failed
+	exit 1
+}
+bk sfiles -gp > GOT
+test "`bk sfiles -gUp`" = RENAME || {
+	echo bad pending list from sfiles -Up
+	bk sfiles -Up
+	exit 1
+}
+test "`bk sfiles -gUP`" = RENAME || {
+	echo bad pending list from sfiles -UP
+	bk sfiles -UP
+	exit 1
+}
+bk _test -s SCCS/c.RENAME && {
+	echo c.RENAME should have been empty
+	bk _cat SCCS/c.RENAME
+	exit 1
+}
+echo OK
+
+echo $N Make sure bk new-ed files are left but s.file is removed ....$NL
+cd "$HERE"
+cp -rp clone new
+cd new
+ls > NEW
+cp NEW SAVE
+bk delta -i -y"New file" $Q NEW
+bk commit $Q -ynew
+bk fix -c $Q || fail
+test -f NEW || {
+	echo failed to leave NEW
+	exit 1
+}
+test -w NEW || {
+	echo failed to leave NEW with write permission
+	exit 1
+}
+cmp -s NEW SAVE || {
+	echo different contents
+	exit 1
+}
+bk _test -f SCCS/s.NEW && {
+	echo should have removed s.NEW
+	exit 1
+}
+bk _test -f SCCS/c.NEW || {
+	echo should have left a c.NEW
+	exit 1
+}
+cat <<END > EXPECTED
+New file
+END
+bk _cp SCCS/c.NEW c.NEW
+checkfiles EXPECTED c.NEW
+rm -f c.NEW
+test -z "$BK_TESTGUI" || {
+	echo ""
+	bk _cat SCCS/c.NEW
+	echo click commit, it should have NEW marked new
+	bk citool
+}
+echo OK
+
+echo $N Make sure bk new-ed files are left without keywords expanded.$NL
+cd "$HERE"
+cp -rp clone keywords
+cd keywords
+bk edit $Q BitKeeper/etc/config
+echo "keywords: sccs" >> BitKeeper/etc/config
+bk delta $Q -y'sccs keywords' BitKeeper/etc/config
+echo '%A%' > foo
+cp foo bar
+bk new $Q foo
+bk commit $Q -ybasefoo
+bk get $Q foo
+bk fix -c $Q
+cmp -s foo bar || {
+	echo should not have expanded keywords
+	sdiff -w40 foo bar
+	exit 1
+}
+echo OK
+
+echo $N Make sure files with spaces are OK ..........................$NL
+echo "hi" > 'new file'
+bk new $Q 'new file'
+bk commit $Q -yy
+bk edit $Q 'new file'
+echo bye >> 'new file'
+bk ci $Q -ybye 'new file'
+bk commit $Q -ybye
+bk fix -c $Q || {
+	echo fix should not have failed
+	exit 1
+}
+echo OK
+
+# Create a cset that has an inc/exc in a file 
+# bk fix -c it
+# bk pull the cset and make sure we get a reasonable error message
+
+cd "$HERE"
+rm -rf project clone
+echo $N Create initial repository and file with exclude .............$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+echo foo > foo
+echo bar > bar.c
+bk new $Q foo bar.c
+bk commit $S -yCset
+bk get -e -x1.1 $Q foo
+bk delta -yexclude $Q foo
+bk commit $S -yCset2
+echo OK
+cores
+
+echo $N Clone repository ............................................$NL
+bk clone $Q "$HERE/project" "$HERE/clone"
+echo OK
+
+echo $N Fix the cset, pull, should fill in and allow update .........$NL
+cd "$HERE/clone"
+bk stripdel $Q -C -r+ ChangeSet
+bk admin -D foo
+bk cset -M1.1..
+bk -R sfiles -P >/dev/null
+bk -r check -ac || fail
+
+# What is happening is that we are pulling in the data which fills in the
+# changeset around this delta.  The data is already in the local file and
+# the keys match so we don't have to fill it in.  But we also don't mark
+# the file as having D_CSET on the tip so it looks like it is pending and
+# we try and commit it at the end and find that we already have this key
+# in the ChangeSet file.
+#
+# We could either fail the update completely because of the pending delta
+# or notice in applypatch that it isn't marked and fix the marks.
+#
+# If we are going to get clever we need to try and force a test with both
+# local deltas should be pending and local deltas which should not be
+# pending after the pull.
+bk pull $Q > OUT 2>&1 || {
+	cat OUT
+	exit 1
+}
+echo OK
+
+# Create a cset that has an inc/exc in a file 
+# bk fix -c it and add another genuinely local change
+# bk pull the cset and make sure we get a reasonable error message
+
+cd "$HERE"
+rm -rf project clone
+echo $N Create initial repository and file with exclude .............$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+echo foo > foo
+echo bar > bar.c
+bk new $Q foo bar.c
+bk commit $S -yCset
+bk get -e -x1.1 $Q foo
+bk delta -yexclude $Q foo
+bk commit $S -yCset2
+echo OK
+cores
+
+echo $N Clone repository ............................................$NL
+bk clone $Q "$HERE/project" "$HERE/clone"
+echo OK
+
+echo $N Fix the cset, pull, should fail update due to pending .......$NL
+cd "$HERE/clone"
+bk stripdel $Q -C -r+ ChangeSet
+bk admin -D foo
+bk cset -M1.1..
+bk edit $Q foo
+bk delta $Q -fywhatever foo
+bk -R sfiles -P >/dev/null
+bk -r check -ac || fail
+
+bk pull $Q > OUT 2>&1 && {
+	echo should have failed
+	cat OUT
+	exit 1
+}
+grep -q "has uncommitted changes" OUT || {
+	echo Bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+# Facetime fix bug when trying to fix a cset with a missing file.
+echo $N Create a cset containing multiple files .....................$NL
+cd "$HERE"
+bk clone -q project facetime
+cd facetime
+# The names are important, we have to have a file sorted after kasplooey
+for i in blech whoops zorro
+do	echo $i > $i
+	bk new $Q $i
+done
+bk commit $Q -ybaseline
+bk edit $Q
+for i in blech whoops zorro
+do	echo change >> $i
+done
+bk ci $Q -ychange
+bk commit $Q -ychange
+echo OK
+
+echo $N Remove one of the s.files and attempt a fix -c ..............$NL
+bk _rm SCCS/s.whoops
+bk fix -c > OUT 2>&1
+EXIT=$?
+for i in blech zorro
+do	test "${i}@1.2" = `bk prs -hr+ -nd:GFILE:@:REV: $i` || {
+		echo should not have removed top delta in $i
+		cat OUT
+		exit 1
+	}
+done
+grep -q 'fix: unable to save patch' OUT || {
+	echo bad message
+	cat OUT
+	exit 1
+}
+grep -q 'whoops' OUT || {
+	echo bad message
+	cat OUT
+	exit 1
+}
+test $EXIT = 0 && {
+	echo fix should have exited with an error
+	exit 1
+}
+echo OK
+
+echo $N Try again with -s ...........................................$NL
+bk fix -sc > OUT 2>&1 && {
+	echo fix should have exited with an error
+	cat OUT
+	exit 1
+}
+grep -q "fix: unable to save sfio, abort" OUT || {
+	echo bad message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Demonstrate that fix can delete tags ........................$NL
+cd ..
+rm -rf facetime
+cd project
+bk tag $Q this_tag_should_be_there || fail
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS0 l$' || {
+	echo no leaf marker in the tag graph
+	exit 1
+}
+echo nnn > blech
+bk new $Q blech || fail
+bk commit -ynnn $Q || fail
+bk tag $Q nnn || fail
+
+test `bk prs -hnd:REV: -rthis_tag_should_be_there ChangeSet` = 1.3 || {
+	echo tag should exist
+	exit 1
+}
+test `bk prs -hnd:REV: -rnnn ChangeSet` = 1.4 || {
+	echo tag should exist
+	exit 1
+}
+bk fix -c $Q || fail
+test `bk prs -hnd:REV: -rthis_tag_should_be_there ChangeSet` = 1.3 || {
+	echo tag should exist
+	exit 1
+}
+test X`bk prs -hnd:REV: -rnnn` = "X" || {
+	echo tag shouldn\'t exist
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS0 l$' || {
+	echo no leaf marker in the tag graph after fix -c
+	exit 1
+}
+echo OK
+
+
+test "$PLATFORM" != "WIN32" && {
+echo $N Test fixing of csets with symlinks ..........................$NL
+touch target1 target11 target2
+ln -s target1 link1
+ln -s target3 link3
+bk new $Q link1 link3 || fail
+bk commit -ylink1 $Q || fail
+bk edit $Q link1 link3 || fail
+rm -f link1 link3
+ln -s target11 link1
+ln -s target2 link2
+ln -s target33 link3
+ln -s target4 link4
+bk new $Q link2 link4 || fail
+bk ci -ysym $Q link1 link3 || fail
+bk commit $Q -ysym || fail
+bk fix -c || fail
+# existing symlinks should be unchanged
+ls -l link* | sed 's/.*link/link/' > GOT
+cat <<EOF > EXPECTED
+link1 -> target11
+link2 -> target2
+link3 -> target33
+link4 -> target4
+EOF
+checkfiles GOT EXPECTED
+bk sfiles -x link1 link2 link3 link4 > GOT
+cat <<EOF > EXPECTED
+link2
+link4
+EOF
+checkfiles GOT EXPECTED
+echo OK
+}
+
+echo $N Test fixing of xflags .......................................$NL
+echo 1 > 1
+echo 2 > 2
+echo 3 > 3
+bk new $Q 1 2 3 || fail
+bk admin -fRCS 1 || fail
+bk commit -y1 $Q || fail
+bk admin -FRCS 1 || fail
+bk admin -FSCCS 2 || fail
+bk admin -fEOLN_NATIVE 3 || fail
+bk admin -fYEAR4 3 || fail
+bk commit -y2 $Q || fail
+bk flags 1 2 3 > WANT
+bk fix -c || fail
+bk flags 1 2 3 > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Fixing a new file should remove it ..........................$NL
+echo junk > foo2
+bk new $Q foo2 || fail
+bk fix foo2 || fail
+bk _test -f SCCS/s.foo2 && fail
+test -w foo2 || fail
+test `cat foo2` = junk || fail
+echo OK

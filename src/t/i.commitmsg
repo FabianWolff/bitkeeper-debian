@@ -1,0 +1,134 @@
+# Copyright 2001-2002,2004,2009-2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create some data ............................................$NL
+commercial project
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+bk ci $Q -i foo.c bar.c
+echo h > h.h
+bk ci $Q -i h.h || exit 1
+echo OK
+
+echo $N Attempt citool with commit which errors .....................$NL
+cp -rp "$HERE/project" "$HERE/interactive"
+cp -rp "$HERE/project" "$HERE/interactive.cmd"
+mkdir "$HERE/project/BitKeeper/triggers"
+cat > "$HERE/project/BitKeeper/triggers/pre-commit" <<EOF
+#!/bin/sh
+
+echo "The repository is currently locked against updates, try later."
+exit 1
+EOF
+chmod +x "$HERE/project/BitKeeper/triggers/pre-commit"
+echo foo | bk cfile save "$HERE/project/ChangeSet"
+bk citool
+echo OK
+echo You should have seen a popup, if you did not this test failed
+echo
+
+echo $N Attempt citool with commit which says something but works ...$NL
+cat > "$HERE/project/BitKeeper/triggers/pre-commit" <<EOF
+#!/bin/sh
+echo "Yo momma wears army boots"
+echo "Yo poppa likes it"
+exit 0
+EOF
+chmod +x "$HERE/project/BitKeeper/triggers/pre-commit"
+echo foo | bk cfile save "$HERE/project/ChangeSet"
+bk citool
+echo OK
+echo You should have seen a popup, if you did not this test failed
+bk pending
+
+echo $N Attempt citool which has interactive negative response ......$NL
+cd "$HERE/interactive"
+mkdir BitKeeper/triggers
+echo '#!/bin/sh
+echo DO NOT AGREE WITH THIS > BitKeeper/tmp/msg
+bk prompt -t "REJECT" -n "Do not accept" -y Accept -f BitKeeper/tmp/msg &&
+    exit 0
+echo This changeset has not completed because
+echo you did not accept the license.
+exit 1
+' > BitKeeper/triggers/pre-commit
+chmod +x BitKeeper/triggers/pre-commit
+echo foo | bk cfile save ChangeSet
+bk citool
+bk sfiles -p > XXX
+test -s XXX || {
+	echo Did not fail the commit
+	exit 1
+}
+echo OK
+
+echo $N Attempt commit which has interactive negative response ......$NL
+echo ""
+bk commit -ywhatever
+echo ""
+bk sfiles -p > XXX
+test -s XXX || {
+	echo Did not fail the commit
+	exit 1
+}
+echo OK
+
+echo $N Attempt citool which has interactive positive response ......$NL
+cd "$HERE/interactive"
+echo '#!/bin/sh
+bk prompt -t "ACCEPT" -n "Do not accept" -y Accept -p "bk help bkl" &&
+    exit 0
+echo This changeset has not completed because
+echo you did not accept the license.
+exit 1
+' > BitKeeper/triggers/pre-commit
+chmod +x BitKeeper/triggers/pre-commit
+echo foo | bk cfile save ChangeSet
+rm -f XXX
+bk citool
+bk sfiles -p > XXX
+test -s XXX && {
+	echo Did not commit
+	exit 1
+}
+chmod -x "$HERE/project/BitKeeper/triggers/pre-commit"
+echo OK
+
+echo $N Attempt citool with a bad license signature .................$NL
+cd "$HERE/interactive"
+bk edit $Q src/foo.c
+echo "more foo" >> src/foo.c
+echo "yada yada" | bk cfile save src/foo.c
+echo foo | bk cfile save ChangeSet
+rm -f XXX
+bk lease flush -a
+# just read lease
+bk lease renew
+bk edit $Q BitKeeper/etc/config
+# hack a signature so it is wacky
+sed 's/licsign2: ..../licsign2: xxxxxxxx/' < BitKeeper/etc/config > c
+mv c BitKeeper/etc/config
+bk citool && { echo failed; exit 1; }
+bk sfiles -cp > XXX
+test -s XXX || {
+     echo Did not fail the commit
+     exit 1
+}
+echo OK
+echo "You should have seen a popup explaining the license signature was bad"
+echo "and then citool exited."
+
+FOO

@@ -1,0 +1,63 @@
+# Copyright 2002-2006,2009-2011,2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Because we use tar xmf we don't check for timestamp errors here.
+unset _BK_DEVELOPER
+
+# Don't create gone in 'bk setup'
+# (use fresh_commercial so this don't effect cache)
+_BK_SETUP_NOGONE=1
+export _BK_SETUP_NOGONE
+
+echo $N Create some data ............................................$NL
+fresh_commercial project
+for dir in d1 d2
+do	mkdir $dir
+	for file in a b
+	do	echo "I am $dir/$file" > $dir/$file
+	done
+done
+bk gfiles -x | bk ci $Q -i -
+if bk _test ! -f d2/SCCS/s.b; then echo failed to create files; exit 1; fi
+echo OK
+
+echo $N Commit the data .............................................$NL
+bk commit $S --tag=BASE -yCset
+bk edit $Q d1/a || fail
+echo foo >> d1/a
+bk delta $Q -fy'new lod' d1/a || fail
+bk commit $S -yCset || fail
+test `bk gfiles -pC | wc -l` -eq 0 || {
+	echo failed to commit all files
+	exit 1
+}
+echo OK
+
+echo $N Try making version 1 LOD structures -- now fails ............$NL
+bk clone $Q . ../lod
+cd ../lod
+bk edit $Q d1/a || fail
+# redhat 62 wants a different form.
+if bk version | grep -q " for x86-glibc21-linux"
+then	printf "bar\0377\n" >> d1/a
+else	printf "bar\377\n" >> d1/a
+fi
+bk delta $Q -fy'new lod' d1/a || fail
+bk commit $S -ynew-lod || fail
+rev=`bk prs -r+ -hnd:I: ChangeSet`
+bk _scat ChangeSet | perl -pe "binmode(STDOUT); s/ D $rev / D 2.1 /" > tmp2
+chmod 444 tmp2
+bk _cp tmp2 SCCS/s.ChangeSet
+bk admin -z SCCS/s.ChangeSet || fail
+echo OK

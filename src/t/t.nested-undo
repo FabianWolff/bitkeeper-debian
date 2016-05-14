@@ -1,0 +1,168 @@
+# Copyright 2008-2012,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Test undo of a pending component cset .......................$NL
+nested project
+bk gate $Q -r
+cd gcc
+test `bk changes -Sr+ -nd:REV:` = 1.1 || fail
+echo hi > file
+bk new $Q file || fail
+bk commit -S $Q -ynew || fail
+test `bk changes -Sr+ -nd:REV:` = 1.2 || fail
+bk undo $Q -Sfsr+ || fail
+test `bk changes -Sr+ -nd:REV:` = 1.1 || fail
+echo OK
+
+echo $N Now test component undo that is already committed ...........$NL
+echo hi > file
+bk new $Q file || fail
+bk commit -S $Q -ynew || fail
+bk -P commit $Q -yprod || fail
+bk undo $Q -Sfsr+ >ERR && fail -f ERR should have failed
+grep -q "can.t remove committed delta ChangeSet@1.2" ERR || {
+	echo wrong error message
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Demonstrate that undo is not allowed in a portal ............$NL
+bk portal $Q || fail
+bk -P undo -q -fsr+ 2>ERR && fail -f ERR should have failed
+cat <<EOF > WANT
+undo: not allowed for product in a portal
+EOF
+cmpfiles ERR WANT
+bk portal $Q -r || fail
+echo OK
+
+echo $N Test product undo of a committed component cset .............$NL
+test `bk changes -Sr+ -nd:REV:` = 1.2 || fail
+bk -P undo $Q -fsr+ || fail
+test `bk changes -Sr+ -nd:REV:` = 1.1 || fail
+echo OK
+
+echo $N Test undo where the HERE file becomes invalid ...............$NL
+cd ..
+echo hi > gcc/new
+bk new $Q gcc/new || fail
+(cd gcc; bk commit -S $Q -ynew)
+bk commit $Q -ynew
+bk alias new GCC ./gcc || fail
+bk here add $Q GCC || fail
+bk undo -fsa1.2 2>ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q "undo: current aliases not valid after undo" ERR || fail
+echo OK
+
+echo $N Test undo after adding a new component ......................$NL
+touch c
+bk portal $Q . || fail
+bk alias -k here > OLDHERE
+bk setup -fcc comp1 || fail
+bk portal $Q -r || fail
+bk undo $Q -fsr+ || fail
+test -d comp1 && {
+	echo should have delted comp1
+	exit 1
+}
+bk -r check -ac || fail
+bk alias -k here > GOT
+cmpfiles GOT OLDHERE
+echo OK
+
+echo $N Undo changes alias needing to unpopulate ....................$NL
+bk alias new FOO ./gcc || fail
+bk alias set FOO all || fail
+bk alias set $Q HERE FOO || fail
+bk undo -q -fsr+ 2>ERR && fail -f ERR
+cat <<EOF > WANT
+undo: ./gdb cannot be found at a gate
+undo: unable to remove ./gdb
+EOF
+cmpfiles WANT ERR
+# XXX be nice if clone updated src repo urllist like _rclone does
+bk clone $Q . ../backup-attempt || fail
+bk undo -q -fsr+ 2>ERR && fail -f ERR
+cmpfiles WANT ERR
+# update src repo urllist, then undo works
+bk _rclone $Q . ../backup || fail
+bk undo -fsr+ 2>ERR && fail -f ERR should fail
+grep -q "undo: ./gdb cannot be found at a gate" ERR || fail -f ERR
+(cd ../backup; bk gate $Q .)
+bk here check $Q ALL # notice that ../backup is a gate now
+bk undo $Q -fsr+ || fail
+echo OK
+
+echo $N Undo changes alias needing to populate ......................$NL
+cd ..
+bk clone $Q project copy || fail
+cd copy
+bk portal $Q .
+bk setup -f newcomp
+bk portal $Q -r
+bk alias set FOO all || fail
+bk alias set -C FOO ./gcc ./newcomp || fail
+cd newcomp
+echo hi > jj
+bk new $Q jj
+bk commit -S $Q -yjj
+cd ..
+bk commit $Q -yjj
+bk alias set $Q HERE FOO || fail
+bk undo -fsr+ 2>OUT || fail
+# check progressbar
+perl -lne 'print $1 if /(\d\/\d)/' OUT > GOT
+cat <<EOF > WANT
+1/3
+2/3
+3/3
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Undo should not allow deleting pending component csets ......$NL
+bk alias set $Q HERE all || fail
+cd gdb
+echo hi > file
+bk new $Q file || fail
+bk commit -S $Q -ynewfile || fail
+bk -P commit $Q -ygdb || fail
+bk edit $Q file || fail
+echo bye > file
+bk ci $Q -ybye file || fail
+bk commit -S $Q -yupdatefile || fail
+cd ..
+bk undo $Q -fsr+ 2>ERR && fail -f ERR should have failed
+grep -q 'undo: The component gdb includes pending csets that cannot be undone.' ERR || fail -f ERR
+test -d RESYNC && fail
+echo OK
+
+echo $N Test checkout of files in component after undo ..............$NL
+# This uses _BK_DEVELOPER in check to see that all files are there
+cd "$HERE"/project
+echo 'checkout: edit!' > "$BK_DOTBK/config"
+bk tag $Q BASE
+cd gcc
+bk edit $Q new
+bk delta $Q -fynull new
+bk commit $Q -ynew
+cd ..
+bk gate $Q -r
+bk portal $Q -r
+bk undo -q -sfaBASE || fail
+echo OK

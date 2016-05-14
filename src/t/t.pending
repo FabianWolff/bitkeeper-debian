@@ -1,0 +1,64 @@
+# Copyright 2006,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Try a pager with spaces......................................$NL
+commercial project
+echo test > file
+bk new $Q file
+mkdir -p "$HERE/bin"
+cat > "$HERE/bin/more" <<EOF
+#!/bin/sh
+cat
+EOF
+chmod +x "$HERE/bin/more"
+unset BK_PAGER
+bk pending > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+grep -q "file@1.1" OUT || {
+	echo failed
+	echo pending did not find pending file
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Show pending is nested aware ................................$NL
+cd "$HERE"
+nested prod
+cd gcc
+bk setup -Cf deep
+cd deep
+touch foo
+bk new $Q foo
+bk pending | perl -ne 'print if /^\S/ && s/,.*//' > GOT
+cat <<EOF > WANT
+gcc/deep/foo@1.1
+gcc/deep/foo@1.0
+gcc/deep/ChangeSet@1.1
+gcc/deep/ChangeSet@1.0
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Show pending -S .............................................$NL
+bk pending -S | perl -ne 'print if /^\S/ && s/,.*//' > GOT
+cat <<EOF > WANT
+foo@1.1
+foo@1.0
+EOF
+cmpfiles WANT GOT
+echo OK

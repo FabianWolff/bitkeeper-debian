@@ -1,0 +1,134 @@
+# Copyright 2003,2006,2009-2010,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echon Running msys doesn\'t move dotbk .............................
+PATH1=`BK_DOTBK= TMP= TMPDIR= bk dotbk | tr '[A-Z]' '[a-z]'`
+PATH2=`BK_DOTBK= TMP= TMPDIR= bk bk dotbk | tr '[A-Z]' '[a-z]'`
+# cmp lowercase to avoid problems on Win32
+test "$PATH1" = "$PATH2" || fail
+echo OK
+
+echon Max line length .............................................
+commercial project
+awk 'BEGIN {for (i = 0; i < 2047; i++) printf "."; printf "\n"}' >long
+cp long foo
+bk new $Q foo || fail
+bk commit $Q -ylong || fail
+bk check -c foo || fail
+bk get $Q foo || fail
+cmp -s foo long || {
+	echo file changed
+	exit 1
+}
+echo OK
+
+echon Max line length compressed ..................................
+cp long bar
+bk new $Q -Zgzip bar || fail
+bk commit $Q -ylong2 || fail
+bk check -c bar || fail
+bk get $Q bar || fail
+cmp -s foo long || {
+	echo file changed
+	exit 1
+}
+echo OK
+
+echon Test creating tags with special chars .......................
+bk tag $Q -r1.2 'a_=-+.b0' || fail
+rev=`bk prs -r'a_=-+.b0' -hnd:REV: ChangeSet`
+test $rev = '1.2' || {
+	echo failed
+	exit 1
+}
+cd "$HERE"
+bk clone $Q -r'a_=-+.b0' project copy || fail
+cd copy
+rev=`bk prs -r+ -hnd:REV: ChangeSet`
+test $rev = '1.2' || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echon Try pulling files will really long lines and edited gfile ...
+bk pull $Q || fail
+cd "$HERE/project"
+LONGER="$HERE/longer"
+awk 'BEGIN {for (i = 0; i < 7000; i++) printf "."; printf "\n"}' > "$LONGER"
+bk edit $Q foo || fail
+cat "$LONGER" > foo
+bk delta $Q -ylonger foo || fail
+bk commit $Q -ylonger || fail
+cd "$HERE/copy"
+bk edit $Q foo || fail
+echo 1 > foo
+bk pull $Q 2>ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q "The following files are modified locally and in the" ERR || fail
+grep -q "	foo" ERR || fail
+grep -q "Assertion" ERR && fail
+echo OK
+
+echon Test hash_toStr API .........................................
+bk _hashstr_test || fail
+echo OK
+
+echon Test deep recursion .........................................
+bk _recurse 2> GOT && fail -f GOT should have failed
+grep -q "_recurse:_recurse:_recurse:_recurse:_recurse:_recurse" GOT || fail
+grep -q "BK callstack too deep, aborting." GOT || fail
+echo OK
+
+echon Test bk id -5 ...............................................
+ID=`bk changes -nd:MD5KEY: -r1.0`
+test `bk id -5` = $ID || fail
+echo OK
+
+echon Test bk -cd w -r ............................................
+cd "$HERE"/project
+mkdir src
+echo hi > src/foo
+bk new $Q src/foo || fail
+bk commit $Q -ynew || fail
+
+bk --cd=src -gr > OUT || fail
+echo foo > WANT
+cmpfiles OUT WANT
+
+bk -R --cd=src 2>ERR && fail
+echo "bk: --cd/-rDIR not allowed with -R or -P" > WANT
+cmpfiles ERR WANT
+bk -rsrc -R 2>ERR && fail
+cmpfiles ERR WANT
+echo OK
+
+echon Test pwd -P outside of repo .................................
+cd "$HERE"
+bk pwd -P 2>ERR && fail -f ERR should fail
+echo "pwd: Cannot find package root." > WANT
+cmpfiles ERR WANT
+echo OK
+
+echon Test running inside .bk directory ...........................
+cd project/.bk
+bk root 2>../ERR && fail -f ../ERR should fail
+cd ..
+echo "root: cannot find package root." > WANT
+cmpfiles WANT ERR
+cd "$HERE"
+echo OK
+

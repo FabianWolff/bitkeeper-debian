@@ -1,0 +1,357 @@
+# Copyright 1999-2002,2004-2009,2013-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+if [ "$PLATFORM" = "WIN32" ]
+then
+	echo "For non win32 only ..........................................skipped"
+	exit 0
+fi
+
+echo $N Create a symlink ............................................$NL
+umask 0
+commercial project
+echo foo > textfile
+echo "xx" > file
+ln -s file symlink
+mv file file.tmp
+bk ci $Q -i symlink textfile
+test `bk prs -hnd:RWXMODE:-:SYMLINK: -r+ symlink` = lrwxrwxrwx-file || fail
+bk admin -h symlink 2> ${DEV_NULL}
+if [ $? -ne 0 ]; then echo bad sfile.; exit 1; fi
+echo OK
+
+rm -f symlink
+echo $N Create a symlink with admin -i ..............................$NL
+ln -s /what/ever link222
+bk admin $Q -ilink222 link-name || fail
+if bk _test ! -f SCCS/s.link-name
+then	echo failed to create link; exit 1
+fi
+test `bk prs -hnd:SYMLINK: -r+ link-name` = /what/ever || fail
+bk admin -h link-name 2> ${DEV_NULL}
+if [ $? -ne 0 ]; then echo bad sfile.; exit 1; fi
+bk repocheck $Q || fail
+echo OK
+
+rm -f symlink
+echo $N Check checkout of symlink ...................................$NL
+bk co $Q symlink
+if [ ! -h symlink ]; then echo failed; exit 1; fi
+mv file.tmp file
+cmp -s symlink file
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+rm -f symlink
+echo $N Check update of symlink .....................................$NL
+bk co $Q -l symlink
+rm -f symlink file
+echo "this is file2" > file2
+ln -s file2 symlink
+cat > CMP1 << EOF
+symlink has been modified, needs delta.
+EOF
+bk clean 2> CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo clean Failed.; exit 1; fi
+mv file2 file2.tmp
+bk ci $Q -y symlink
+rm -f symlink
+test `bk prs -hnd:RWXMODE:-:SYMLINK: -r+ symlink` = lrwxrwxrwx-file2 || fail
+bk admin -h symlink 2> ${DEV_NULL}
+if [ $? -ne 0 ]; then echo bad sfile.; exit 1; fi
+cat > CMP1 << EOF
+1.2
+1.1
+EOF
+bk prs -h -d':I:\n' symlink > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+bk co $Q symlink
+if [ ! -h symlink ]; then echo failed; exit 1; fi
+mv file2.tmp file2
+cmp -s symlink file2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N check chmod on symlink ......................................$NL
+bk co $Q -l symlink
+bk admin -m-rwx------ symlink 2> /dev/null
+if [ $? -eq 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Symlink to real file conversion should error ................$NL
+rm -f symlink
+echo "this is a real file" > symlink
+bk ci -y symlink > OUT 2>&1 && {
+	echo should have failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Changing a text file into a symlink should error ............$NL
+bk co $Q -l textfile
+rm -f textfile
+echo "this is file3" > file3
+ln -s file3 textfile
+echo textfile has different file types which is unsupported. > WANT
+bk clean textfile 2> GOT
+cmpfiles WANT GOT
+bk ci $Q -y textfile > GOT 2>&1 && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+rm -f textfile
+echo OK
+
+echo $N Check symlink to a directory ................................$NL
+mkdir dir1
+bk unedit symlink
+bk edit -g $Q symlink
+ln -s dir1 symlink
+bk ci $Q -y symlink
+test `bk prs -hnd:RWXMODE:-:SYMLINK: -r+ symlink` = lrwxrwxrwx-dir1 || fail
+echo OK
+
+echo $N Check dangling symlink ......................................$NL
+bk co $Q -l symlink
+rm -f symlink
+ln -f -s this_file_does_not_exist symlink
+bk ci $Q -y symlink
+OUT=`bk prs -hnd:RWXMODE:-:SYMLINK: -r+ symlink`
+test "$OUT" = lrwxrwxrwx-this_file_does_not_exist || fail
+echo OK
+
+echo $N Check clean on symlink directory ............................$NL
+bk co $Q -l symlink
+rm -f symlink
+ln -f -s dir1 symlink
+bk ci $Q -y symlink
+bk co $Q symlink
+touch dir1/data
+bk ci $Q -i -l dir1/data
+bk clean .
+if [ -h symlink ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Check print option for symlink ..............................$NL
+cat > CMP1 << EOF
+SYMLINK -> dir1
+EOF
+bk get $Q -p symlink > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; diff CMP1 CMP2; exit 1; fi
+echo OK
+
+echo $N Check diff option for symlink/symlink .......................$NL
+cat > CMP1 << EOF
+===== symlink 1.1 vs 1.2 =====
+1c1
+< SYMLINK -> file
+---
+> SYMLINK -> file2
+EOF
+bk diffs --no-unified -r1.1 -r1.2 symlink > CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N Test sfile -c on symlink ....................................$NL
+bk co $Q -l symlink
+if [ ! -h symlink ]; then echo failed; exit 1; fi
+CNT=`bk sfiles -c symlink | wc -l`
+if [ $CNT != 0 ]; then echo failed; exit 1; fi
+rm -f symlink
+ln -f -s file1 symlink
+CNT=`bk sfiles -c symlink | wc -l`
+if [ $CNT != 1 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Test sfile -x  on symlink ....................................$NL
+CNT=`bk sfiles -x symlink | wc -l`
+if [ $CNT != 0 ]; then echo failed; exit 1; fi
+ln -f -s file3 newlink
+CNT=`bk sfiles -x newlink | wc -l`
+if [ $CNT != 1 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Test clean on symlink .......................................$NL
+bk unedit symlink
+bk co $Q -l symlink
+bk clean
+if bk _test -f SCCS/p.symlink; then echo failed; exit 1; fi;
+echo OK
+
+echo $N Make sure edited symlinks do not fail checks ................$NL
+bk -r unedit
+bk -r edit $Q
+bk -r check -a 2>OUT || {
+	echo check failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Check diff of edited symlinks ...............................$NL
+bk edit $Q symlink
+rm symlink
+ln -s junk symlink
+bk diffs --no-unified symlink > GOT || fail
+cat > WANT << EOF
+===== symlink 1.5 vs edited =====
+1c1
+< SYMLINK -> dir1
+---
+> SYMLINK -> junk
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check renaming a dir and replacing with symlink .............$NL
+cd "$HERE"
+rm -rf project
+commercial project
+mkdir dir
+cd dir
+echo hi > file
+bk new $Q file
+bk commit $Q -ywhat || fail
+cd "$HERE"
+bk clone $Q project copy2 || fail
+cd copy2
+bk mvdir dir dir2 || fail
+if [ -d dir ]; then echo failed; exit 1; fi
+ln -s dir2 dir || fail
+bk new $Q dir || fail
+bk commit $Q -ywhy || fail
+bk push $Q || fail
+echo OK
+
+echo $N Undo last cset ..............................................$NL
+cd ../project
+bk unpull -f $Q || fail
+cd ../copy2
+bk undo $Q -f -r+ || fail
+if [ -d dir2 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Check renaming a dir and replacing with file ................$NL
+bk mvdir dir dir2 || fail
+if [ -d dir ]; then echo failed; exit 1; fi
+echo hi > dir
+bk new $Q dir || fail
+bk commit $Q -ywhy || fail
+bk push $Q || fail
+echo OK
+
+echo $N Pull after replacing a dir with symlink to another repo .....$NL
+cd "$HERE"
+rm -rf *
+commercial project
+mkdir src
+touch src/foo
+bk new $Q src/foo
+bk commit $Q -yfoo
+cd ..
+bk clone $Q project copy || fail
+
+# Need to have this older, so deleted is the trunk name for foo
+cd copy
+bk rmdir src
+# This is the wacky part - it's a symlink to another repo
+ln -s "$HERE/project/src" src
+bk new $Q src || fail
+# Things don't fail if it is not checked out.
+# workaround: bk clean src; bk pull
+bk get $Q src
+bk commit $Q -yfoo || fail
+
+# Any delta will do -- just need to create a 2 tipped file
+cd ../project
+bk edit $Q src/foo
+bk delta $Q -fyfoo src/foo
+bk commit $Q -yfoo || fail
+
+# Before fix nameOK would look into other repo and see file is
+# in same place even though it has been deleted in this repo.
+# The M file was then deleted and no action in pass1 or pass2 happened
+cd ../copy
+bk pull $Q || fail
+echo OK
+
+echo $N Change file types and see if we can reget ...................$NL
+cd "$HERE"
+commercial proj2
+echo foo > textfile
+echo "xx" > file
+ln -s file symlink
+mv file file.tmp
+bk ci $Q -i symlink textfile
+OUT=`bk prs -hnd:RWXMODE:-:SYMLINK: -r+ symlink`
+test "$OUT" = lrwxrwxrwx-file || fail
+bk admin -h symlink 2> ${DEV_NULL}
+bk clean symlink
+bk get $Q -e -g symlink
+touch symlink
+bk get $Q symlink 2>ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Try a bunch of symlink types ................................$NL
+cd "$HERE"
+commercial proj3
+bk edit $Q BitKeeper/etc/config
+echo 'checkout:edit!' >> BitKeeper/etc/config
+touch file
+ln -s file sym1
+bk new $Q sym1
+mkdir dir
+ln -s dir sym2
+bk new $Q sym2
+touch ../project/file
+ln -s ../project/file sym3
+bk new $Q sym3
+mkdir ../project/dir
+ln -s ../project/dir sym4
+bk new $Q sym4
+ln -s . sym6
+ln -s sym6 sym5
+bk new $Q sym5 sym6
+cd dir
+ln -s .. sym7
+bk new $Q sym7
+bk mv sym7 sym8
+cd ..
+bk mv dir src
+bk sfiles -cg > OUT || fail
+echo 'BitKeeper/etc/config' > WANT
+checkfiles WANT OUT
+bk repocheck $Q || fail
+echo OK
+
+echo $N Try \'bk diffs -N\' with extra symlink ........................$NL
+ln -s ../project foo
+echo foo | bk diffs -N - > GOT 2>&1 || fail
+sed  's/\t2.*/\tDATE/' < GOT > GOT2
+cat <<EOF > WANT
+===== New file: foo =====
+SYMLINK -> ../project
+EOF
+cmpfiles GOT2 WANT
+echo OK

@@ -1,0 +1,136 @@
+# Copyright 2009-2013 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Run a clone where the source URLs are invalid ...............$NL
+nested project
+cd ..
+bk bkd -q -aPORT -ikill
+P=`cat PORT`
+
+bk clone $Q project pull-targ || fail
+
+cd project
+for c in gcc gdb
+do
+	(cd $c; echo hi > file; bk new $Q file; bk commit -S $Q -yhi)
+done
+bk commit $Q -yhi || fail 2
+cd ..
+
+bk clone $Q -s./gcc bk://localhost:$P/project gcc-only || fail 3
+bk _kill bk://localhost:$P
+
+cd gcc-only
+bk here check -vq 2>ERR && fail -f ERR should fail 4
+grep -q "$P.*connect failure" ERR || fail -f ERR
+cd ..
+bk clone -sall gcc-only copy-all >/dev/null 2>ERR && fail -f ERR should fail
+perl -pe "s/.*\r//;s,bk://.*/project,URL/project," < ERR > ERR2
+cat <<EOF > WANT
+.                                  100% |==============================| OK
+1/3 gcc                            100% |==============================| OK
+clone: searching URL/project...connect failure
+clone: No other sources for ./gdb known
+clone: component fetch failed, only product is populated
+3/3 .                              100% |==============================| FAILED
+EOF
+cmpfiles ERR2 WANT
+cd copy-all
+bk -e -r check -ac || fail 5
+
+cd ../gcc-only
+cp BitKeeper/log/urllist BACK
+grep -q :$P BitKeeper/log/urllist || fail 11
+bk here check -qC 2>ERR && fail should fail 12
+echo 'gdb: no valid urls found (missing)' > WANT
+cmpfiles WANT ERR
+grep -q :$P BitKeeper/log/urllist && fail bad url should be gone 13
+bk here check $Q -@../project || fail 14
+cd ..
+bk clone -sall $Q gcc-only copy-all2 || fail 15
+rm -rf copy-all2
+mv project pp
+cd gcc-only
+bk here check -aC >GOT && fail 16
+cat >WANT <<EOF
+gdb:
+	no valid urls found (missing)
+EOF
+cmpfiles WANT GOT
+grep -q project BitKeeper/log/urllist && fail -f BitKeeper/log/urllist 17
+cp BACK BitKeeper/log/urllist
+cd ..
+mv pp project
+echo OK
+
+echo $N Show that we can complete the clone in two steps ............$NL
+cd copy-all
+bk alias set $Q -@../project here all || fail
+test -d gdb || fail
+echo OK
+
+echo $N Run a pull where one of the source URLs are invalid .........$NL
+cd ../pull-targ
+# wow, talk about self-healing... we just fetch it from somewhere else
+bk pull -q ../gcc-only || fail
+echo OK
+
+echo $N Show how an unpopulate might fail ...........................$NL
+cd ../gcc-only
+bk here rm $Q ./gcc 2>ERR && fail -f ERR should fail
+printf "here: searching `bk parent -l`...connect failure\n" >WANT
+cat <<EOF >> WANT
+here: ./gcc cannot be found at a gate
+here: unable to remove ./gcc
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N Providing a URL will work ...................................$NL
+bk here rm $Q -@../project ./gcc || fail
+echo OK
+
+echo $N And that URL is remembered ..................................$NL
+bk here add $Q ./gcc || fail
+echo OK
+
+echo $N Show that a network clone will rewrite URLs .................$NL
+# strip out the invalid URL
+bk here check -aC $Q || fail
+cd ..
+bk bkd -q -aPORT -ikill || fail
+P=`cat PORT`
+trap "bk _kill bk://localhost:$P >/dev/null 2>&1" 0
+mv project project.save
+bk clone $Q -s. bk://localhost:$P/gcc-only gcc-neturl || fail 2
+cd gcc-neturl
+bk here check -av ./gcc >GOT 2>&1
+printf "here: searching `bk parent -l`...ok\n" >WANT
+printf "here: searching bk://`bk gethost -r`:$P/$HERE/project...repo gone\n" >> WANT
+printf "gcc:\n	`bk parent -l`\n" >>WANT
+grep -v 'connect failure' GOT > GOT2
+cmpfiles WANT GOT2
+echo OK
+
+echo $N And show that this rewritten URL works ......................$NL
+mv ../project.save ../project
+bk here check -@"bk://localhost:$P/$HERE/project" $Q || fail
+echo OK
+
+echo $N Show that hardlinked urllist is not a problem ...............$NL
+cd "$HERE"
+cp pull-targ/BitKeeper/log/urllist OLD
+bk clone $Q -l pull-targ copy3 || fail
+cmp -s OLD pull-targ/BitKeeper/log/urllist || fail should not have changed
+echo OK

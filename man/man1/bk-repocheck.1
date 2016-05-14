@@ -1,0 +1,52 @@
+.so ../bk-macros
+.TH "bk repocheck" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk repocheck \- check repository for consistency
+.SH SYNOPSIS
+.B bk repocheck
+.[B] \-qS
+.[B] \-\-check_opts="options"
+.SH DESCRIPTION
+.LP
+.B "bk repocheck"
+is used to make sure that a repository is in a consistent state.
+It works in traditional standalone repositories as well as nested 
+collections.
+.LP
+If you suspect there might be a problem with your repository, run
+.BR "bk repocheck" .
+If you send email for support, please include the output of the following:
+.DS
+bk version
+bk config
+bk repocheck
+.DE
+.LP
+This command is implemented on top of \fBbk check\fR.
+The default, when running a nested collection, is to run in parallel;
+in that case check output is suppressed unless there are errors.
+.SH OPTIONS
+.TP \-\-check-opts= opts
+.OPTreq \-\-check-opts= opts
+This long option may be used to pass any valid option to \fBbk check\fR.
+The format must include the leading \- or \-\- for each option
+and each option must be separated by a space like so:
+.DS
+\-\-check\-opts='\-fv \-e'
+.DE
+.tp
+.B \-q
+Run quietly.
+.tp
+.B \-S
+Just check the current repo.  
+This has no effect in a traditional standalone repository,
+but in a nested collection, this will check just the current repository,
+not the entire nested collection.
+.\".SH EXIT STATUS
+.\"XXX - list error codes here.
+.SH SEE ALSO
+.SA check
+.SA support
+.SH CATEGORY
+.B Repository

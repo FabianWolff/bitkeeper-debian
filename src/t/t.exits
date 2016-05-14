@@ -1,0 +1,137 @@
+# Copyright 2006,2010,2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository and some data .....................$NL
+commercial project
+echo foo > foo
+bk new $Q foo
+echo bar > bar
+bk new $Q bar
+perl -e 'print "bin\000ary\nda\000ta\n"' > bin
+bk new $Q bin
+bk get $Q foo bar bin
+echo OK
+
+echo $N Test bk cat without error ...................................$NL
+bk cat foo > /dev/null
+test $? -eq 0 || fail
+echo OK
+
+echo $N Test bk cat -B without error ................................$NL
+bk cat -B bin > /dev/null
+test $? -eq 0 || fail
+echo OK
+
+echo $N Test bk cat -B with error ...................................$NL
+bk cat -B file_that_does_not_exist 2> ERR
+test $? -eq 1 || fail
+echo OK
+
+echo $N Test bk cat with error ......................................$NL
+bk cat file_that_does_not_exist 2> ERR
+test $? -eq 1 || fail
+echo OK
+
+echo $N Test bk diff with no changes ................................$NL
+bk diff foo foo > /dev/null
+test $? -eq 0 || fail
+echo OK
+
+echo $N Test bk diff with changes ...................................$NL
+bk diff foo bar > /dev/null
+test $? -eq 1 || fail
+echo OK
+
+echo $N Test bk diff with error .....................................$NL
+bk diff foo file_that_does_not_exist 2> ERR
+test $? -eq 2 || fail
+echo OK
+
+echo $N Test bk grep with match .....................................$NL
+bk grep $Q foo foo
+test $? -eq 0 || fail
+echo OK
+
+echo $N Test bk grep with no match ..................................$NL
+bk grep $Q bar foo
+test $? -eq 1 || fail
+echo OK
+
+echo $N Test bk grep with error .....................................$NL
+bk grep $Q foo file_that_does_not_exist 2> ERR
+test $? -eq 2 || fail
+echo OK
+
+echo $N Test bk isascii with ascii file .............................$NL
+bk isascii foo
+test $? -eq 0 || fail
+echo OK
+
+echo $N Test bk isascii with binary file ............................$NL
+bk isascii bin
+test $? -eq 1 || fail
+echo OK
+
+echo $N Test bk isascii with error ..................................$NL
+bk isascii file_that_does_not_exist 2> ERR
+test $? -eq 2 || fail
+echo OK
+
+echo $N Test bk patch with a working patch ..........................$NL
+bk diff foo bar > foo.patch
+bk patch -g1 foo < foo.patch > /dev/null
+test $? -eq 0 || fail
+echo OK
+
+echo $N Test bk patch with an invalid patch .........................$NL
+bk patch -g1 bar < foo.patch > /dev/null 2> ERR
+test $? -eq 1 || fail
+echo OK
+
+echo $N Test bk prompt when answered yes ............................$NL
+echo y | bk prompt "you wanna?" 2> ERR
+test $? -eq 0 || fail
+echo OK
+
+echo $N Test bk prompt when answered no .............................$NL
+echo n | bk prompt "you wanna?" 2> ERR
+test $? -eq 1 || fail
+echo OK
+
+echo $N Test bk prompt when passed an invalid program ...............$NL
+echo n > n
+bk prompt -pjunk <n 2> ERR
+test $? -eq 2 || fail
+echo OK
+
+echo $N Test bk regex with matching expression ......................$NL
+bk regex foo foo > /dev/null
+test $? -eq 0 || fail
+echo OK
+
+echo $N Test bk regex without matching expression ...................$NL
+bk regex bar foo > /dev/null
+test $? -eq 1 || fail
+echo OK
+
+echo $N Test bk regex error .........................................$NL
+bk regex file_that_does_not_exist > /dev/null 2> ERR
+test $? -eq 3 || fail
+echo OK
+
+# still need tests for - low priority says rick & oscar
+# merge
+# smerge
+
+# upgrade - need info from wayne

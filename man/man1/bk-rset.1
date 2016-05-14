@@ -1,0 +1,193 @@
+.so ../bk-macros
+.TH "bk rset" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk rset \- list files in a cset or the difference between two csets
+.SH SYNOPSIS
+.B bk rset
+.[B] \-ahSU 
+.if \n[NESTED] \{\
+.[OPTreq] \-s alias
+.\}
+.OPTreq \-l rev
+|
+.OPTreq \-R rev 
+|
+.OPTreq \-r r1..r2
+.SH DESCRIPTION
+.B bk rset
+is a tool that generates information about a particular changeset (-l)
+or the differences between two changesets (-r/-R) in a form that can
+be passed to other tools (see examples below).
+.LP
+The format is some variation of <pathname>|<revs> where the rev is
+usually in the MD5 key format.
+Because MD5 keys are long (here's one: 37d3f5a9b3lm8Qx0jP8XDL8ULRE19A) we don't
+show actual keys, instead we show <md5A>..<md5B> in example output.
+.LP
+To see the difference between a changeset and its parent:
+.DS
+$ bk rset -R1.201
+ChangeSet|1.200..1.201
+src/Makefile|<md5A>..<md5B>
+.DE
+.SH OPTIONS
+.TP "\\fB\\-\\-standalone \\fP"
+.B \-a
+Show deleted files which are normally suppressed.
+.tp
+.B \-h
+Show the \*(lqhistoric\*(rq paths of the file as well as the current path.
+This makes the output look like
+.ARGc "current path"
+|\c
+.ARGc "start path"
+|\c
+.ARGc rev
+|\c
+.ARGc "end path"
+|\c
+.ARG rev .
+The output has three file names:  current, starting, and ending; 
+corresponding to the current pathname,
+the pathname of the file at the start of the first changeset listed, 
+and the pathname of the file at the end of the last changeset.
+.br
+For merge changesets, the format gets 2 more fields for any file
+that has different revs in the history of the two parents, where neither
+rev is in the history of the other.
+For these files, the output looks like
+.ARGc "current path"
+|\c
+.ARGc "start1 path"
+|\c
+.ARGc rev1
+|\c
+.ARGc "start2 path"
+|\c
+.ARGc rev2
+|\c
+.ARGc "end path"
+|\c
+.ARG rev .
+.tp
+.OPTreq \-l rev
+list the entire repository as of changeset 
+.ARG rev .
+Mutually exclusive with
+.QR \-R .
+.tp
+.OPTreq \-r r1..r2
+List the differences between changeset
+.ARG r1
+and changeset
+.ARG r1 .
+.tp
+.OPTreq \-R rev
+List the differences between the parent or parents of
+.ARG rev
+and
+.ARG rev .
+.if \n[NESTED] \{\
+.tp
+.OPTreq \-s alias
+In a nested collection,
+.B rset
+can recurse into some or all of the populated components.
+Using the 
+.OPTreq \-s alias
+option limits the repositories processed to those specified by
+.ARG alias .
+If this option is repeated the implied subset is the union of all
+specified components.
+If no
+.ARG alias
+is specified that is taken to be the same as
+.BR \-sHERE .
+.tp
+.B \-S
+.tp
+.B \-\-standalone
+Just run rset on the current component.
+This has no effect in a traditional standalone repository,
+but in a nested collection, processes just the current component
+and not the entire nested collection.
+.\}
+.tp
+.B \-U
+User files only (like bk -U).  
+Does not list ChangeSet or anything under BitKeeper/.
+.SH EXAMPLES
+Rset is a helper tool, it is used by other tools that want to show you
+a view of history.  For example, bk difftool -rbk-5.0..bk-6.0 calls
+rset to get the set of files to display.
+.LP
+Quite a few of the \*(BK commands can accept rset input to drive them,
+some examples:
+.DS
+bk rset -R+ | bk log -
+bk rset -UR+ | bk diffs -
+.\" This does not work, try it
+.\" bk rset -U -r1.10..1.90 | bk annotate -
+.DE
+The documentation below is for script writers who may want to use rset
+to drive bk directly.
+.LP
+To list all the files at their current location (less deleted files,
+-a will add those):
+.DS
+$ bk rset -l+
+ChangeSet|+
+BitKeeper/etc/config|<md5>
+RELEASE-NOTES|<md5>
+ ...
+src/gui/ChangeSet|<md5>
+src/gui/BitKeeper/etc/config|<md5>
+src/gui/csettool.tcl|<md5>
+ ...
+.DE
+Show the difference between a merge changeset and its parents:
+.DS
+$ bk rset -R1.2104
+ChangeSet|1.2103,1.2058.7.1..1.2104
+src/libc/ChangeSet|<md5A>,<md5B>..<md5C>
+src/libc/utils/dirs.c|<md5A>,<md5B>..<md5C>
+src/libc/utils/fileops.c|<md5A>,<md5B>..<md5C>
+ ...
+.DE
+Show what is the difference between two changesets,
+in just the GUI components,
+showing historical paths.
+Note that this format is not parsed by most \*(BK commands.
+Also note in the example below several of the .tcl files have
+been renamed to .l files.
+.DS
+$ bk rset -sGUI -h -rbk-6.0.2..bk-6.0.3
+src/gui/ChangeSet|src/gui/ChangeSet|<md5A>|src/gui/ChangeSet|<md5B>
+src/gui/common.l|src/gui/common.tcl|<md5A>|src/gui/common.l|<md5B>
+src/gui/difflib.l|src/gui/difflib.tcl|<md5A>|src/gui/difflib.l|<md5B>
+src/gui/fmtool.l|src/gui/fmtool.tcl|<md5A>|src/gui/fmtool.l|<md5B>
+src/gui/tcltk/Makefile|src/gui/tcltk/Makefile|<md5A>|src/gui/tcltk/Makefile|<md5B>
+ ...
+.DE
+Show the difference between a merge change and its parents,
+showing historic paths.
+For files which changed on both sides of the merge, there will be 7 fields
+instead of 5.
+.DS
+$ bk rset -h -R1.2503
+ChangeSet|ChangeSet|1.2502|ChangeSet|1.2468.1.270|ChangeSet|1.2503
+src/changes.c|src/changes.c|<md5A>|src/changes.c|<md5B>|src/changes.c|<md5C>
+src/sccs.h|src/sccs.h|<md5A>|src/sccs.h|<md5B>|src/sccs.h|<md5C>
+src/slib.c|src/slib.c|<md5A>|src/slib.c|<md5B>|src/slib.c|<md5C>
+src/t/ChangeSet|src/t/ChangeSet|<md5A>|src/t/ChangeSet|<md5B>|src/t/ChangeSet|<md5C>
+ ...
+.DE
+.SH "SEE ALSO"
+.SA export
+.SA log
+.SA range
+.SA terms
+.BR diff (1),
+.BR patch (1),
+.SH CATEGORY
+.B Utility

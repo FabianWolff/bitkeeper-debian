@@ -1,0 +1,291 @@
+# Copyright 2001-2003,2005-2006,2010-2012,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Tests for pull, push, and clone.
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+echo bar > bar.c
+bk new $Q bar.c
+bk commit $S -yCset
+echo OK
+cores
+
+echo $N Check that the default level is 1 ...........................$NL
+bk level > OUT
+echo 'Repository level is 1' > WANT
+cmpfiles OUT WANT
+bk level -l > OUT
+echo 1 > WANT
+cmpfiles OUT WANT
+echo OK
+
+echo $N Change to level 2, make sure it was recorded ................$NL
+bk level 2
+bk level > OUT
+grep -q 'is 2' OUT || {
+	echo bad level
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Clone repository and make sure the level comes with it ......$NL
+bk clone $Q "$HERE/project" "$HERE/copy" || { echo failed; exit 1; }
+cd "$HERE/copy"
+bk level > OUT
+grep -q 'is 2' OUT || {
+	echo bad level
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Push should succeed to same level repo ......................$NL
+cd "$HERE/copy"
+ls > file
+bk new $Q file
+bk commit $Q -ywhatever
+bk push $Q || fail
+echo OK
+
+echo $N Push should fail to lower level repo ........................$NL
+cd "$HERE/copy"
+bk level 100
+bk edit $Q file
+bk delta $Q -ywhatever file
+bk commit $Q -ywhatever
+bk push $Q 2>OUT && {
+	echo should have failed
+	exit 1
+}
+grep -q 'cannot push to lower level repository (remote level == 2)' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+grep -q 'unexpected byte' OUT && {
+	echo "should not display eof debug message"
+	exit 1
+}
+echo OK
+
+echo $N Make sure the destination unlocked ..........................$NL
+for i in 1 2 3 4 5 6 7 8 9 0
+do	test -d "$HERE/project/BitKeeper/writer" && sleep 1
+done
+test -d "$HERE/project/BitKeeper/writer" && {
+	echo failed to clean up writer directory
+	exit 1
+}
+echo OK
+
+echo $N Pull should fail to lower level repo ........................$NL
+cd "$HERE/project"
+bk pull $Q "$HERE/copy" 2>OUT && {
+	echo should have failed
+	exit 1
+}
+grep -q 'cannot pull to lower level repository (remote level == 100)' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Push to a lower level nested repo should fail ...............$NL
+cd "$HERE"
+nested prod
+bk level 2
+cd "$HERE"
+bk clone $Q prod copy2
+cd "$HERE/copy2/gcc"
+bk level 3
+touch foo
+bk new $Q foo
+bk commit $Q -y'added foo'
+bk push $Q 2>OUT && fail -f OUT should have failed
+grep -q "cannot push to lower level repository" OUT || fail -f OUT bad error message
+echo OK
+
+echo $N Pull to a lower level nested repo should fail ...............$NL
+cd "$HERE/prod/gcc"
+bk pull $Q "$HERE/copy2" 2>OUT && fail -f OUT should have failed
+grep -q "cannot pull to lower level repository" OUT || fail -f OUT bad error message
+echo OK
+
+echo $N Pull to a higher level nested repo should work ..............$NL
+# Sort of bork copy2, by putting 2 into the component level file
+cd "$HERE/copy2/gcc"
+cat > BitKeeper/etc/level <<EOF
+# This is the repository level, as edited by regressions
+2
+EOF
+cd "$HERE"
+bk clone $Q prod copy3
+cd copy3/gcc
+bk level 4
+# This should work because the comparison is of the product level
+# file (the only one that should matter)
+bk pull $Q "$HERE/copy2" 2>OUT || fail -f OUT should have worked
+echo OK
+
+echo $N Make sure detach sets level .................................$NL
+cd "$HERE/prod"
+bk detach $Q gcc "$HERE/gcc-detached" || fail
+cd "$HERE/gcc-detached"
+LEV=`bk level -l`
+test $LEV -eq 2 || fail level should be 2
+echo OK
+
+# Setup bkd and try pulls and pushes again
+trap 'test -n "$P" && bk _kill bk://localhost:$P' 0
+cd "$HERE"
+bk bkd -dq -aPORT -ikill > "$HERE/BKD" 2>&1 || fail
+P=`cat PORT`
+
+echo $N Pull to a lower level nested repo through bkd should fail ...$NL
+cd "$HERE/copy2/gcc"
+bk push $Q bk://localhost:$P/prod 2>OUT && fail -f OUT should have failed
+grep -q "cannot push to lower level repository" OUT || \
+	fail -f OUT bad error message
+echo OK
+
+echo $N Push to a lower level nested repo through bkd should fail ...$NL
+cd "$HERE/prod/gcc"
+bk pull $Q bk://localhost:$P/copy2 2>OUT && fail -f OUT should have failed
+echo OK
+
+echo $N Pull to a higher level nested repo should work ..............$NL
+cd "$HERE/copy3/gcc"
+bk undo $Q -fr+
+bk level 4
+bk pull $Q bk://localhost:$P/copy2 2>OUT || fail -f OUT should have worked
+echo OK
+
+echo $N Check port to a lower level .................................$NL
+# Setup new portal sharing gcc
+cd "$HERE"
+bk cat prod/BitKeeper/etc/config > c
+bk setup -fPcc other-prod		# defaults to level 1
+cd other-prod
+bk attach $Q ../gcc-detached other-gcc	# this is level 2
+cd "$HERE/prod/gcc"
+touch bar
+bk new $Q bar
+bk commit $Q -f
+cd "$HERE/other-prod/other-gcc"
+bk port $Q bk://localhost:$P/prod/gcc 2>OUT && fail -f OUT should have failed
+grep -q 'cannot pull to lower level repository (remote level == 2)' OUT || \
+	fail -f OUT wrong error message
+echo OK
+
+echo $N Check port to a higher level ................................$NL
+cd "$HERE/prod/gcc"
+cat > BitKeeper/etc/level <<EOF
+# regressions wrote this
+5
+EOF
+cd "$HERE/other-prod/other-gcc"
+bk level 6
+bk port $Q bk://localhost:$P/prod/gcc 2>OUT || fail -f OUT should have worked
+echo OK
+
+echo $N Check clonemod with a bogus pull source repo ................$NL
+cd "$HERE"
+commercial remote
+cd ..
+bk clone $Q remote local
+cd remote
+bk level 10
+cd ..
+bk clonemod $Q "file://$HERE/remote-bogus" local working 2> ERR && {
+	fail -f ERR should have failed
+}
+grep -q "Repository doesn't exist." ERR || fail -f ERR
+test -d working && fail created destination repo
+echo OK
+
+echo $N Check clone -@ with a bogus pull source repo ................$NL
+bk clone $Q -@local "file://$HERE/remote-bogus" working 2> ERR && {
+	fail -f ERR should have failed
+}
+grep -q "Repository doesn't exist." ERR || fail -f ERR "wrong error"
+test -d working && fail created destination repo
+echo OK
+
+echo $N Check clonemod with a higher level remote works .............$NL
+bk clonemod $Q "file://$HERE/remote" local working 2> OUT || fail -f OUT
+cd working
+LEVEL=`bk level -l`
+test "$LEVEL" -eq 10 || fail wrong level $LEVEL
+echo OK
+
+echo $N Check clone -@ with a higher level remote works .............$NL
+cd "$HERE"
+bk clone $Q -@local "file://$HERE/remote" working.@ 2> OUT || fail -f OUT
+cd working.@
+LEVEL=`bk level -l`
+test "$LEVEL" -eq 10 || fail wrong level $LEVEL
+echo OK
+
+echo $N Check again with actual content .............................$NL
+cd "$HERE/remote"
+touch foo
+bk new $Q foo
+bk commit $Q -f
+cd "$HERE"
+bk clonemod $Q "file://$HERE/remote" local working2 2> OUT || fail -f OUT
+cd working2
+LEVEL=`bk level -l`
+test "$LEVEL" -eq 10 || fail wrong level $LEVEL
+echo OK
+
+echo $N Check again with lower level remote with null pull ..........$NL
+cd "$HERE/remote"
+bk undo $Q -fr+
+cd "$HERE/local"
+bk level 15
+cd "$HERE"
+bk clonemod $Q "file://$HERE/remote" local working3 2> OUT || fail -f OUT
+cd working3
+LEVEL=`bk level -l`
+test "$LEVEL" -eq 10 || fail wrong level $LEVEL
+echo OK
+
+echo $N Check again with lower level remote and content .............$NL
+cd "$HERE/remote"
+touch foo
+bk new $Q foo
+bk commit $Q -f
+cd "$HERE"
+bk clonemod $Q "file://$HERE/remote" local working4 2> OUT || fail -f OUT
+cd working4
+LEVEL=`bk level -l`
+test "$LEVEL" -eq 10 || fail wrong level $LEVEL
+echo OK
+
+echo $N Make sure that remote level setting is disallowed ...........$NL
+bk -@bk://localhost:$P/copy2 level 5 2>ERR && fail -f ERR "should have failed"
+grep -q "cannot set level remotely" ERR || fail -f ERR "wrong error message"
+echo OK
+
+echo $N Make sure remote level setting is allowed on unsafe bkds ....$NL
+bk _kill bk://localhost:$P
+cd "$HERE"
+bk bkd -dq -U -aPORT -ikill > "$HERE/BKD" 2>&1 || fail
+P=`cat PORT`
+bk -@bk://localhost:$P/copy2 level 5 2>ERR || fail -f ERR "should have worked"
+echo OK

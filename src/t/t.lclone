@@ -1,0 +1,206 @@
+# Copyright 2002-2006,2008-2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Tests for pull, push, and clone.
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+mkdir src
+cd src
+echo foo > 'F!O#O$ B%A^R&RR(R)RR'
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i 'F!O#O$ B%A^R&RR(R)RR' bar.c h.h
+if bk _test ! -f SCCS/s.'F!O#O$ B%A^R&RR(R)RR'; then echo failed to create history; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 15 ]; then echo wrong pending result $P; bk pending; exit 1; fi
+bk commit $S -yCset
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo failed to clear pending list; bk pending; exit 1; fi
+echo OK
+cores
+
+echo $N Clone repository ............................................$NL
+mkdir -p "$HERE/tst"
+cd "$HERE/tst"
+bk clone -l $Q "$HERE/project" || { echo failed; exit 1; }
+bk _test -f "$HERE/tst/project/src/SCCS/s."'F!O#O$ B%A^R&RR(R)RR' || {
+	echo failed
+	exit 1
+}
+# If no triggers then it's a write lock
+test -d "$HERE/tst/project/BitKeeper/writer" && {
+	echo failed to clean up writer lock
+	exit 1
+}
+# If triggers then it's a read lock
+R=`ls "$HERE/tst/project/BitKeeper/readers" | wc -l`
+test $R = 0 || {
+	echo failed to clean up reader lock
+	exit 1
+}
+cd "$HERE/project"
+bk level 2
+cd "$HERE"
+bk clone -l $Q "$HERE/project" "$HERE/copy" || { echo failed; exit 1; }
+bk _test -f copy/src/SCCS/s.'F!O#O$ B%A^R&RR(R)RR' || { echo failed; exit 1; }
+test -f copy/BitKeeper/log/parent || { echo no parent; exit 1; }
+parent=`cat copy/BitKeeper/log/parent`
+host=`bk gethost`
+root="file://$HERE/project"
+test x"$parent" = x"$root" || {
+	echo wrong parent $parent
+	echo should be $root
+	exit 1
+}
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+cd "$HERE/copy"
+lv=`bk level`
+test "$lv" = "Repository level is 2" || {
+	echo wrong level in clone: $lv
+	exit 1
+}
+echo OK
+
+echo $N Clone a nested repository ...................................$NL
+cd "$HERE/project/src"
+bk clone -l $Q "$HERE/project" sub_proj
+if [ ! -d "$HERE/project/src/sub_proj" ]; then echo failed; exit 1; fi
+cd "$HERE/project"; checkLocks; cd "$HERE/project/src/sub_proj"; checkLocks
+echo OK
+
+echo $N Check that checkout:get works ...............................$NL
+cd "$HERE/project/BitKeeper/etc"
+bk edit $Q config
+grep -v checkout config > c
+cat c > config
+echo "checkout:get" >> config
+bk delta $Q -ycheckout config || fail
+bk commit $Q -ycheckout
+cd "$HERE"
+bk clone $Q -l project checkout || fail
+test -f checkout/src/'F!O#O$ B%A^R&RR(R)RR' || {
+	echo failed to check out user file in src
+	exit 1
+}
+echo OK
+
+echo $N Check that post-clone trigger works .........................$NL
+cd "$HERE/project/BitKeeper"
+test -d triggers || mkdir triggers
+cd triggers
+cat > post-outgoing <<EOF
+#!/bin/sh
+
+echo hi mom > "$HERE/post-outgoing"
+EOF
+chmod +x post-outgoing
+cat > post-incoming <<EOF
+#!/bin/sh
+
+echo hi mom > "$HERE/post-incoming"
+EOF
+chmod +x post-incoming
+bk new $Q post-incoming
+bk commit $Q -ytrigger
+cd "$HERE"
+rm -f post-outgoing post-incoming
+bk clone $Q -l project trigger
+test -f post-outgoing || {
+	echo failed to run post-outgoing trigger
+	exit 1
+}
+test -f post-incoming || {
+	echo failed to run post-incoming trigger
+	exit 1
+}
+R=`ls "$HERE/tst/project/BitKeeper/readers" | wc -l`
+test $R = 0 || {
+	echo failed to clean up read lock after clone
+	exit 1
+}
+echo OK
+
+echo $N Check that clone -l -r works ................................$NL
+bk clone $Q -l -r1.1 "$HERE/project" "$HERE/undo" || fail
+cd "$HERE/undo" || fail
+REV=`bk prs -hr+ -d:I: ChangeSet`
+test X$REV = X1.1 || {
+	echo failed to roll backwards
+	exit 1
+}
+echo OK
+
+echo $N Check the s.file updates break links ........................$NL
+# I wish we could use 'test file1 -ef file2' to verify that the
+# files are really linked and unlinked, but that is not portable.
+cd "$HERE"
+bk clone $Q -l "$HERE/project" "$HERE/markers" || fail
+bk _cp project/src/SCCS/s.h.h h1
+bk _cp markers/src/SCCS/s.h.h h2
+bk _cp trigger/src/SCCS/s.h.h h3
+cmp -s h1 h2 || fail
+cmp -s h2 h3 || fail
+cd project
+bk admin -fRCS src/h.h
+cd "$HERE"
+bk _cp project/src/SCCS/s.h.h h1
+cmp -s h1 h2 && { 
+	echo failed to break link
+	exit 1
+}
+cmp h2 h3 || fail
+echo OK
+#BUG: 2003-03-04-003
+echo $N Clone with links and bad rev does not create dir ............$NL
+bk clone -lrfoo project empty > OUT 2> ERR && {
+	echo Fail
+	echo No foo -- clone should fail
+	exit 1
+}
+test -d empty && {
+	echo Fail
+	echo dir created
+	# exit 1
+}
+echo OK
+
+if [ $PLATFORM = WIN32 ]
+then #-------------------- WIN32 tests ---------------------
+echo $N Test clone -l with a FAT32 filesystem........................$NL
+if [ -d f:/tmp ]
+then
+	test -d f:/tmp/project && rm -rf f:/tmp/project
+	bk clone $Q -l project f:/tmp/project > OUT 2> ERR && {
+		echo failed
+		echo lclone should have failed on FAT32
+		cat OUT ERR
+		exit 1
+	}
+	grep -q "Improper link" ERR || {
+		echo failed
+		echo Wrong error message
+		cat ERR
+		exit 1
+	}
+	rm -rf f:/tmp/project
+	echo OK
+else
+	echo skipped
+	exit 0
+fi
+fi  #-------------------- WIN32 tests ---------------------

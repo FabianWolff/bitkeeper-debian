@@ -1,0 +1,226 @@
+.so ../bk-macros
+.TH "bk resolve" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk resolve \- merge and/or apply new work after a pull
+.SH SYNOPSIS
+.B bk resolve
+.[ARG] options
+.FILES
+.SH DESCRIPTION
+.LP
+After a 
+.BR bk\ pull , 
+use resolve to merge and/or apply
+new work.  Resolve is automatically run by the 
+.B bk pull
+and
+.B bk push
+commands but may be rerun to finish a previously uncompleted resolve.
+.LP
+In order to preview the new changesets before merging, run
+.B bk csets 
+and that will run csettool on the list of changes (which may
+be found in 
+.BR RESYNC/BitKeeper/etc/csets-in ).
+.LP
+Resolve traverses all files in the repository (or the specified
+set of files), prompting you with a list of files needing to be
+merged.
+The following are the stages when resolving files:
+.TP 3
+.B \*(BU
+create and rename conflicts
+.tp
+.B \*(BU
+mode conflicts (file permissions)
+.tp
+.B \*(BU
+file flag conflicts
+.tp
+.B \*(BU
+file content conflicts
+.tp
+.B \*(BU
+symbol
+.Q conflicts
+(local and remote added the
+.Q alpha
+symbol to different deltas)
+.LP
+When there are no conflicts left to be merged, resolve groups any merge
+changes into a changeset and moves everything into your repository.
+.LP
+While it is OK to quit out of resolve without finishing, the repository
+will be locked and remain locked until you return to resolve and finish
+up the merge process.
+.LP
+For detailed help on the merge process, see 
+.BR bk\ help\ resolving .
+.SH OPTIONS
+.TP \-y\*<comment\*>
+.B \-a
+Automerge.  This will run a diff3-like merge of
+all non-overlapping lines.  If there are overlapping
+lines in merged files, the merge will fail and the files
+will not be resolved; you have to run resolve again
+without the 
+.Q \-a
+option to finish the resolve.
+.tp
+.B \-A
+Auto advance.  Normally, when doing an interactive resolve,
+the resolution is not complete until you tell the system
+to commit the file (\c
+.Q C
+in the content resolve menu).  This
+allows for several false starts on a merge, you can use
+.Q m
+to merge, decide that you didn't like it, and use
+.Q m
+again to try over.  If 
+.Q \-A
+is used, any sort of merge
+which completes is immediately used and the resolver 
+advances to the next file.
+.tp
+.B \-c
+No conflicts.  This option tells resolve to complete if and
+only if new non-conflicting work appears in the patch.
+.tp
+.OPTreq \-l log
+Log operations to 
+.ARG log
+(or stderr if no destination is specified).
+This option is to provide for audit trails; support is not
+yet complete.
+.tp
+.OPTreq \-m merge
+Use 
+.ARG merge
+as the merge program called when you press
+.Q m
+in the content resolver.  The merge program takes four file
+arguments: the local version of the file, the ancestor
+version of the file, the remote version of the file,
+and the merged file.  It is the job of the merge program
+to merge the changes into the merge file. 
+.tp
+.B \-q
+Be quiet.
+.tp
+.B \-r
+Re-merge.  If you started to resolve, exited the resolver,
+and then restarted, files already merged will be skipped.
+This options allows you to re-merge files which need
+help, yet allows you to skip past the ones you are happy
+with by hitting
+.Q C
+in the resolve menu.
+.tp
+.B \-\-batch
+do not do interactive resolve of any conflicts, do only whatever can be
+automerged and then exit. (This was the old -s option).
+Implies
+.QR \-a .
+.tp
+.B \-T
+Text-only. Enables the text-based resolve menu when doing 
+the final commit instead of using citool.
+.tp
+.OPTreq \-x glob
+Exclude (don't resolve) files matching the glob pattern specified. 
+This option may be specified multiple times.
+See RESOLVING SUBSETS section below.
+.tp
+.OPTreq \-y comment
+Use 
+.ARG comment
+as the changeset check-in message.  This option
+is typically set by the calling program, i.e., 
+.BR bk\ pull .
+If 
+.ARG comment
+is not present, resolve will prompt for one
+at commit time.
+.SH RESOLVING SUBSETS
+Include and/or exclude patterns may be used to control which
+files are resolved.
+This may be useful when unrelated changes by different engineers
+are being merged.
+To see which files will need to be merged run bk conflicts.
+.LP
+There may be multiple include and/or exclude patterns.
+The patterns are a file glob the same as used by bk ignore.
+Patterns are matched against the partial pathname from the root
+of the repository.
+If the partial pathname matches any of the exclude patterns then
+the file is skipped.
+If there are one or more include patterns but the partial
+pathname does not match any of the include patterns then the
+file is skipped.
+Exclude processing takes precedence over include processing.
+.LP
+If there are renames in the update and files which need renames
+are selected then the resolver will force the resolution of
+those renames first.
+Currently, the include/exclude selection process is applied to
+the name used after the rename resolution, which can be
+confusing.
+It may be easiest to run the rename resolution passes first with
+.QR "bk resolve \-12" ,
+list the conflicts with
+.BR "bk conflicts" ,
+and then rerun resolve selecting the files to be resolved.
+.LP
+bk resolve must be run without specifying any subset of the files in order
+to fully complete.
+.SH PASSES
+.LP
+The resolver currently has four passes (phases), each with a
+different function.
+A given pass must be completed before the next pass can be
+started.
+Using options listed below, the user can specify which passes are
+to be run on a particular invocation of the resolver.
+By default, the resolver attempts to complete all four passes.
+.LP
+The first pass looks through both the incoming and local changes to see
+if any files have been renamed.  If there are files that have been
+renamed, they are marked and put in a special BK-managed namespace where
+they await rename processing.
+.LP
+In the second pass, the files marked and saved in pass 1 are inspected
+to see if there are any rename conflicts.  That is, if a file was
+renamed in both the local and remote repositories with a different
+pathname in each.  If this is the case, the user is prompted to resolve
+the conflict.  In the other cases, the resolver can infer the correct
+pathname and relocates the file out of the special BK-managed namespace
+and into the proper place in the resolver working directory (usually
+named
+.BR RESYNC ).
+.LP
+The third pass examines all files looking for content conflicts.
+Content conflicts arise when either the contents, symbolic link
+destination, or file modes have been changed both in the local and
+remote repositories.  These changes can be automatically resolved
+without user input as long as the changes don't overlap.  In the case
+where automatic resolution is unsuccessful, the user is prompted to
+resolve the conflict manually.
+.LP
+After all the conflicts have been resolved, the fourth pass attempts
+to apply the changes to the local repository by moving the files out
+of the resolver working directory and into the local repository.  If
+this cannot be completed for some reason (permission problems, modified
+files in the local repository, etc.), the operation is aborted.  Any
+changes made to the local repository are removed, and the resolver
+working directory is left intact.  The user can then fix the problems
+that caused the error, then re-run the resolver to apply the changes
+to the local repository.
+.SH "SEE ALSO"
+.SA conflicts
+.SA csets
+.SA pull
+.SA push
+.SA resolving
+.SH CATEGORY
+.B Repository

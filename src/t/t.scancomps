@@ -1,0 +1,232 @@
+# Copyright 2013,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+nested proj
+echo 1 > gcc/a
+bk new $Q gcc/a
+echo 2 > aa
+bk new $Q aa
+bk commit -y'base' $Q || fail
+bk -Ucp
+
+echo $N Check for scancomps feature .................................$NL
+bk features > ../SRC
+cd ..
+grep -q SCANDIRS SRC || fail
+echo OK
+
+echo $N No scancomps on clone in checkout:get........................$NL
+bk --config=checkout:get clone $Q proj copy1
+cd copy1
+test -f BitKeeper/log/scancomps && fail no scancomps on clone
+echo OK
+
+echo $N Check for scancomps feature in clone ........................$NL
+bk features > ../SRC
+cd ..
+grep -q SCANDIRS SRC || fail
+echo OK
+
+echo $N Yes scancomps on clone in checkout:edit......................$NL
+cd "$HERE"
+bk --config=checkout:edit clone $Q proj copy2
+cd copy2
+cat <<EOF > WANT
+@.
+e
+@gcc
+e
+@gdb
+e
+EOF
+cmpfiles WANT BitKeeper/log/scancomps
+echo OK
+
+echo $N Show the \'bk -Uc\' works in a subdirectory ...................$NL
+echo hi >> gcc/a
+mkdir t
+cd t
+bk -Uc > GOT
+cat <<EOF > WANT
+../gcc/a
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Check for scancomps feature in clone ........................$NL
+bk features > ../SRC
+cd ..
+grep -q SCANDIRS SRC || fail
+echo OK
+
+echo $N Make sure bk edit adds to scancomps..........................$NL
+cd "$HERE/proj"
+touch gcc/afile
+bk new $Q gcc/afile
+bk commit $Q -yafile
+cat <<EOF > WANT
+@gcc
+p
+EOF
+cmpfiles BitKeeper/log/scancomps WANT
+bk -Apc	# clear scancomps
+cat </dev/null > WANT
+cmpfiles BitKeeper/log/scancomps WANT
+cd "$HERE"
+bk --config=checkout:get clone $Q proj copy
+cd proj
+bk --cd=gcc edit $Q afile
+test -f BitKeeper/log/scancomps || {
+     ls -l BitKeeper/log > OUT
+     fail -f OUT no scancomps created by bk edit
+}
+cat <<EOF > WANT
+@gcc
+e
+EOF
+cmpfiles BitKeeper/log/scancomps WANT
+echo OK
+
+echo $N Test scandirs in a component ................................$NL
+cd gdb
+rm -f BitKeeper/log/features   # bk used to read the wrong 'features' file
+bk edit $Q BitKeeper/etc/gone || fail
+cat <<EOF > WANT
+@BitKeeper/etc
+e
+EOF
+cmpfiles BitKeeper/log/scandirs WANT
+bk unedit $Q BitKeeper/etc/gone
+bk sfiles -l	# clear this change from scandirs
+test -f BitKeeper/log/scandirs || fail
+cd ..
+echo OK
+
+echo $N Testing again after a ci.....................................$NL
+echo "content1" > gcc/afile
+bk ci $Q -y1 gcc/afile
+# it should now show an edit
+cat <<EOF > WANT
+@gcc
+pe
+EOF
+cmpfiles WANT BitKeeper/log/scancomps
+echo OK
+
+echo $N Testing that sfiles clears it................................$NL
+bk commit $Q -y1
+bk --cd=gcc sfiles -p -c
+cat </dev/null > WANT
+cmpfiles BitKeeper/log/scancomps WANT
+echo OK
+
+echo $N RESYNC op should not update it...............................$NL
+cd "$HERE/copy"
+# seed the cache so it has only gdb
+bk -e sfiles -p >/dev/null
+touch gdb/afile
+bk new $Q gdb/afile
+cat <<EOF > WANT
+@gdb
+p
+EOF
+cmpfiles WANT BitKeeper/log/scancomps
+cp BitKeeper/log/scancomps BEFORE
+bk pull -R $Q || fail
+cp BitKeeper/log/scancomps AFTER
+cmpfiles BEFORE AFTER
+echo OK
+
+echo $N Scancomps should be empty on clone...........................$NL
+cd "$HERE"
+bk clone $Q --no-bk-sfile copy compat
+bk clone $Q --upgrade-repo compat upgrade
+test -f upgrade/BitKeeper/log/scancomps && fail
+echo OK
+
+echo $N Check for scancomps feature in downgrade ....................$NL
+cd compat
+bk features > ../SRC
+cd ..
+grep -q SCANDIRS SRC && fail
+echo OK
+
+echo $N Again in a different checkout mode...........................$NL
+BK_CONFIG=checkout:edit\! bk clone $Q --upgrade-repo compat upgrade-e
+cat <<EOF > WANT
+@.
+e
+@gcc
+e
+@gdb
+e
+EOF
+cmpfiles WANT upgrade-e/BitKeeper/log/scancomps
+echo OK
+
+echo $N Again but with clone --checkout..............................$NL
+BK_CONFIG=checkout:get\!\;BAM_checkout:none bk clone $Q --checkout=edit --upgrade-repo compat upgrade2
+cmpfiles WANT upgrade2/BitKeeper/log/scancomps
+echo OK
+
+echo $N Make sure sfiles -p does not clear edit entries in scandirs .$NL
+cd upgrade2/gcc
+bk unedit afile
+bk edit $Q afile
+echo foo >> afile
+cat BitKeeper/log/scandirs > WANT
+bk sfiles -p
+cat BitKeeper/log/scandirs > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Make sure sfiles -c does not clear edit entries in scandirs .$NL
+echo foo > foo
+bk new $Q foo
+# put back the scandirs
+bk sfiles -p -c > XXX
+test -s BitKeeper/log/scandirs || fail
+cat BitKeeper/log/scandirs > WANT
+bk sfiles -c > XXX
+cat BitKeeper/log/scandirs > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N See if bk -cU skips uneditted comps .........................$NL
+cd ..
+bk -A unedit
+bk -A clean
+bk -Acp > ${DEV_NULL}
+BK_SHOWPROC="$PWD/SP" bk -cU > GOT
+touch WANT
+cmpfiles WANT GOT
+grep -q gcc SP && fail SP
+grep -q gdb SP && fail SP
+echo OK
+
+echo $N See if bk -cU diffs skips uneditted comps ...................$NL
+BK_SHOWPROC="$PWD/SP" bk -cU diffs > GOT
+touch WANT
+cmpfiles WANT GOT
+grep -q gcc SP && fail SP
+grep -q gdb SP && fail SP
+echo OK
+
+echo $N See if bk -pU skips comps with no pending ...................$NL
+BK_SHOWPROC="$PWD/SP" bk -pU > GOT
+echo gcc/foo > WANT
+cmpfiles WANT GOT
+grep -q gcc SP || fail SP
+grep -q gdb SP && fail SP
+echo OK

@@ -1,0 +1,475 @@
+# Copyright 2006,2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This tests both the librange code and the range command
+# First test with prs on a complex file history
+# Then do some tag graph boundary checking
+
+echo $N Check ranges in a complex file history ......................$NL
+commercial project
+# Make a merge of a merge file
+touch foo
+bk new $Q foo
+bk edit $Q foo
+bk delta $Q -fy1.2 foo
+bk _get $Q -e -r1.1 foo
+bk delta $Q -fy1.1.1.1 foo
+bk _get $Q -e -r1.1.1 foo
+bk delta $Q -fy1.1.1.2 foo
+bk edit $Q -M foo
+bk delta $Q -fy1.3 foo
+bk _get $Q -e -r1.2 -M1.1.1.1 foo
+bk delta $Q -fy1.2.1.1 foo
+bk edit $Q -M foo
+bk delta $Q -fy1.4 foo
+bk commit $Q -yfoo
+# all versions plus the blank version
+bk prs -r.. -hnd:I: foo > LIST
+echo >> LIST
+# matrix test
+cat LIST | while read from; do
+	cat LIST | while read to; do
+		printf $from..$to
+		bk prs -r$from..$to -hd' :I:' foo
+		echo
+	done
+done > GOT
+# note: prs -r1.0.. is special cased to include 1.0
+cat - <<'EOF' > WANT
+1.4..1.4
+1.4..1.2.1.1
+1.4..1.3
+1.4..1.1.1.2
+1.4..1.1.1.1
+1.4..1.2
+1.4..1.1
+1.4..1.0
+1.4..
+1.2.1.1..1.4 1.4 1.3 1.1.1.2
+1.2.1.1..1.2.1.1
+1.2.1.1..1.3 1.3 1.1.1.2
+1.2.1.1..1.1.1.2 1.1.1.2
+1.2.1.1..1.1.1.1
+1.2.1.1..1.2
+1.2.1.1..1.1
+1.2.1.1..1.0
+1.2.1.1.. 1.4 1.3 1.1.1.2
+1.3..1.4 1.4 1.2.1.1
+1.3..1.2.1.1 1.2.1.1
+1.3..1.3
+1.3..1.1.1.2
+1.3..1.1.1.1
+1.3..1.2
+1.3..1.1
+1.3..1.0
+1.3.. 1.4 1.2.1.1
+1.1.1.2..1.4 1.4 1.2.1.1 1.3 1.2
+1.1.1.2..1.2.1.1 1.2.1.1 1.2
+1.1.1.2..1.3 1.3 1.2
+1.1.1.2..1.1.1.2
+1.1.1.2..1.1.1.1
+1.1.1.2..1.2 1.2
+1.1.1.2..1.1
+1.1.1.2..1.0
+1.1.1.2.. 1.4 1.2.1.1 1.3 1.2
+1.1.1.1..1.4 1.4 1.2.1.1 1.3 1.1.1.2 1.2
+1.1.1.1..1.2.1.1 1.2.1.1 1.2
+1.1.1.1..1.3 1.3 1.1.1.2 1.2
+1.1.1.1..1.1.1.2 1.1.1.2
+1.1.1.1..1.1.1.1
+1.1.1.1..1.2 1.2
+1.1.1.1..1.1
+1.1.1.1..1.0
+1.1.1.1.. 1.4 1.2.1.1 1.3 1.1.1.2 1.2
+1.2..1.4 1.4 1.2.1.1 1.3 1.1.1.2 1.1.1.1
+1.2..1.2.1.1 1.2.1.1 1.1.1.1
+1.2..1.3 1.3 1.1.1.2 1.1.1.1
+1.2..1.1.1.2 1.1.1.2 1.1.1.1
+1.2..1.1.1.1 1.1.1.1
+1.2..1.2
+1.2..1.1
+1.2..1.0
+1.2.. 1.4 1.2.1.1 1.3 1.1.1.2 1.1.1.1
+1.1..1.4 1.4 1.2.1.1 1.3 1.1.1.2 1.1.1.1 1.2
+1.1..1.2.1.1 1.2.1.1 1.1.1.1 1.2
+1.1..1.3 1.3 1.1.1.2 1.1.1.1 1.2
+1.1..1.1.1.2 1.1.1.2 1.1.1.1
+1.1..1.1.1.1 1.1.1.1
+1.1..1.2 1.2
+1.1..1.1
+1.1..1.0
+1.1.. 1.4 1.2.1.1 1.3 1.1.1.2 1.1.1.1 1.2
+1.0..1.4 1.4 1.2.1.1 1.3 1.1.1.2 1.1.1.1 1.2 1.1
+1.0..1.2.1.1 1.2.1.1 1.1.1.1 1.2 1.1
+1.0..1.3 1.3 1.1.1.2 1.1.1.1 1.2 1.1
+1.0..1.1.1.2 1.1.1.2 1.1.1.1 1.1
+1.0..1.1.1.1 1.1.1.1 1.1
+1.0..1.2 1.2 1.1
+1.0..1.1 1.1
+1.0..1.0
+1.0.. 1.4 1.2.1.1 1.3 1.1.1.2 1.1.1.1 1.2 1.1
+..1.4 1.4 1.2.1.1 1.3 1.1.1.2 1.1.1.1 1.2 1.1 1.0
+..1.2.1.1 1.2.1.1 1.1.1.1 1.2 1.1 1.0
+..1.3 1.3 1.1.1.2 1.1.1.1 1.2 1.1 1.0
+..1.1.1.2 1.1.1.2 1.1.1.1 1.1 1.0
+..1.1.1.1 1.1.1.1 1.1 1.0
+..1.2 1.2 1.1 1.0
+..1.1 1.1 1.0
+..1.0 1.0
+.. 1.4 1.2.1.1 1.3 1.1.1.2 1.1.1.1 1.2 1.1 1.0
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check a lattice range .......................................$NL
+cat LIST | while read from; do
+	cat LIST | while read to; do
+		printf $from..$to
+		bk prs --lattice -f -r$from..$to -hd' :I:' foo
+		echo
+	done
+done > GOT
+cat - <<'EOF' > WANT
+1.4..1.4 1.4
+1.4..1.2.1.1
+1.4..1.3
+1.4..1.1.1.2
+1.4..1.1.1.1
+1.4..1.2
+1.4..1.1
+1.4..1.0
+1.4.. 1.4
+1.2.1.1..1.4 1.2.1.1 1.4
+1.2.1.1..1.2.1.1 1.2.1.1
+1.2.1.1..1.3
+1.2.1.1..1.1.1.2
+1.2.1.1..1.1.1.1
+1.2.1.1..1.2
+1.2.1.1..1.1
+1.2.1.1..1.0
+1.2.1.1.. 1.2.1.1 1.4
+1.3..1.4 1.3 1.4
+1.3..1.2.1.1
+1.3..1.3 1.3
+1.3..1.1.1.2
+1.3..1.1.1.1
+1.3..1.2
+1.3..1.1
+1.3..1.0
+1.3.. 1.3 1.4
+1.1.1.2..1.4 1.1.1.2 1.3 1.4
+1.1.1.2..1.2.1.1
+1.1.1.2..1.3 1.1.1.2 1.3
+1.1.1.2..1.1.1.2 1.1.1.2
+1.1.1.2..1.1.1.1
+1.1.1.2..1.2
+1.1.1.2..1.1
+1.1.1.2..1.0
+1.1.1.2.. 1.1.1.2 1.3 1.4
+1.1.1.1..1.4 1.1.1.1 1.1.1.2 1.3 1.2.1.1 1.4
+1.1.1.1..1.2.1.1 1.1.1.1 1.2.1.1
+1.1.1.1..1.3 1.1.1.1 1.1.1.2 1.3
+1.1.1.1..1.1.1.2 1.1.1.1 1.1.1.2
+1.1.1.1..1.1.1.1 1.1.1.1
+1.1.1.1..1.2
+1.1.1.1..1.1
+1.1.1.1..1.0
+1.1.1.1.. 1.1.1.1 1.1.1.2 1.3 1.2.1.1 1.4
+1.2..1.4 1.2 1.3 1.2.1.1 1.4
+1.2..1.2.1.1 1.2 1.2.1.1
+1.2..1.3 1.2 1.3
+1.2..1.1.1.2
+1.2..1.1.1.1
+1.2..1.2 1.2
+1.2..1.1
+1.2..1.0
+1.2.. 1.2 1.3 1.2.1.1 1.4
+1.1..1.4 1.1 1.2 1.1.1.1 1.1.1.2 1.3 1.2.1.1 1.4
+1.1..1.2.1.1 1.1 1.2 1.1.1.1 1.2.1.1
+1.1..1.3 1.1 1.2 1.1.1.1 1.1.1.2 1.3
+1.1..1.1.1.2 1.1 1.1.1.1 1.1.1.2
+1.1..1.1.1.1 1.1 1.1.1.1
+1.1..1.2 1.1 1.2
+1.1..1.1 1.1
+1.1..1.0
+1.1.. 1.1 1.2 1.1.1.1 1.1.1.2 1.3 1.2.1.1 1.4
+1.0..1.4 1.0 1.1 1.2 1.1.1.1 1.1.1.2 1.3 1.2.1.1 1.4
+1.0..1.2.1.1 1.0 1.1 1.2 1.1.1.1 1.2.1.1
+1.0..1.3 1.0 1.1 1.2 1.1.1.1 1.1.1.2 1.3
+1.0..1.1.1.2 1.0 1.1 1.1.1.1 1.1.1.2
+1.0..1.1.1.1 1.0 1.1 1.1.1.1
+1.0..1.2 1.0 1.1 1.2
+1.0..1.1 1.0 1.1
+1.0..1.0 1.0
+1.0.. 1.0 1.1 1.2 1.1.1.1 1.1.1.2 1.3 1.2.1.1 1.4
+..1.4 1.1 1.2 1.1.1.1 1.1.1.2 1.3 1.2.1.1 1.4
+..1.2.1.1 1.1 1.2 1.1.1.1 1.2.1.1
+..1.3 1.1 1.2 1.1.1.1 1.1.1.2 1.3
+..1.1.1.2 1.1 1.1.1.1 1.1.1.2
+..1.1.1.1 1.1 1.1.1.1
+..1.2 1.1 1.2
+..1.1 1.1
+..1.0
+.. 1.1 1.2 1.1.1.1 1.1.1.2 1.3 1.2.1.1 1.4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check a longest range .......................................$NL
+cat LIST | while read from; do
+	cat LIST | while read to; do
+		printf $from..$to
+		bk prs --longest -f -r$from..$to -hd' :I:' foo
+		echo
+	done
+done > GOT
+cat - <<'EOF' > WANT
+1.4..1.4 1.4
+1.4..1.2.1.1
+1.4..1.3
+1.4..1.1.1.2
+1.4..1.1.1.1
+1.4..1.2
+1.4..1.1
+1.4..1.0
+1.4.. 1.4
+1.2.1.1..1.4 1.2.1.1 1.4
+1.2.1.1..1.2.1.1 1.2.1.1
+1.2.1.1..1.3
+1.2.1.1..1.1.1.2
+1.2.1.1..1.1.1.1
+1.2.1.1..1.2
+1.2.1.1..1.1
+1.2.1.1..1.0
+1.2.1.1.. 1.2.1.1 1.4
+1.3..1.4 1.3 1.4
+1.3..1.2.1.1
+1.3..1.3 1.3
+1.3..1.1.1.2
+1.3..1.1.1.1
+1.3..1.2
+1.3..1.1
+1.3..1.0
+1.3.. 1.3 1.4
+1.1.1.2..1.4 1.1.1.2 1.3 1.4
+1.1.1.2..1.2.1.1
+1.1.1.2..1.3 1.1.1.2 1.3
+1.1.1.2..1.1.1.2 1.1.1.2
+1.1.1.2..1.1.1.1
+1.1.1.2..1.2
+1.1.1.2..1.1
+1.1.1.2..1.0
+1.1.1.2.. 1.1.1.2 1.3 1.4
+1.1.1.1..1.4 1.1.1.1 1.1.1.2 1.3 1.4
+1.1.1.1..1.2.1.1 1.1.1.1 1.2.1.1
+1.1.1.1..1.3 1.1.1.1 1.1.1.2 1.3
+1.1.1.1..1.1.1.2 1.1.1.1 1.1.1.2
+1.1.1.1..1.1.1.1 1.1.1.1
+1.1.1.1..1.2
+1.1.1.1..1.1
+1.1.1.1..1.0
+1.1.1.1.. 1.1.1.1 1.1.1.2 1.3 1.4
+1.2..1.4 1.2 1.3 1.4
+1.2..1.2.1.1 1.2 1.2.1.1
+1.2..1.3 1.2 1.3
+1.2..1.1.1.2
+1.2..1.1.1.1
+1.2..1.2 1.2
+1.2..1.1
+1.2..1.0
+1.2.. 1.2 1.3 1.4
+1.1..1.4 1.1 1.1.1.1 1.1.1.2 1.3 1.4
+1.1..1.2.1.1 1.1 1.2 1.2.1.1
+1.1..1.3 1.1 1.1.1.1 1.1.1.2 1.3
+1.1..1.1.1.2 1.1 1.1.1.1 1.1.1.2
+1.1..1.1.1.1 1.1 1.1.1.1
+1.1..1.2 1.1 1.2
+1.1..1.1 1.1
+1.1..1.0
+1.1.. 1.1 1.1.1.1 1.1.1.2 1.3 1.4
+1.0..1.4 1.0 1.1 1.1.1.1 1.1.1.2 1.3 1.4
+1.0..1.2.1.1 1.0 1.1 1.2 1.2.1.1
+1.0..1.3 1.0 1.1 1.1.1.1 1.1.1.2 1.3
+1.0..1.1.1.2 1.0 1.1 1.1.1.1 1.1.1.2
+1.0..1.1.1.1 1.0 1.1 1.1.1.1
+1.0..1.2 1.0 1.1 1.2
+1.0..1.1 1.0 1.1
+1.0..1.0 1.0
+1.0.. 1.0 1.1 1.1.1.1 1.1.1.2 1.3 1.4
+..1.4 1.1 1.1.1.1 1.1.1.2 1.3 1.4
+..1.2.1.1 1.1 1.2 1.2.1.1
+..1.3 1.1 1.1.1.1 1.1.1.2 1.3
+..1.1.1.2 1.1 1.1.1.1 1.1.1.2
+..1.1.1.1 1.1 1.1.1.1
+..1.2 1.1 1.2
+..1.1 1.1
+..1.0
+.. 1.1 1.1.1.1 1.1.1.2 1.3 1.4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check a lattice for parents that are part of lattice ........$NL
+# 1.3 is a merge node, but 1.1.1.2 does not have D_SET so isn't listed
+bk prs --lattice -f -r1.2..1.4 -hn -d'#dv2
+    :I:
+    # PARENT and MPARENT are special cased in kw2val() for rev after the |
+    $if (:PARENT: && :D_SET|PARENT:) {" :PARENT:"}
+    $if (:MPARENT: && :D_SET|MPARENT:) {" :MPARENT:"}
+' foo > GOT
+cat <<EOF > WANT
+1.2
+1.3 1.2
+1.2.1.1 1.2
+1.4 1.3 1.2.1.1
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check a longest for parents that are part of longest ........$NL
+# 1.3 is a merge node, but 1.1.1.2 does not have D_SET so isn't listed
+bk prs --longest -f -r1.1..1.3 -hn -d'#dv2
+    :I:
+    # Another way to write the dspec from the previous test
+    ${1=:PARENT:}
+    $if ($1 && :D_SET|$1:) {" $1"}
+    ${1=:MPARENT:}
+    $if ($1 && :D_SET|$1:) {" $1"}
+' foo > GOT
+cat <<EOF > WANT
+1.1
+1.1.1.1 1.1
+1.1.1.2 1.1.1.1
+1.3 1.1.1.2
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check a gca based range a,b..c ..............................$NL
+bk edit $Q foo
+bk delta $Q -fynull foo
+# A GCA can be a set of delta; also test $1 not clearing global state 
+bk prs -r1.1.1.1,1.2.1.1..1.5 -hnd':I:-${1=:MPARENT:}:I|$1:' foo > GOT
+cat <<EOF > WANT
+1.5-1.5
+1.4-1.2.1.1
+1.3-1.1.1.2
+1.1.1.2-1.5
+EOF
+cmpfiles WANT GOT
+echo OK
+
+# A white box test for range_markMeta()
+# Tags included in output based on Tagged, ptag, and mtag
+# Tags excluded in output based on Tagged, ptag, and mtag
+#
+#                         (1.3)   (1.1)
+#                   0 .... TAG1 .. TAG2 ..........................x
+#                                                                 |
+# 1.0 -  1.1 -- 1.2 -- 1.3   ----------  1.4 ---------------------+-- 1.5
+#                  \-------------------------- 1.2.1.1 --1.2.1.2 -+--/
+# 		                                                  |
+#                                                                TM
+#					      0 .... TAG3 ......p.x
+#					            (1.1)
+#
+# For TAG1:
+# TAG1 is on 1.3 which means TAG2 can stay because ptag is set
+# TAG3 is not listed but the tag merge (TM) is listed because mtag is set
+# because of TAG2
+#
+# For TAG2:
+# TAG1 is excluded because it tags a GONE node (BLUE in the code)
+# TAG2 is excluced because its ptag is a GONE (TAG1)
+# MT is excluded because of its mtag is excluded (TAG2)
+# TAG3 is included because it is on a SET item: 1.1
+echo $N Check ranges in a history containing tag graph ..............$NL
+cd "$HERE"
+bk clone $Q project copy
+cd project
+bk edit $Q foo
+bk delta $Q -fyblank foo
+bk commit $Q -yfoo
+bk tag $Q TAG1
+bk tag $Q -r1.1 TAG2
+bk edit $Q foo
+bk delta $Q -fyblank foo
+bk commit $Q -yfoo
+cd ../copy
+touch bar
+bk new $Q bar
+bk commit $Q -yfoo
+bk tag $Q -r1.1 TAG3
+bk edit $Q bar
+bk delta $Q -fyblank bar
+bk commit $Q -yfoo
+bk pull $Q
+for rev in TAG1 TAG2; do
+	printf $rev
+	bk changes -qar$rev -d' :I:($if(:DT:=T){T}:DS:)'
+	echo
+done > GOT
+cat - <<'EOF' > WANT
+TAG1 1.1(T11) 1.1(T6) 1.3(T5) 1.3(4)
+TAG2 1.1(T9) 1.1(2)
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test out other commands for range parsing ...................$NL
+bk changes -efd':JOIN::I:' --longest > GOT
+printf "1.1,1.2,1.3,1.4,1.5" > WANT
+cmpfiles WANT GOT
+bk changes -efd':JOIN::I:' --longest -e > GOT
+printf "1.1,1.2,1.3,1.4" > WANT
+cmpfiles WANT GOT
+bk changes -efd':JOIN::I:' --lattice > GOT
+printf "1.1,1.2,1.3,1.4,1.2.1.1,1.2.1.2,1.5" > WANT
+cmpfiles WANT GOT
+bk changes -efd':JOIN::I:' --lattice -e > GOT
+printf "1.1,1.2,1.3,1.4,1.2.1.1,1.2.1.2" > WANT
+cmpfiles WANT GOT
+bk changes -efd':JOIN::I:' --lattice -r1.2 > GOT
+printf "1.2" > WANT
+cmpfiles WANT GOT
+bk changes -efd':JOIN::I:' --longest -r1.2 > GOT
+printf "1.2" > WANT
+cmpfiles WANT GOT
+bk changes -efd':JOIN::I:' --longest -r1.2.. > GOT
+printf "1.2,1.3,1.4,1.5" > WANT
+cmpfiles WANT GOT
+# range
+bk range --longest foo > GOT
+echo "foo set: 1.7 1.6 1.5 1.4 1.3 1.1.1.2 1.1.1.1 1.1" > WANT
+cmpfiles WANT GOT
+bk range --lattice foo > GOT
+echo "foo set: 1.7 1.6 1.5 1.4 1.2.1.1 1.3 1.1.1.2 1.1.1.1 1.2 1.1" > WANT
+cmpfiles WANT GOT
+bk range --lattice -r1.4 foo > GOT
+echo "foo set: 1.4" > WANT
+cmpfiles WANT GOT
+bk range --lattice -r1.4.. foo > GOT
+echo "foo set: 1.7 1.6 1.5 1.4" > WANT
+cmpfiles WANT GOT
+bk range --lattice -r..1.4 foo > GOT
+echo "foo set: 1.4 1.2.1.1 1.3 1.1.1.2 1.1.1.1 1.2 1.1" > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test out other commands for error handling ..................$NL
+bk changes -efd':JOIN::I:' --longest -r1.2,1.4 2> ERR && fail -f ERR
+grep -q "Malformed revision: 1.2,1.4" ERR || fail -f ERR
+bk prs -fd':JOIN::I:' --longest -r1.2,1.4 foo 2> ERR && fail -f ERR
+grep -q "Malformed revision: 1.2,1.4" ERR || fail -f ERR
+echo OK

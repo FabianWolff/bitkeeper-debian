@@ -1,0 +1,46 @@
+# Copyright 2004,2006 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+BK_GUI=1
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+
+echo $N Revtool will be run in \`bk bin\' .............................$NL
+cd "`bk bin`"
+bk revtool
+echo OK
+
+echo $N Look at \`c\' page and tip version page for normal annotations.$NL
+bk revtool get.c
+echo OK
+
+echo $N Look at \`c\' page and tip version page for many annotations...$NL
+echo 'set gc(rev.annotate) "-Abdnpru"' > "`bk dotbk`/config-gui"
+bk revtool get.c
+rm "`bk dotbk`/config-gui"
+echo OK
+
+echo $N After revtool starts, pick newest and launch difftool .......$NL
+cd "$HERE"
+nested project
+cd gcc
+echo stuff> foo
+bk new $Q foo
+bk commit $Q -y'new gcc/foo'
+bk revtool -S
+echo OK
+
+echo $N After revtool starts, pick newest and launch difftool .......$NL
+bk revtool
+echo OK

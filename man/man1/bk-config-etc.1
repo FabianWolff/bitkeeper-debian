@@ -1,0 +1,518 @@
+.so ../bk-macros
+.TH "bk config-etc" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME 
+bk config-etc \- configuring \*(BK
+.SH DESCRIPTION
+\*[BK] config files contain repository configuration information including
+project description, licensing information, 
+user preferences, BK/Web preferences, and contact information.
+Config file entries take the form of key-value pairs.
+This page describes the various configuration keys and their
+possible values.
+.LP
+Each \*(BK repository must have some minimum configuration
+information available in order to properly execute \*(BK commands.
+Repository configuration information is searched for in the following 
+places, in order:
+.TP "\fB`bk root -P`/BitKeeper/etc/config\fP "
+.B \`bk\ root\`/BitKeeper/etc/config
+This repository's config file
+.tp
+.B \`bk\ root -P\`/BitKeeper/etc/config
+Product repository config file
+.tp
+.B \`bk\ dotbk\`/config
+Personal config file
+.tp
+.B /etc/BitKeeper/etc/config
+Per-machine config file
+.tp
+.B \`bk\ bin\`/config
+Per-installation config file
+.tp
+.B \`bk\ root\`/BitKeeper/log/config
+This repository's config file
+.tp
+.B \`bk\ root -P\`/BitKeeper/log/config
+Product repository config file
+.tp
+.V $BK_CONFIG
+Environment variable
+.LP
+The 
+.B BitKeeper/log/config
+file[s] are not version controlled but the
+.B BitKeeper/etc/config
+file[s] are.
+Having two gives you a way to have repository specific values that
+do not propagate.
+.LP
+For detailed information about how all the search order works, or to get
+help debugging your configuration, please see
+.BR "bk help config" .
+.SH "CONFIG FILE ENTRIES"
+.SS AUTOFIX
+.br
+The 
+.B "bk check"
+command can automatically fix a number of problems found in a repository.
+The default is that this variable is on in newly created repositories,
+and that the variable will be passed through as the 
+.Q \-f
+option to bk check.
+To enable
+or disable autofix, one of the following should be in your configuration:
+.DS
+autofix:yes
+autofix:no
+.DE
+.if \n[NESTED] \{\
+.SS AUTOPOPULATE
+.LP
+Cause all (nested) pull operations to use the --auto-populate option
+(thus bringing in missing components as needed).  Default is no.
+.DS
+auto_populate:yes
+auto_populate:no
+.DE
+.\}
+.SS BAM SIZE
+.LP
+The optional
+BAM variable controls how large a binary needs to be to be stored in BAM.
+The size is compared to the size of the initial checkin only.
+Example values the variable may hold are:
+.DS
+BAM: on
+BAM: off
+BAM: 1K
+BAM: 64K
+.DE
+A "K" suffix means multiply by 1024, a "M" suffix means multiply by 1024^2.
+The default size, if not specified, is 64K.
+.SS BK/WEB PREFERENCES
+.LP
+BK/Web preferences can be specified your configuration.
+If these preferences are specified, information given will appear on the
+BK/Web site for the project.
+.TP \fBhomepage\fP
+.B bkweb
+specify the BK/Web address for a project
+.tp
+.B homepage
+the home page for your project or company
+.tp
+.B master
+the location from which source can be cloned
+.LP
+For example,
+.DS
+bkweb:    http://mysql.bkbits.net:8080/mysql-5.0
+master:   bk://mysql.bkbits.net/mysql-5.0
+homepage: http://www.mysql.com
+.DE
+.SS CHECKOUT MODE
+.br
+Specify checkout mode for a repository. 
+If unset, the default is "none".
+To change the default, add or change the following line to/in
+your configuration:
+.DS
+checkout:<option>
+.DE
+where option is one of:
+.TP \fBnone \fP
+.B get
+Automatically do a bk co
+.ARG file
+after doing a bk ci
+.ARG file .
+(Checkout in read-only mode.)
+.tp
+.B edit
+Automatically do a bk edit
+.ARG file
+after doing a bk ci
+.ARG file .
+Note: This will also
+adjust the modification time of the s.file to be two seconds before the 
+modification time
+of the gfile, which is needed in order to prevent make(1) from attempting
+to re-get the file.
+(Checkout in edit mode.)
+.tp
+.B last
+Preserve the previous state of
+.ARG file .
+This is like
+.B checkout:none
+for a clone.
+If the file was later locked and then checked in, it will be checked out
+again with a lock.
+.tp
+.B none
+Clear the gfile after doing a bk ci
+.ARG file .
+(This is the default.)
+.LP
+For those repositories with BAM data, there is a checkout mode 
+specifically for BAM files:
+.DS
+BAM_checkout:option
+.DE
+where option is as above.
+.LP
+The BitKeeper support team recommends "BAM_checkout:last".
+.SS CLOCK SKEW
+.br
+When \*[BK] is looking for modified files,
+file time stamps can be compared to a per-repo database to determine when
+files are unmodified
+leading to a substantial performance improvement in larger repositories.
+The
+.Q clock_skew
+parameter controls how old a file must be before file time stamps are to 
+be trusted.  
+A certain amount of clock skew is strongly advised since the use of network
+file systems can cause the time stamps to be incorrect.
+The time is in seconds and defaults to 604800 (one week).
+.DS
+clock_skew: on          # use system defaults
+clock_skew: 86400       # one day
+clock_skew: off         # disable trusting of time stamps
+.DE
+.if \n[NESTED] \{\
+.SS CLONE DEFAULT
+.br
+When cloning a nested collection, if the
+.B \-s
+option is not used, then the
+.Q clone_default
+option specifies the default set of components/aliases to clone.
+If
+.Q clone_default
+is not set then "ALL" is implied.
+.DS
+clone_default: THERE    # always match remote repository
+clone_default: PRODUCT  # only the product, no components
+clone_default: ALL      # all components cloned by default
+clone_default: MYALIAS  # clone MYALIAS by default
+.DE
+.\}
+.SS COMPRESSION
+.br
+By default, when you setup a repository in compatibility mode, the
+compression algorithm will be set to gzip in your configuration as
+follows:
+.DS
+compression:gzip
+.DE
+This results in the compression of stored
+s.files.
+To make the repository use no compression by default, 
+change the compression line your configuration to be:
+.DS
+compression:none
+.DE
+See
+.B bk help admin
+for more information about the
+.Q \-Z
+option for compression.
+.SS "DESCRIPTION"
+.LP
+The config file must contain a one line description of the contents of
+the repository.
+.DS
+description: cross-platform C-like GUI programming language
+.DE
+.SS KEYWORD EXPANSION
+.br
+Keyword expansion is turned OFF by default.  To have keyword expansion
+flags applied to a file automatically upon checkin, add the keyword
+preference to your configuration.
+.LP
+Keyword preference options are:
+.TP "\fBper repository\fP"
+.B sccs
+expand SCCS keywords (%keyword%).
+.tp
+.B expand1
+expand keywords in the first line that contains keywords only (avoids printf
+conflicts).
+.tp
+.B rcs
+expand rcs keywords ($keyword$)
+.LP
+For example, having
+.DS
+keyword: sccs, expand1
+.DE
+in the config file will expand SCCS keywords only in the first line
+encountered that contains sccs keywords. 
+.B Note:
+Setting this option affects
+.I only
+files created subsequently.
+.SS LINE TERMINATION
+.br
+The \*[UN] and Windows operating systems use different characters to
+represent line terminations (eoln).
+\*(BK, by default, sets the
+.B eoln
+preference to
+.B native
+when an sfile
+is created.
+This means that files checked out on Windows will have
+the Windows eoln and files checked out on \*[UN] will have the \*[UN]
+eoln.
+.LP
+When a file is created, the line termination is taken from the 
+"eoln" configuration variable.
+It is a per-file flag that may be overridden with the 
+.B bk admin
+command.
+.LP
+Line-termination preference options are:
+.TP "\fBwindows\fP"
+.B native
+Set line termination to the native sequence for the platform
+(\*(lq\en\*(rq on  
+\*[UN] and Linux; \*(lq\er\en\*(rq on Windows).  (This is the default.)
+.tp
+.B unix
+Force line termination to the \*[UN] standard (\*(lq\en\*(rq).
+.tp
+.B windows 
+Force line termination to the Windows standard (\*(lq\er\en\*(rq).
+.LP
+To force the UNIX eoln mode on all platforms, your configuration must
+have this:
+.DS
+eoln:unix
+.DE
+To force Windows line termination use:
+.DS
+eoln:windows
+.DE
+In general, the default of native line terminations is the right answer and
+for exceptions the
+.B bk admin 
+command may be used to set this option on a per file basis.
+.SS PARALLEL
+By default, BitKeeper runs some processes in parallel to gain performance.
+The defaults are 8 way parallel for NFS and 3 way parallel for local file
+systems.  
+You may override the defaults for all cases like so:
+.DS
+parallel:12
+.DE
+Setting the value to 0 will disable parallelism.
+.SS PARTIAL CHECK
+.LP
+BitKeeper may be configured to do a full repository integrity check after
+each update.
+The integrity check validates both internal BitKeeper metadata and
+file checksums.
+The integrity checks have been shown to catch hardware problems
+such as bad memory chips, bad disk drives, and software problems
+such as NFS inserting blocks of nulls in the middle of files.
+Unless you have a larger repository (more than 5,000 files and/or more
+than 100MB) then you may want to enable full checks all the time.
+.LP
+By default, BitKeeper will run in partial_check mode, which means
+a full check is performed no more than once per week and only 
+partial checks are performed when the repository is updated.
+.LP
+You may control the frequency of the full checks with the 
+following variable, units are in days.  To force a full check
+every two days:
+.DS
+check_frequency: 2
+.DE
+The following will disable the partial_check mode and force
+BitKeeper to perform full integrity checks on every update
+(safest but at a performance cost):
+.DS
+partial_check: off
+.DE
+.if \n[NESTED_NOT_YET] \{
+.SS POLY
+This controls how you can use
+.B bk port
+to copy changes in a component between products in a product line.
+.LP
+The recommended use for
+.B bk port
+is to declare one repository per product as a portal using
+.BR "bk portal" ,
+and do all porting from other products into this repository.
+This will ensure that every incoming component cset will be
+part of one and only one product cset.
+.LP
+For example, two products A and B in a product line share
+a "print" component, and a bugfix is done in the print
+component of repository RA of product A.
+Product B can get the fix by declaring a repository, say RB,
+as a portal and porting the changes from RA/print.  Since there
+is only one portal for product B, no other repository of
+B can port the bugfix.  Other repositories for product B would
+get the fix through pulling from RB.
+.LP
+For some workflows, limiting to one portal is too restrictive:
+their organization may not have a centralized distribution point.
+They have many portals and
+.B bk port
+component changes into different repositories as needed.
+This means that more than one product cset is associated with
+the same component cset.
+.LP
+When one portal repository is pulled into another,
+the pull will fail with a poly error, as \*[BK] prevents more
+than one product cset containing a component cset.
+.LP
+To get the pull to succeed, and give up the benefits of having
+a one to one relationship between product cset and component cset,
+add this to your configuration:
+.DS
+poly: on
+.DE
+.LP
+This will allow the pull to succeed and will let
+.B bk r2c
+return a list of product csets when used with a component cset that
+has been ported into the product multiple times.
+.\}
+.SS PULL STATISTICS
+It is possible to make pull print statistics in a format compatible
+with diffstats by adding this to your configuration:
+.DS
+stats_after_pull: on
+.DE
+Note that gathering the statistics needs another pass over the data so
+if you are very performance sensitive, you might want to keep this
+option off.
+.LP
+.SS SYNC
+In some environments it may be safer to have
+BitKeeper do an fsync(2) after each update of a history file.
+Some Linux file systems perform poorly because fsync(2) is implemented as
+a system wide sync(2).
+.LP
+The default is not to flush but the default may be overridden with:
+.DS
+sync:on
+.DE
+.\" Doc writers note: replicate this in bk-triggers.1
+.SS TRIGGER PATHS
+.LP
+By default, triggers are stored in the repository under the
+.B BitKeeper/triggers/
+directory and this is the only directory searched when looking for
+triggers.
+More than one triggers directory may be used by setting the
+.B triggers
+variable.
+The format is one or more paths separated by a vertical bar,
+each path has "BitKeeper/triggers" appended to it and the resulting
+path is scanned for triggers.
+For example, if you wanted to run triggers from
+.B /etc/BitKeeper/triggers
+and from the repositories'
+.BR BitKeeper/triggers ,
+set the variable as follows in your configuration:
+.DS
+triggers:	/etc|.
+.DE
+The directories are processed in the order found in the variable.
+.LP
+There are several special values which are interpreted:
+.TP 
+.B .
+This is the default, it means `bk -R pwd`/BitKeeper/triggers is scanned
+for triggers.
+.TP
+.B $BK_DOTBK
+If present, `bk dotbk`/BitKeeper/triggers is scanned for triggers.
+.TP
+.B $BK_BIN
+If present, `bk bin`/BitKeeper/triggers is scanned for triggers.
+.TP
+.B $NONE
+If present, with no other values, then no triggers are processed.
+.TP
+.B $PRODUCT
+If present, `bk -P pwd`/BitKeeper/triggers is scanned for triggers.
+This only applies when in a component repository of a nested collection.
+It is a way to run product level triggers in each component.
+.TP
+.B $SOMETHING_ELSE
+All other paths starting with "$" are ignored, that character is
+reserved.
+.SS UPGRADE URL
+.LP
+The upgrade command normally looks for new versions of \*[BK] here:
+.B http://upgrades.bitkeeper.com/upgrades/
+but that location may be overridden by setting the
+.I upgrade_url
+field to an different URL.
+.LP
+For example,
+.DS
+upgrade_url:	http://www.example.com/bk-release/
+.DE
+The contents of that directory will need to be manually mirrored
+from BitKeeper Inc.
+.SS USER PREFERENCES
+.LP
+Repository preferences can be defined in your configuration:
+The general format for the repository preference config file is 
+.DS
+[filter]preference:option
+.DE
+.LP
+The optional filter can be any of the following:
+.TP "\fBper repository\fP"
+.B no filter
+preference:option
+.tp
+.B empty filter
+[]preference:option
+.tp
+.B per user
+[jdoe]preference:option
+.tp
+.B per host
+[@xyz.com]preference:option
+.tp
+.B per pathname
+[:/path/to/repo]preference:option
+.tp
+.B per user@host
+[jdoe@xyz.com]preference:option
+.tp
+.B per repository
+[:/path/to/repo]preference:option
+.br
+[@xyz.com:/path/to/repo]preference:option
+.br
+[jdoe@xyz.com:/path/to/repo]preference:option 
+.LP
+Preferences can be listed multiple times with different filters.
+The filters are examined in order and the first line that
+matches the current user, host, and pathname is used.  So in general
+the most restrictive directives should appear first.
+.SH "SEE ALSO"
+.SA admin
+.SA config-gui
+.SA config
+.SA setup
+.SA upgrade
+.\" help://configuration
+.\" help://user preferences
+.\" help://repository preferences
+.SH CATEGORY
+.B Overview
+.br
+.B Admin

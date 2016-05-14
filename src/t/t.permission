@@ -1,0 +1,306 @@
+# Copyright 1999-2001,2003-2008,2013-2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+if [ "$PLATFORM" = "WIN32" ]
+then
+	echo "For non win32 only ..........................................skipped"
+	exit 0;
+fi
+
+checkperm()
+{
+    PERM=$1
+    FILE=$2
+    P=`/bin/ls -l $FILE`
+    case "$P" in
+	${1}*)
+	    ;;
+	*)
+	    echo failed to set permissions correctly; ls -l $FILE; exit 1
+	    ;;
+    esac
+}
+
+echo $N Check that chmod correctly fails outside a repo .............$NL
+touch foo
+bk chmod 0777 foo 2>${DEV_NULL} && fail
+echo OK
+
+commercial project
+echo $N Check in an executable file .................................$NL
+touch prog
+chmod 0751 prog
+bk ci -i $Q prog
+test `bk prs -hnd:RWXMODE: prog` = -rwxrwx--x || fail
+echo OK
+
+echo $N Check permissions on checked out file .......................$NL
+bk co $Q prog
+checkperm -r-xr-x--x prog
+echo OK
+
+echo $N Check permissions on locked file ............................$NL
+bk co -l $Q prog
+checkperm -rwxrwx--x prog
+echo OK
+
+echo $N Change permissions and check in .............................$NL
+chmod 777 prog
+bk delta $S -fyperms prog	# XXX doesn't change perms
+test `bk prs -r+ -hnd:RWXMODE: prog` = -rwxrwx--x || fail
+if bk _test -f "SCCS/p.prog"; then echo Failed to remove p.prog; exit 1; fi
+echo OK
+
+echo $N Change permissions with admin ...............................$NL
+bk get $Q prog
+bk admin -m-rwx------ prog
+checkperm -r-x------ prog
+REV=`bk prs -h -r+ -d":I:" prog`
+if [ "$REV" != "1.3" ]; then echo fail to create a new delta; exit 1; fi 
+COMMENT=`bk prs -h -r+ -d":C:" prog`
+if [ "$COMMENT" != "Change mode to -rwx------" ]; then echo fail; exit 1; fi 
+test `bk prs -hnd:RWXMODE: -r+ prog` = -rwx------ || fail
+echo OK
+
+echo $N Make sure null change is not delta-ed .......................$NL
+bk admin -m-rwx------ prog
+REV=`bk prs -h -r+ -d":I:" prog`
+if [ "$REV" != "1.3" ]; then echo fail to create a new delta; exit 1; fi 
+echo OK
+
+echo $N Check new permissions on checked out file ...................$NL
+bk co $Q prog
+checkperm -r-x------ prog
+echo OK
+
+echo $N Check old permissions on checked out file ...................$NL
+bk co -r1.1 $Q -Gprog prog
+checkperm -r-xr-x--x prog
+echo OK
+
+echo $N Check permissions on locked file ............................$NL
+bk co -l $Q prog
+checkperm -rwx------ prog
+echo OK
+
+echon Check changing permissions on locked file ...................
+bk admin -m-rwxrw---x prog
+checkperm -rwxrw---x prog
+echo OK
+
+echon Check cumulative changes to file permissions ................
+bk unedit prog
+bk admin -m-rw-rw-r-- prog
+test `bk prs -hr+ -nd:RWXMODE: prog` = -rw-rw-r-- || {
+	echo failed
+	bk prs -hr+ -nd:RWXMODE: prog
+}
+bk chmod o+w prog
+test `bk prs -hr+ -nd:RWXMODE: prog` = -rw-rw-rw- || {
+	echo failed
+	bk prs -hr+ -nd:RWXMODE: prog
+}
+bk chmod o+x prog
+test `bk prs -hr+ -nd:RWXMODE: prog` = -rw-rw-rwx || {
+	echo failed
+	bk prs -hr+ -nd:RWXMODE: prog
+}
+bk co $Q prog
+checkperm -r--r--r-x prog
+bk co -l $Q prog
+checkperm -rw-rw-rwx prog
+bk clean prog
+echo OK
+
+echo $N Make sure we can not remove owner read/write permission .....$NL
+bk clean prog
+bk chmod 0 prog 2>/dev/null
+bk edit $Q prog
+checkperm -rw------- prog
+echo OK
+
+echo $N Make sure that we tell people about parsing errors ..........$NL
+bk clean prog
+bk chmod u@xyz prog 2>out
+grep -q 'Illegal file mode' out || {
+	echo bad error message
+	cat out
+	exit 1
+}
+bk edit $Q prog
+checkperm -rw------- prog
+echo OK
+
+echo $N Test u= permissions .........................................$NL
+bk clean prog
+bk chmod u=rwx prog
+bk edit $Q prog
+checkperm -rwx------ prog
+echo OK
+
+echo $N Test g= permissions .........................................$NL
+bk clean prog
+bk chmod g=rwx prog
+bk edit $Q prog
+checkperm -rwxrwx--- prog
+bk clean prog
+bk chmod g= prog
+bk edit $Q prog
+checkperm -rwx------ prog
+echo OK
+
+echo $N Test o= permissions .........................................$NL
+bk clean prog
+bk chmod o=rwx prog
+bk edit $Q prog
+checkperm -rwx---rwx prog
+bk clean prog
+bk chmod o= prog
+bk edit $Q prog
+checkperm -rwx------ prog
+echo OK
+
+echo $N Test ugo= permissions .......................................$NL
+bk clean prog
+bk chmod ugo=rw prog
+bk edit $Q prog
+checkperm -rw-rw-rw- prog
+bk clean prog
+bk chmod ugo=rwx prog
+bk edit $Q prog
+checkperm -rwxrwxrwx prog
+echo OK
+
+bk clean prog
+bk chmod 600 prog
+echo $N Test u+ permissions .........................................$NL
+bk clean prog
+bk chmod u+rwx prog
+bk edit $Q prog
+checkperm -rwx------ prog
+echo OK
+
+echo $N Test g+ permissions .........................................$NL
+bk clean prog
+bk chmod g+rwx prog
+bk edit $Q prog
+checkperm -rwxrwx--- prog
+echo OK
+
+echo $N Test o+ permissions .........................................$NL
+bk clean prog
+bk chmod o+rwx prog
+bk edit $Q prog
+checkperm -rwxrwxrwx prog
+echo OK
+
+echo $N Test ugo- permissions .......................................$NL
+bk clean prog
+bk chmod ugo-x prog
+bk edit $Q prog
+checkperm -rw-rw-rw- prog
+echo OK
+
+bk clean prog
+bk chmod 777 prog
+echo $N Test u- permissions .........................................$NL
+bk clean prog
+bk chmod u-x prog
+bk edit $Q prog
+checkperm -rw-rwxrwx prog
+echo OK
+
+echo $N Test g- permissions .........................................$NL
+bk clean prog
+bk chmod g-rwx prog
+bk edit $Q prog
+checkperm -rw----rwx prog
+echo OK
+
+echo $N Test o- permissions .........................................$NL
+bk clean prog
+bk chmod o-rwx prog
+bk edit $Q prog
+checkperm -rw------- prog
+echo OK
+
+echo $N Test BAM permissions ........................................$NL
+umask 002
+printf "binary\0data\0" > bam
+cp -f bam bamx
+chmod ugo+x bamx
+bk new $Q bam bamx
+test -f bam -o -f bamx && {
+	echo failed
+	exit 1
+}
+bk get $Q bam bamx
+checkperm -r--r--r-- bam
+checkperm -r-xr-xr-x bamx
+bk edit $Q bam bamx
+checkperm -rw-rw-r-- bam
+checkperm -rwxrwxr-x bamx
+echo OK
+
+echo $N Test get -G permissions .....................................$NL
+bk clean prog
+bk chmod ugo+rwx prog
+bk get $Q -Gnewprog prog
+bk get $Q -Gnewbam bam
+bk get $Q -Gnewbamx bamx
+checkperm -r-xr-xr-x newprog
+checkperm -r--r--r-- newbam
+checkperm -r-xr-xr-x newbamx
+echo OK
+
+echo $N Don\'t allow weird file types ................................$NL
+bk chmod 0140770 prog 2>ERR && {
+   echo should not pass
+   exit 1
+}
+grep -q "admin: prog: Illegal file mode" ERR || fail
+echo OK
+
+# Tests here are require a bkdcp command which is setuid version of cp
+# Needed to test having files owned by someone else.
+bk which -e bkdcp > /dev/null || {
+	echo "For platforms with user bkd and suid bkd command: bkdcp .....skipped"
+	exit 0;
+}
+
+echo $N Create repo with 'ChangeSet,[12]' 440 and owned by bkd ........$NL
+cd "$HERE"/project
+touch foo
+bk new $Q foo
+cd .bk
+cp -Rp SCCS "$HERE/orig.sccs"
+mv SCCS OLD
+chmod 444 OLD/ChangeSet,1 OLD/ChangeSet,2
+bkdcp -Rp OLD SCCS
+rm -fr OLD
+cd ..
+bk commit $Q -yfoo || fail
+echo OK
+
+echo $N Create repo with 'ChangeSet,[12]' 640 and owned by bkd ........$NL
+cd .bk
+rm -fr SCCS
+cp -Rp "$HERE/orig.sccs" OLD
+chmod 644 OLD/ChangeSet,1 OLD/ChangeSet,2
+bkdcp -Rp OLD SCCS
+rm -fr OLD
+cd ..
+bk mv foo bar
+bk commit $Q -yfoo2bar || fail
+echo OK

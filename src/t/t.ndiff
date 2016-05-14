@@ -1,0 +1,1115 @@
+# Copyright 2012-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Note in these tests we can't use cmpfiles as it will ignore \r's
+
+dumpdiffs() {
+	echo
+	echo --- WANT ---
+	cat WANT
+	echo --- OD WANT ---
+	od -a WANT
+	echo --- GOT ---
+	cat GOT
+	echo --- OD GOT ---
+	od -a GOT
+}
+
+echo $N Basic........................................................$NL
+cd "$HERE"
+echo a > A
+echo b > B
+cat >WANT <<EOF
+1c1
+< a
+---
+> b
+EOF
+bk ndiff A B > GOT && fail Expected diffs
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail
+}
+echo OK
+
+echo $N Test no newline at end of file...............................$NL
+cat <<EOF >>A
+A
+B
+C
+D
+EOF
+cat <<EOF >B
+A
+1
+B
+D
+EOF
+echon "2" >> B
+bk ndiff A B > GOT && fail Expected diffs
+bk diff A B >WANT
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail
+}
+echo OK
+
+echo $N Test no newline makes it through.............................$NL
+echo bar > A
+echo bar > B
+printf "foo\r" >> B
+bk diff A B > WANT
+bk ndiff A B > GOT
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail
+}
+echo OK
+
+echo $N Test no new line at end of file does not match other lines...$NL
+cat <<EOF >A
+A
+B
+C
+2
+D
+EOF
+cat <<EOF >B
+A
+EOF
+printf "2" >> B
+cat <<EOF > WANT
+2,5c2
+< B
+< C
+< 2
+< D
+---
+> 2
+\ No newline at end of file
+EOF
+bk ndiff --strip-trailing-cr A B > GOT
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail Different results
+}
+echo OK
+
+echo $N Test our wacky --ignore-tailing-cr...........................$NL
+echo a > A
+printf "a\n\r" > B
+bk diff --ignore-trailing-cr A B >WANT && fail
+bk ndiff --ignore-trailing-cr A B >GOT && {
+	dumpdiffs
+	fail
+}
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail Different results
+}
+echo a > A
+echon a > B
+bk diff --ignore-trailing-cr A B > WANT && fail
+bk ndiff --ignore-trailing-cr A B > GOT && {
+	dumpdiffs
+	fail
+}
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail Different results
+}
+printf "\ra\r\n" > A
+printf "\ra\r\r\r\n" > B
+bk diff --ignore-trailing-cr A B > WANT || fail $?
+bk ndiff --ignore-trailing-cr A B > GOT || fail $?
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail Different results
+}
+printf 'data\r\n' > A
+echo 'data' > B
+bk diff --ignore-trailing-cr A B > WANT || fail $?
+bk ndiff --ignore-trailing-cr A B > GOT || fail $?
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail Different results
+}
+echo 'data' > A
+echo 'data' > B
+printf 'last line\r\n' >> B
+bk diff --ignore-trailing-cr A B > WANT && fail $?
+bk ndiff --ignore-trailing-cr A B > GOT && fail $?
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail
+}
+printf "bar\r\n" > A
+printf "bar\r\nfoo\r" > B
+bk diff --ignore-trailing-cr A B > WANT
+bk ndiff --ignore-trailing-cr A B > GOT
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail
+}
+printf "bar\r\n" > A
+printf "bar\r\nfoo\r\n" > B
+bk diff --ignore-trailing-cr A B > WANT
+bk ndiff --ignore-trailing-cr A B > GOT
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail
+}
+printf "a\nb\nc\r\r\r\r" > A
+printf "a\n1\nc\r\r\r" > B
+bk diff --ignore-trailing-cr A B > WANT
+bk ndiff --ignore-trailing-cr A B >GOT
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail
+}
+printf "a\r\nb\r\n" > A
+printf "a\r\nb\r\nc\r\n" > B
+bk diff --ignore-trailing-cr A B > WANT
+bk ndiff --ignore-trailing-cr A B > GOT
+cmpfiles WANT GOT
+bk ndiff --strip-trailing-cr A B > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test binary detection........................................$NL
+echo baseline > A
+cp A B
+echo 'There is a null right here X>' | tr X '\000' >> B
+echo "" >> B
+echo and another line after that >> B
+bk diff --ignore-trailing-cr A B > WANT && fail $?
+bk ndiff --ignore-trailing-cr A B > GOT && fail $?
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail Different results
+}
+echo OK
+
+
+echo $N Asymetric test...............................................$NL
+cat > A <<EOF
+#
+#
+#
+#
+
+#
+#
+#
+#
+
+
+
+EOF
+cat > B <<EOF
+
+#
+EOF
+cat > WANT <<EOF
+1,4d0
+< #
+< #
+< #
+< #
+7,12d2
+< #
+< #
+< #
+< 
+< 
+< 
+EOF
+bk ndiff A B > GOT && fail Expected diffs
+cmp -s WANT GOT || fail Different results
+echo OK
+
+echo $N Test ndiff -p................................................$NL
+cat <<EOF > A
+#include <stdio.h>
+
+int
+main(int ac, char **av)
+{
+	int a, b, c;
+	int d, e, f;
+
+	/* this is where code would go */
+	return (0);
+}
+EOF
+cat <<EOF > B
+#include <stdio.h>
+
+int
+main(int ac, char **av)
+{
+	int a, b, c;
+	int d, e, f;
+
+	/* this is where code would go */
+	return (1);
+}
+EOF
+cat <<EOF > WANT
+--- A
++++ B
+@@ -7,5 +7,5 @@ main(int ac, char **av)
+ 	int d, e, f;
+ 
+ 	/* this is where code would go */
+-	return (0);
++	return (1);
+ }
+EOF
+bk ndiff -up A B | sed -e 's/^--- A.*/--- A/g' -e 's/^+++ B.*/+++ B/g' > GOT
+cmpfiles WANT GOT
+cat <<EOF > WANT
+--- A
++++ B
+@@ -10 +10 @@ main(int ac, char **av)
+-	return (0);
++	return (1);
+EOF
+bk ndiff -u0p A B | sed -e 's/^--- A.*/--- A/g' -e 's/^+++ B.*/+++ B/g' > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Try -p again but with a longer function......................$NL
+sed 's/main/huge_function_name_more_than_40_characters_long/g' A > LA
+sed 's/main/huge_function_name_more_than_40_characters_long/g' B > LB
+cat <<EOF > WANT
+--- LA
++++ LB
+@@ -7,5 +7,5 @@ huge_function_name_more_than_40_characte
+ 	int d, e, f;
+ 
+ 	/* this is where code would go */
+-	return (0);
++	return (1);
+ }
+EOF
+bk ndiff -up LA LB | sed -e 's/^--- LA.*/--- LA/g' \
+		-e 's/^+++ LB.*/+++ LB/g' > GOT
+cmp -s WANT GOT || fail Different results
+echo OK
+
+echo $N Test -p with multiple functions..............................$NL
+cat <<EOF > A
+int
+foo(int arg)
+{
+	/* code */
+}
+
+
+
+
+
+
+
+
+int
+bar(int arg)
+{
+
+
+
+	/* other code */
+}
+EOF
+cat <<EOF > B
+int
+foo(int arg)
+{
+	/* code */
+}
+
+
+
+
+
+
+
+
+int
+bar(int arg)
+{
+
+
+
+	/* changed code */
+}
+EOF
+bk diff -up A B > WANT
+bk ndiff -up A B > GOT
+cmp -s WANT GOT || {
+	dumpdiffs
+	fail
+}
+echo OK
+
+echo $N Test -b option...............................................$NL
+cat <<EOF > A
+int
+main(int ac, char **av)
+{
+	printf("this is a line\n");
+	printf("this is a line\n");
+	printf("this is a line\n");
+}
+EOF
+cat <<EOF > B
+int
+main(int ac, char **av)
+{
+	printf("this is a line\n");
+	if (foo) {
+		printf("this is a line\n");
+	}
+	printf("this is a line\n");
+}
+EOF
+cat <<EOF >WANT
+4a5
+> 	if (foo) {
+5a7
+> 	}
+EOF
+bk ndiff -b A B > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test -w option...............................................$NL
+cat <<EOF > A
+int
+main(int ac, char **av)
+{
+	printf("this is a line\n");
+}
+EOF
+cat <<EOF > B
+int
+main(int ac, char **av)
+{
+	printf("this is aline\n");
+}
+EOF
+cat <<EOF > WANT
+4c4
+< 	printf("this is a line\n");
+---
+> 	printf("this is aline\n");
+EOF
+bk ndiff -b A B > GOT
+cmpfiles WANT GOT
+bk ndiff -w A B > GOT
+rm -f WANT
+touch WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test -w hash bug ............................................$NL
+# in the past this hit an assertion
+echo A > A
+echo >> A
+echo B > B
+bk ndiff -w A B > GOT
+cat <<EOF > WANT
+1,2c1
+< A
+< 
+---
+> B
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test a diff -p cornercase....................................$NL
+cat <<EOF > A
+int
+main(int ac, char **av)
+{
+	printf("this is a line\n");
+}
+
+int
+findcmd(int ac, char **av)
+{
+	int	i;
+
+	if (ac == 0) return (-1);
+	for (i = 0; cmds[i].name; ++i) {
+		if (strcasecmp(av[0], cmds[i].name) == 0) {
+			if (streq(av[0], "pull")) av[0] = "remote pull";
+		}
+	}
+}
+EOF
+cat <<EOF > B
+int
+main(int ac, char **av)
+{
+	printf("this is a line\n");
+}
+
+int
+findcmd(int ac, char **av)
+{
+	int	i;
+	av0 = av[0];
+
+	if (ac == 0) return (-1);
+	for (i = 0; cmds[i].name; ++i) {
+		if (strcasecmp(av[0], cmds[i].name) == 0) {
+			if (streq(av[0], "pull")) av[0] = "remote pull";
+		}
+	}
+}
+EOF
+bk ndiff -up A B | sed -e 's/^--- A.*/--- A/g' -e 's/^+++ B.*/+++ B/g' > GOT
+cat <<EOF > WANT
+--- A
++++ B
+@@ -8,6 +8,7 @@ findcmd(int ac, char **av)
+ findcmd(int ac, char **av)
+ {
+ 	int	i;
++	av0 = av[0];
+ 
+ 	if (ac == 0) return (-1);
+ 	for (i = 0; cmds[i].name; ++i) {
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test diff -p with function in context........................$NL
+run_test() {
+	FUNCTION=$1
+	WANT=$2
+	cat <<EOF > A
+int
+main(int ac, char **av)
+{
+	printf("this is a line\n");
+}
+
+EOF
+	printf "$FUNCTION\n" >> A
+	cat <<EOF >> A
+{
+
+	if (ac == 0) return (-1);
+ label:	function(args);
+	for (i = 0; cmds[i].name; ++i) {
+		if (strcasecmp(av[0], cmds[i].name) == 0) {
+			if (streq(av[0], "pull")) av[0] = "remote pull";
+		}
+	}
+}
+EOF
+	cat <<EOF > B
+int
+main(int ac, char **av)
+{
+	printf("this is a line\n");
+}
+
+EOF
+	printf "$FUNCTION\n" >> B
+	cat <<EOF >> B
+{
+
+	if (ac == 0) return (-1);
+ label:	function(args);
+	for (i = 0; cmds[i].name; ++i) {
+		if (strcasecmp(av[0], cmds[i].name) == 0) {
+			if (streq(av[0], "pull")) av[0] = "remote pull";
+		}
+	}
+	av0 = av[0];
+}
+EOF
+	bk ndiff -u0p A B | grep -v ^--- | grep -v ^+++ > GOT1
+	perl -ne 'if (/^@@.*@@ (.*)$/) {print "@@ $1\n";} else {print}' < GOT1 > GOT
+	cat <<EOF > WANT
+@@ $WANT
++	av0 = av[0];
+EOF
+	cmpfiles WANT GOT
+}
+
+run_test "int\nfindcmd(int ac, char **av)" "findcmd(int ac, char **av)"
+run_test "int findcmd(int ac, char **av)" "int findcmd(int ac, char **av)"
+run_test "static int findcmd(int ac, char **av)" "static int findcmd(int ac, char **av)"
+run_test "void\nScan::complete (const Status scanStatus, const utf::SlightlyEmbarrassinglyButAlphanumericallyNamedString &errorString)" "Scan::complete (const Status scanStatus,"
+run_test "void Scan::complete (const Status scanStatus, const utf::SlightlyEmbarrassinglyButAlphanumericallyNamedString &errorString)" "void Scan::complete (const Status scanSt"
+run_test "static void Scan::complete (const Status scanStatus, const utf::SlightlyEmbarrassinglyButAlphanumericallyNamedString &errorString)" "static void Scan::complete (const Status"
+run_test "Region::element_iterator Region::element_begin()" "Region::element_iterator Region::element"
+# invalid ones should match main
+run_test "(void)funcall();" "main(int ac, char **av)"
+echo OK
+
+echo $N Test C function alignment....................................$NL
+cat <<EOF > A
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+
+private
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > B
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+
+private
+int
+bfunc(int b)
+{
+	printf("This is bfunc\n");
+}
+
+private
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > WANT
+6a7,13
+> private
+> int
+> bfunc(int b)
+> {
+> 	printf("This is bfunc\n");
+> }
+> 
+EOF
+bk ndiff A B > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test adding a function with no space below...................$NL
+cat <<EOF > A
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > B
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+
+int
+bfunc(int b)
+{
+	printf("This is bfunc\n");
+}
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > WANT
+6a7,11
+> int
+> bfunc(int b)
+> {
+> 	printf("This is bfunc\n");
+> }
+EOF
+bk ndiff A B > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test adding a function with no space above...................$NL
+cat <<EOF > A
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > B
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+int
+bfunc(int b)
+{
+	printf("This is bfunc\n");
+}
+
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > WANT
+5a6,10
+> int
+> bfunc(int b)
+> {
+> 	printf("This is bfunc\n");
+> }
+EOF
+bk ndiff A B > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Add a function that overlaps in comments.....................$NL
+cat <<EOF > A
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+
+/*
+ * this is function afunc
+ */
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > B
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+
+/*
+ * this is function bfunc
+ */
+int
+bfunc(int b)
+{
+	printf("This is bfunc\n");
+}
+
+/*
+ * this is function afunc
+ */
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > WANT
+6a7,15
+> /*
+>  * this is function bfunc
+>  */
+> int
+> bfunc(int b)
+> {
+> 	printf("This is bfunc\n");
+> }
+> 
+EOF
+bk ndiff A B > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Add a function with comments, no space.......................$NL
+cat <<EOF > A
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+
+/*
+ * this is function afunc
+ */
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > B
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+
+/*
+ * this is function bfunc
+ */
+int
+bfunc(int b)
+{
+	printf("This is bfunc\n");
+}
+/*
+ * this is function afunc
+ */
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > WANT
+6a7,14
+> /*
+>  * this is function bfunc
+>  */
+> int
+> bfunc(int b)
+> {
+> 	printf("This is bfunc\n");
+> }
+EOF
+bk ndiff A B > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Do a unified diff where the context overlaps.................$NL
+rm -f A
+i=1
+while [ $i -le 100 ]
+do
+	echo $i >> A
+	i=`expr $i + 1`
+done
+cat A | sed 's/^10$/A/;s/^18$/B/;' > B
+bk --trace=tmp ndiff -up A B | grep -v ^--- | grep -v ^+++ > GOT
+cat <<EOF > WANT
+@@ -7,15 +7,15 @@
+ 7
+ 8
+ 9
+-10
++A
+ 11
+ 12
+ 13
+ 14
+ 15
+ 16
+ 17
+-18
++B
+ 19
+ 20
+ 21
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Add a line at end of function and a new function.............$NL
+cat <<EOF > A
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+}
+
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+cat <<EOF > B
+int
+main(int ac, char **av)
+{
+	printf("This is main\n");
+	return (0);
+}
+
+void
+newfunc(void)
+{
+	printf("new function\n");
+}
+
+int
+afunc(int a)
+{
+	printf("this is afunc\n");
+}
+EOF
+# Desire something like:
+# 4a5,6
+# > 	return (0);
+# > 6a8,13
+# > void
+# > newfunc(void)
+# > {
+# >  	printf("new function\n");
+# > }
+# > 
+cat <<EOF > WANT
+4a5,11
+> 	return (0);
+> }
+> 
+> void
+> newfunc(void)
+> {
+> 	printf("new function\n");
+EOF
+bk ndiff A B > GOT
+cmpfiles WANT GOT
+echo failed \(bug align\)
+
+echo $N Test alignment of lines within diff blocks in sdiff..........$NL
+cat <<EOF > A
+badger
+mushroom
+badger
+EOF
+cat <<EOF > B
+badger
+if (a snake)
+  mushroom
+endif
+badger
+EOF
+bk ndiff --sdiff=1 A B > GOT
+cat <<EOF > WANT
+ 
+>
+|
+>
+ 
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Make sure lines we say changed actually changed..............$NL
+cat <<EOF > A
+funca()
+{
+	var a;
+
+	stuff;
+}
+
+funca()
+{
+	var a;
+
+	stuff;
+}
+
+funca()
+{
+	var a;
+
+	stuff;
+}
+
+funca()
+{
+	var a;
+
+	stuff;
+}
+EOF
+cat <<EOF > B
+funcb()
+{
+	var b;
+
+	stuff;
+}
+
+funcb()
+{
+	var b;
+
+	stuff;
+}
+
+funcb()
+{
+	var b;
+
+	stuff;
+}
+
+funcb()
+{
+	var b;
+
+	stuff;
+}
+EOF
+bk ndiff -u A B > GOT
+bk diff -up A B > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test no newline and different formats .......................$NL
+printf " a\n end" > a
+printf " b\n end" > b
+bk ndiff -DFOO a b > GOT
+cat <<EOF > WANT
+#ifndef FOO
+ a
+#else /* FOO */
+ b
+#endif /* FOO */
+ end
+EOF
+cmpfiles WANT GOT
+bk ndiff -u a b | sed 's/	.*//' > GOT
+cat <<EOF > WANT
+--- a
++++ b
+@@ -1,2 +1,2 @@
+- a
++ b
+  end
+\ No newline at end of file
+EOF
+cmpfiles WANT GOT
+# While we are here, show rider of fixing RCS diffs
+# Changed: end of line format; 'a' cmd references where d ends, not starts
+printf "a1\na2" > a
+printf "b" > b
+bk ndiff -n a b > GOT
+printf "d1 2\na2 1\nb" > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test -b with white space rollover to next line ..............$NL
+# before this RTI, this failed.
+# first line in 'a' has trailing tab; send line in b has leading ' '.
+cat <<EOF > a
+a	
+b
+EOF
+cat <<EOF > b
+a
+ b
+EOF
+bk ndiff -b a b > GOT
+cat <<EOF > WANT
+2c2
+< b
+---
+>  b
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test -u with empty blocks ...................................$NL
+# More tests which failed before this RTI
+cat <<EOF > a
+a
+b
+EOF
+printf "" > b
+bk ndiff -u a b | sed 's/	.*//' > GOT
+cat <<EOF > WANT
+--- a
++++ b
+@@ -1,2 +0,0 @@
+-a
+-b
+EOF
+cmpfiles WANT GOT
+bk ndiff -u b a | sed 's/	.*//' > GOT
+cat <<EOF > WANT
+--- b
++++ a
+@@ -0,0 +1,2 @@
++a
++b
+EOF
+cmpfiles WANT GOT
+cat <<EOF > b
+a
+x
+b
+EOF
+bk ndiff -u0 a b | sed 's/	.*//' > GOT
+cat <<EOF > WANT
+--- a
++++ b
+@@ -1,0 +2 @@
++x
+EOF
+cmpfiles WANT GOT
+bk ndiff -u0 b a | sed 's/	.*//' > GOT
+cat <<EOF > WANT
+--- b
++++ a
+@@ -2 +1,0 @@
+-x
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test -Dfoo and --sdiff with same inode and same contents ....$NL
+# even though no diff, it still prints whole file out. Fixed by this RTI.
+echo a > a
+echo a > b
+bk ndiff -Dfoo a a > GOT
+cmpfiles a GOT
+bk ndiff -Dfoo a b > GOT
+cmpfiles a GOT
+# sdiff too
+echo "a    a" > WANT
+bk ndiff --sdiff=8 a a > GOT
+cmpfiles WANT GOT
+bk ndiff --sdiff=8 a b > GOT
+cmpfiles WANT GOT
+echo OK

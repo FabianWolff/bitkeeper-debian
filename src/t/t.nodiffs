@@ -1,0 +1,75 @@
+# Copyright 2000,2004-2006,2010-2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Because we use tar xmf we don't check for timestamp errors here.
+unset _BK_DEVELOPER
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+echo OK
+echo $N Create some data ............................................$NL
+cat > file <<EOF
+1
+2
+3
+4
+5
+6
+7
+8
+9
+EOF
+bk ci $Q -i file
+if bk _test ! -f SCCS/s.file; then echo failed to create history; exit 1; fi
+bk commit $Q -ywhatever
+echo OK
+echo $N Clone, modify both, resync, resolve should autocomment ......$NL
+cd "$HERE"
+bk clone $Q project copy
+for i in copy project
+do	cd "$HERE/$i"
+	bk get -e -g $Q file
+	bk get -kp $Q file | sed -e s/2/2-$i/ -e s/3/3-$i/ > file
+	bk delta $Q -y$i
+	bk commit -y$i $Q
+done
+cd "$HERE/copy"
+bk pull -R $Q
+cd ..
+tar cf TAR copy
+cd copy
+( echo s
+  echo C ) | env DISPLAY=none:0 bk resolve $Q 2>/dev/null
+bk _scat SCCS/s.file | grep -q 'SCCS merge' || {
+	echo failed to detect a no diffs and autocheckin
+	bk _scat SCCS/s.file | head
+	exit 1
+}
+echo OK
+echo $N Resolve -T should also autocomment ..........................$NL
+cd ..
+rm -rf copy
+tar xmf TAR
+cd copy
+( echo s
+  echo C ) | bk resolve -T $Q 2>resolve.out
+bk _scat SCCS/s.file | grep -q 'SCCS merge' || {
+	echo failed to detect a no diffs and autocheckin
+	cat resolve.out
+	bk _scat SCCS/s.file | head
+	exit 1
+}
+echo OK

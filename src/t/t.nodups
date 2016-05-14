@@ -1,0 +1,79 @@
+# Copyright 2012,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Show how relative order of dups impacts outcome .............$NL
+# two identical graph topologies.
+# 2 nodes on the trunk straddling 2 on the branch
+#
+# 1.1 ---  1.2 ------------------- 1.3 ----- 1.4
+#  +---------- 1.1.1.1 -- 1.1.1.2 ------------+
+#
+# 1.1.1.1 does a -x on 1.1
+# 1.1.1.2 does a -x on 1.1 (a nop -- 1.1 already not there).
+# 1.2 does a -i1.1 (a nop -- 1.1 is already there).
+# in bar, 1.3 does a -i1.1 (a nop -- 1.1 is already there).
+# They merge.  In foo, 1.1 is not in the tip because -x is newer.
+# In bar, 1.1 is in the tip because -i in 1.3 is newer than -x in 1.1.1.2
+#
+fresh_commercial --compat project
+touch foo bar
+bk new $Q foo bar
+bk edit $Q -i1.1 foo
+bk edit $Q -i1.1 bar
+bk delta $Q -fy1.2 foo bar
+bk _get $Q -e -r1.1 -x1.1 foo
+bk _get $Q -e -r1.1 -x1.1 bar
+bk delta $Q -fy1.1.1.1 foo bar
+bk _get $Q -e -r1.1.1.1 -x1.1 foo
+bk _get $Q -e -r1.1.1.1 -x1.1 bar
+bk delta $Q -fy1.1.1.2 foo bar
+bk edit $Q foo
+bk edit $Q -i1.1 bar
+bk delta $Q -fy1.3 foo bar
+bk edit $Q -M foo bar
+bk delta $Q -fy1.4 foo bar
+ELEM=`bk set -e -r1.1 -r+ foo`
+test -z "$ELEM" || fail 1.1 is in the tip of foo
+ELEM=`bk set -e -r1.1 -r+ bar`
+test "$ELEM" = 1.1 || fail 1.1 is in not the tip of bar
+echo OK
+
+echo $N Transform back and forth, and see no change .................$NL
+bk commit $Q -f
+cd ..
+# Dump list of dups as part of the clone, to verify dups are there
+_BK_SHOWDUPS=1 bk clone -q --upgrade project clean-merges 2> ERR || fail -f ERR
+cat <<EOF > WANT
+bar: duplicate include in 1.2 of 1.1 and in parent 1.1
+bar: duplicate exclude in 1.1.1.2 of 1.1 and in 1.1.1.1
+bar: duplicate include in 1.3 of 1.1 and in 1.2
+foo: duplicate include in 1.2 of 1.1 and in parent 1.1
+foo: duplicate exclude in 1.1.1.2 of 1.1 and in 1.1.1.1
+EOF
+cmpfiles WANT ERR
+# flip back
+bk clone $Q --no-bk-merge clean-merges downgrade
+echo +5,4 > WANT
+for f in foo bar
+do
+	bk _scat project/$f > p.$f
+	bk _scat downgrade/$f > d.$f
+	cmpfiles p.$f d.$f
+	bk prs -hnd'$if(:MERGE:){:DI:}' project/$f > GOT
+	cmpfiles WANT GOT
+	# show merges -i in old and not in new
+	bk prs -hnd'$if(:MERGE:){:DI:}' clean-merges/$f > CLEAN
+	test -s CLEAN && fail -f CLEAN not clean
+done
+echo OK

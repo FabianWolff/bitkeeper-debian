@@ -1,0 +1,151 @@
+# Copyright 1999-2001,2005-2006,2009-2010,2013-2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+echo $N Create long data w/ no keyword ..............................$NL
+mkdir src
+cd src
+COUNT=1
+while true
+do
+	echo $N 12345678901234567890123456789012345678901234567890$NL >> long
+	echo $N 12345678901234567890123456789012345678901234567890$NL >> long
+	echo $N 12345678901234567890123456789012345678901234567890$NL >> long
+	echo $N 12345678901234567890123456789012345678901234567890$NL >> long
+	COUNT=`expr $COUNT + 1`
+	if [ $COUNT -ge 40 ]; then break; fi
+done
+echo 12345678901234567890123456789012345678901234567890 >> long
+bk undos long > long.sav
+cp long.sav long
+bk ci $Q -i long
+bk admin -Z long
+if bk _test ! -f SCCS/s.long; then echo failed to create history; exit 1; fi
+bk co $Q long
+cmp -s long long.sav
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+echo $N Create long data w/ sccs keyword ............................$NL
+rm -f tmp
+COUNT=1
+while true
+do
+	echo $N 12345678901234567890@I@123456789012345678901234567$NL >> tmp
+	echo $N 12345678901234567890123456789012345678901234567890$NL >> tmp
+	echo $N 12345678901234567890123456789012345678901234567890$NL >> tmp
+	echo $N 12345678901234567890123456789012345678901234567890$NL >> tmp
+	COUNT=`expr $COUNT + 1`
+	if [ $COUNT -ge 40 ]; then break; fi
+done
+echo 12345678901234567890123456789012345678901234567890 >> tmp
+sed -e's/@/%/g' < tmp > long1
+sed -e's/@I@/1.1/g' < tmp > X
+bk undos X > long1.ref 
+cp long1 long1_1.1.sav
+bk ci $Q -i long1
+bk admin -Z long1
+if bk _test ! -f SCCS/s.long1; then echo failed to create history; exit 1; fi
+bk co $Q long1
+cmp -s long1 long1.ref
+if [ $? -ne 0 ]; then echo failed; diff long1 long1.ref; exit 1; fi
+echo OK
+echo $N Create long data w/ rcs keyword .............................$NL
+#rm -f tmp
+COUNT=1
+while true
+do
+	echo $N 12345678901234567890\$RCSfile\$1234567890123456789$NL >> long2
+	echo $N 12345678901234567890123456789012345678901234567890$NL >> long2
+	echo $N 12345678901234567890123456789012345678901234567890$NL >> long2
+	echo $N 12345678901234567890123456789012345678901234567890$NL >> long2
+	COUNT=`expr $COUNT + 1`
+	if [ $COUNT -ge 40 ]; then break; fi
+done
+echo 12345678901234567890123456789012345678901234567890 >> long2
+sed -e's/\$RCSfile\$/\$RCSfile: s.long2 \$/g' < long2 > X
+bk undos X > long2.ref 
+bk ci $Q -i long2
+bk admin -Z long2
+bk admin -fRCS long2
+if bk _test ! -f SCCS/s.long2; then echo failed to create history; exit 1; fi
+bk co $Q long2
+cmp -s long2 long2.ref
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+echo $N Create a change set .........................................$NL
+bk commit $S -yCset
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo failed to clear pending list; bk pending; exit 1; fi
+echo OK
+cores
+echo $N Create a copy of the project ................................$NL
+cd "$HERE"
+bk clone $Q project copy
+if [ ! -d copy ]; then echo failed to make top level directory; exit 1; fi
+cd copy
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+echo OK
+echo $N Check propagation of delta w/ long line .....................$NL
+cd "$HERE/project/src"
+bk co $Q -l long1
+sed -e's/1/X/g' < long1 > tmp
+bk undos tmp > long1
+cp long1 long1_1.2.sav
+bk ci $Q -y long1 || fail
+bk co $Q long1
+sed -e's/\%I\%/1.2/g' < tmp > X
+bk undos X > long1.ref
+cmp -s long1 long1.ref
+if [ $? -ne 0 ]; then echo failed; diff long1 long1.ref; exit 1; fi
+bk commit $S -yCset
+# takepatch buffering message triggered by long line; disable env
+bk send $Q -r1.3 - | (cd "$HERE/copy"; bk -?_BK_DEVELOPER= takepatch) 
+cd "$HERE/copy/src"
+bk resolve $Q
+bk co $Q long1
+cmp -s long1 "$HERE/project/src/long1.ref"
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+echo $N Check clone of workspace w/ long line .......................$NL
+cd "$HERE/project"
+bk clone $Q "$HERE/project" "$HERE/copy2"
+cd "$HERE/copy2"
+bk cset $Q -m.. > ../PATCH
+mkdir "$HERE/copy3"
+cd "$HERE/copy3"
+BK_CONFIG=checkout:none bk takepatch -aTif ../PATCH
+cd "$HERE/copy2/src" || fail
+bk co $Q long1
+cmp -s long1 "$HERE/project/src/long1.ref"
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+cd "$HERE/copy3/src" || fail
+bk co $Q long1
+cmp -s long1 "$HERE/project/src/long1.ref"
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+cd "$HERE/copy3/src"
+echo OK
+echo $N Check diffs with long line ..................................$NL
+cd "$HERE/project/src"
+bk diffs -h --no-unified -r1.1 -r1.2 long1 > diff
+diff long1_1.1.sav long1_1.2.sav > diff.ref
+diff diff diff.ref  
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK

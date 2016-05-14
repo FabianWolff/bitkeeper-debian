@@ -1,0 +1,283 @@
+# Copyright 2001-2006,2009,2012-2014,2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# For each flag we have, make sure we can add and delete it if that is allowed.
+# Make sure we cannot change it if it is not allowed.
+
+EOLN="EOLN_NATIVE EOLN_WINDOWS EOLN_UNIX"
+MAYCHANGE="RCS YEAR4 SHELL EXPAND1 SCCS NOMERGE"
+MAYNOT="BITKEEPER CSETMARKED HASH"
+
+echo "description: BitKeeper Test repository" > "$HERE/c"
+echo "email:		nobody@nowhere.bk" >> "$HERE/c"
+bk setup -f -c"$HERE/c" project
+cd project
+echo $N Creat initial file ..........................................$NL
+echo Yo yo yo yo > xflags
+bk new $Q xflags
+bk commit $Q -ywhatever
+echo OK
+
+echo $N Clear all the flags .........................................$NL
+for f in $MAYCHANGE $EOLN
+do	bk admin -F$f xflags >/dev/null 2>&1
+done
+bk admin -FEOLN_NATIVE xflags >/dev/null 2>&1
+echo OK
+
+for f in $MAYCHANGE $EOLN
+do	echo $N Set flag $f and make sure it is there .$NL
+	LEN=`echo $f | wc -c`
+	LEN=`expr 25 - $LEN`
+	FILL=`printf "%${LEN}s\n" "" | sed -e 's/ /./g' 2> /dev/null`
+	echo $N $FILL$NL
+	bk admin -f$f xflags || fail
+	bk flags xflags > FLAGS
+	grep -q $f FLAGS || {
+		echo flag $f not found
+		cat FLAGS
+		exit 1
+	}
+	echo OK
+	echo $N Clear flag $f and make sure it is gone .$NL
+	LEN=`echo $f | wc -c`
+	LEN=`expr 24 - $LEN`
+	FILL=`printf "%${LEN}s\n" "" | sed -e 's/ /./g' 2> /dev/null`
+	echo $N $FILL$NL
+	bk admin -F$f xflags || fail
+	bk flags xflags > FLAGS
+	grep -q $f FLAGS && {
+		echo flag $f found
+		exit 1
+	}
+	echo OK
+done
+
+bk flags xflags > START
+for f in $MAYNOT
+do	echo $N Make sure we can not change flag $f .$NL
+	LEN=`echo $f | wc -c`
+	LEN=`expr 27 - $LEN`
+	FILL=`printf "%${LEN}s\n" "" | sed -e 's/ /./g' 2> /dev/null`
+	echo $N $FILL$NL
+	bk admin -f$f xflags 2>/dev/null && fail
+	bk flags xflags > FLAGS
+	cmp -s FLAGS START || {
+		echo changed a flag that should not be changed
+		diff START FLAGS
+		exit 1
+	}
+	bk admin -F$f xflags 2>/dev/null && fail
+	bk flags xflags > FLAGS
+	cmp -s FLAGS START || {
+		echo changed a flag that should not be changed
+		diff START FLAGS
+		exit 1
+	}
+	echo OK
+done
+
+echo $N Make sure that the xflags command thinks things are OK ......$NL
+bk xflags -s xflags || {
+	echo failed
+	bk log xflags
+	exit 1
+}
+echo OK
+
+echo $N Commit, clone, make sure we get the same file ...............$NL
+bk commit $Q -ywhatever
+bk admin -z
+bk clone $Q -r1.1 . ../clone || fail
+cd ../clone
+bk pull $Q || fail
+bk admin -z
+bk _scat SCCS/s.xflags > A
+bk _scat ../project/SCCS/s.xflags > B
+cmpfiles A B
+bk xflags -s xflags || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Turn them all on at once, check it ..........................$NL
+CMD=""
+for i in $MAYCHANGE EOLN_NATIVE
+do	CMD="-f$i $CMD"
+done
+bk admin $Q $CMD xflags || {
+	echo admin failed
+	exit 1
+}
+bk xflags -s || {
+	echo xflags failed
+	bk xflags -n
+	exit 1
+}
+echo OK
+
+echo $N Turn them all off at once, check it .........................$NL
+CMD=""
+for i in $MAYCHANGE EOLN_NATIVE
+do	CMD="-F$i $CMD"
+done
+bk admin $Q $CMD xflags || {
+	echo admin failed
+	exit 1
+}
+bk xflags -s || {
+	echo xflags failed
+	bk xflags -n
+	exit 1
+}
+echo OK
+echo $N Turning off a flag already in off state  .....................$NL
+REV1=`bk prs -hr+ -d:I: xflags`
+bk admin -FSCCS xflags 2> admin.out 
+grep -q "SCCS flag is already off"  admin.out
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+REV2=`bk prs -hr+ -d:I: xflags`
+if [ X"$REV1" != X"$REV2" ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Rip out all the flags, put them back, check it ..............$NL
+bk _scat SCCS/s.xflags | perl -ne 'print unless /^.cX/ || /^.f x /' | bk undos > s.bad
+bk _mv s.bad SCCS/s.bad
+bk admin -z || fail
+bk xflags bad
+rm -f A B
+bk _scat SCCS/s.xflags > A
+bk _scat SCCS/s.bad > B
+cmpfiles A B
+echo OK
+
+echo $N Clear eoln flags, make sure EOLN_UNIX is set ................$NL
+for i in $EOLN
+do	bk admin -F$f xflags >/dev/null 2>&1
+done
+test "`bk flags xflags`" = "xflags BITKEEPER,CSETMARKED,EOLN_UNIX" || {
+	echo failed
+	bk flags xflags
+	exit 1
+}
+echo OK
+
+echo $N Clear EOLN_UNIX, should set EOLN_NATIVE .....................$NL
+bk admin -FEOLN_UNIX xflags 
+test "`bk flags xflags`" = "xflags BITKEEPER,CSETMARKED,EOLN_NATIVE" || {
+	echo failed
+	bk flags xflags
+	exit 1
+}
+echo OK
+
+echo $N Clear EOLN_NATIVE, should set EOLN_UNIX .....................$NL
+bk admin -FEOLN_NATIVE xflags 
+test "`bk flags xflags`" = "xflags BITKEEPER,CSETMARKED,EOLN_UNIX" || {
+	echo failed
+	bk flags xflags
+	exit 1
+}
+echo OK
+
+for f in $EOLN
+do	echo $N Set flag $f and make sure it is only eoln .$NL
+	LEN=`echo $f | wc -c`
+	LEN=`expr 21 - $LEN`
+	FILL=`printf "%${LEN}s\n" "" | sed -e 's/ /./g' 2> /dev/null`
+	echo $N $FILL$NL
+	bk admin -f$f xflags 
+	test "`bk flags xflags`" = "xflags BITKEEPER,CSETMARKED,$f" || {
+		echo failed
+		bk flags xflags
+		exit 1
+	}
+	echo OK
+done
+
+echo $N Make sure check is happy with EOLN_WINDOWS ..................$NL
+bk _rm -f bad SCCS/s.bad
+echo foo > dos
+echo bar >> dos
+bk new $Q dos
+bk admin -fEOLN_WINDOWS dos
+bk -r check -ac || fail
+echo OK
+
+echo $N Test that EOLN_WINDOWS doesn\'t break hasDiffs ...............$NL
+# need clean to invalidate timestampdb
+bk clean dos
+bk edit $Q dos || fail
+bk sfiles -c > OUT || fail -f OUT
+test -s OUT && fail -f OUT should not have modified files
+echo OK
+
+echo $N Check that flags are remembered on branches .................$NL
+touch foo
+bk new $Q foo
+bk admin -fYEAR4 foo 2> OUT || fail
+if [ -s OUT ]; then
+	cat OUT
+	echo failed
+	exit 1
+fi
+bk admin -FYEAR4 foo 2> OUT || fail
+if [ -s OUT ]; then
+	cat OUT
+	echo failed
+	exit 1
+fi
+bk admin -fYEAR4 foo 2> OUT || fail
+if [ -s OUT ]; then
+	cat OUT
+	echo failed
+	exit 1
+fi
+bk admin -r1.3 -fYEAR4 foo 2>OUT || fail
+if [ -s OUT ]; then
+	cat OUT
+	echo failed
+	exit 1
+fi
+echo OK
+echo $N Check that flags use the correct _same_ value ...............$NL
+# Bug which was fixed: same was p->added + p->same - p->deleted
+# which could mean same is now less than zero
+# same should be and with this change is: p->added + p->same
+# Test: set same to 3, then delete 2 lines, then alter flag.
+# With bug, same was -1 in sfile, and 0 by prs, since it stopped at the '-'
+# With fix, same == 1
+bk edit $Q foo
+cat - <<EOF > foo
+1
+2
+3
+EOF
+bk delta $Q -y"5 new lines" foo
+bk edit $Q foo
+cat - <<EOF > foo
+1
+EOF
+bk delta $Q -y"5 new lines" foo
+bk admin -fEXPAND1 foo 2> OUT || fail
+same=`bk prs -r+ -hnd:LU: foo`
+test "$same" -eq 1 || {
+	echo Fail
+	echo Expected _same_ to be "'1'" and it was "'$same'"
+	exit 1
+}
+echo OK
+
+

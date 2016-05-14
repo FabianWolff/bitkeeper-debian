@@ -1,0 +1,45 @@
+# Copyright 2013 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Setup .......................................................$NL
+commercial project
+mkdir dir
+echo foo > dir/foo
+bk new -q dir/foo
+mkdir dir/dir2
+echo foo > dir/dir2/foo
+bk new -q dir/dir2/foo
+bk ignore 'dir -prune'
+bk sfiles -p > GOT
+cat > WANT << EOF
+BitKeeper/etc/SCCS/s.ignore
+EOF
+cmpfiles WANT GOT
+bk commit $Q -ywhatever
+cd ..
+bk clone -q --sccs-compat project repo 2>ERR && fail -f ERR should fail
+cat <<EOF > WANT
+sfiles: -prune dir when .bk/dir exists
+Incomplete archive: sfiles returned errror
+sfio errored
+EOF
+cmpfiles ERR WANT
+rm -rf repo  # XXX should that be there?
+echo OK
+
+echo $N Attempt to create a new in a prune\'d directory...............$NL
+cd project
+(echo 'dir/dir2/SCCS/s.foo|+') | bk commit -ybad $Q - || fail
+bk repocheck -q 2> ERR && fail -f ERR should fail
+echo 'failed (bug - can still create illegal cset)'

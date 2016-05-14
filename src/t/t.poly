@@ -1,0 +1,156 @@
+# Copyright 2012-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+sanitize() {
+	# filter out the file name from the key
+	perl -i.old -pe 's?bk/[^|]*\|([^|]*)\S+\b?<$1>?; s/PENDING.*//' $1
+	rm -f $1.old
+}
+
+echo $N Make a repo to test poly cases ..............................$NL
+commercial project
+touch foo newfile
+bk new $Q foo
+bk commit $Q -yrepo
+bk edit $Q foo
+bk delta $Q -fynull foo
+bk new $Q newfile
+cp -rp . ../snapshot
+bk commit $Q -yrepo
+cd ../snapshot
+rm BitKeeper/log/repo_id
+bk id -r > newid
+bk parent $Q ../project
+FOOKEY=`bk prs -r+ -hnd:KEY: foo`
+echo OK
+
+echo $N Duplicate delta, missing merge delta in file ................$NL
+cd "$HERE"
+cp -rp snapshot duplicate
+cd duplicate
+echo 'SCCS/s.foo|+' | bk commit $Q -y'foo' - || fail
+bk pull -q 2> GOT && fail -f GOT
+sanitize GOT
+cat <<EOF > WANT
+commit: ChangeSet is a merge but is missing
+a required merge delta for this rootkey
+	<foo>
+The commit is aborted.
+Commit aborted, no changes applied.
+resolve: RESYNC directory left intact.
+====================================================
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N New local delta in newfile - tickles takepatch error ........$NL
+# This should give the same type of error as above, but because it
+# looks like a new file, it is coming over the patch as an sfio, and
+# hits a logic problem there:
+cd "$HERE"
+cp -rp snapshot newlocal-newfile
+cd newlocal-newfile
+bk edit $Q newfile
+bk delta $Q -fynull newfile
+echo 'SCCS/s.newfile|+' | bk commit $Q -y'foo' - || fail
+bk pull -q 2> GOT && fail -f GOT
+sanitize GOT
+cat <<EOF > WANT
+commit: ChangeSet is a merge but is missing
+a required merge delta for this rootkey
+	<newfile>
+The commit is aborted.
+Commit aborted, no changes applied.
+resolve: RESYNC directory left intact.
+====================================================
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Make new csets in the remote repo ...........................$NL
+cd "$HERE"/project
+bk edit $Q foo newfile
+bk delta $Q -fynull foo newfile
+bk commit $Q -ynew-cset
+echo OK
+
+echo $N Merge on both sides with duplicate delta marked .............$NL
+cd "$HERE"
+cp -rp snapshot merge-dup
+cd merge-dup
+echo 'SCCS/s.foo|+' | bk commit $Q -y'foo' - || fail
+bk edit $Q foo
+bk delta $Q -fynull foo
+echo 'SCCS/s.foo|+' | bk commit $Q -y'foo' - || fail
+bk pull -q 2> GOT && fail -f GOT
+sanitize GOT
+cat <<EOF > WANT
+Duplicate delta found in ChangeSet
+	Rev: 1.2  Key: <foo>
+	Both keys in file SCCS/s.foo
+	Same key found in ChangeSet:1.2.1.1,1.3
+Please write support@bitkeeper.com with the above
+error about duplicate deltas
+The commit is aborted.
+Commit aborted, no changes applied.
+resolve: RESYNC directory left intact.
+====================================================
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Merge on both sides with no duplicate deltas marked .........$NL
+# We didn't block non-dup-key poly in the past, and still don't
+cd "$HERE"
+cp -rp snapshot merge
+cd merge
+bk edit $Q foo
+bk delta $Q -fynull foo
+echo 'SCCS/s.foo|+' | bk commit $Q -y'foo' - || fail
+CRC=`bk crypto -h "$FOOKEY" 'rick approves'`
+echo "$FOOKEY $CRC" > BitKeeper/etc/ignore-poly
+bk pull $Q || fail
+echo OK
+
+echo $N Check poly MONOTONIC dangling stripdel ......................$NL
+cd "$HERE"/project
+bk rm foo
+bk _rm -fr BitKeeper/deleted
+bk -r check -ag | bk gone $Q -
+GONEKEY=`bk prs -r+ -hnd:KEY: BitKeeper/etc/gone`
+cp -rp . ../copy
+cd ../copy
+rm BitKeeper/log/repo_id
+bk id -r > newid
+cd ../project
+bk rm newfile
+bk _rm -fr BitKeeper/deleted
+bk -r check -ag | bk gone $Q -
+bk commit $Q -ygone-proj
+cd ../copy
+bk rm newfile
+bk _rm -fr BitKeeper/deleted
+bk -r check -ag | bk gone $Q -
+bk commit $Q -ygone-copy
+CRC=`bk crypto -h "$GONEKEY" 'rick approves'`
+echo "$GONEKEY $CRC" >> BitKeeper/etc/ignore-poly
+bk pull $Q ../project || fail
+bk unpull $Q -sf || fail
+bk edit $Q BitKeeper/etc/gone || fail
+# This tests delta.c:strip_danglers for unmarking
+bk delta $Q -fynull BitKeeper/etc/gone || fail
+bk commit $Q -ycollapsed. || fail
+bk prs -hnd:DANGLING: BitKeeper/etc/gone > OUT
+test -s OUT && fail -f OUT
+echo OK

@@ -1,0 +1,86 @@
+# Copyright 2013-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Testing subline highlightning................................$NL
+cat <<EOF > LEFT
+1
+change of "quotes" should just highlight quotes
+2
+changing every other char should not be choppy
+3
+but changing a few should highlight
+4
+--adding --options --should --line --up
+5
+same.o as.o lists.o of.o object.o files.o
+6
+whitespace	only	   changes	  should be orange
+7
+"clist" and "keystate" should highlight the whole word
+8
+	int foo[3];	// the ] should NOT be highlighted
+9
+tab	space tab/space	 space/tab 	tab/tab		space/space  end
+10
+# This next tab to space should be highlighted and in the same line
+	
+11
+EOF
+cat <<EOF > RIGHT
+1
+change of 'quotes' should just highlight quotes
+2
+ChAnGiNg EvErY OtHeR ChAr ShUlD NoT Be ChOpPy
+3
+But Changing a Few Should Highlight
+4
+--adding --more --options --should --line --up
+5
+same.o as.o lists.o of.o more.o object.o files.o
+6
+whitespace	only     changes 	should be orange
+7
+"keystate" and "clist" should highlight the whole word
+8
+	int foo[NFILES] = {0};	// the ] should NOT be highlighted
+9
+tab space	tab/space 	space/tab	 tab/tab  space/space		end
+10
+# This next tab to space should be highlighted and in the same line
+
+11
+EOF
+bk difftool LEFT RIGHT
+echo OK
+
+echo $N Testing interblock alignment.................................$NL
+cat <<EOF > LEFT
+common start
+MATCH in the left side should be aligned with MATCH1, not MATCH2
+	MATCH
+common end
+EOF
+cat <<EOF > RIGHT
+common start
+MATCH in the left side should be aligned with MATCH1, not MATCH2
+	ADD1
+	MATCH1
+	ADD2
+	ADD3
+	MATCH2
+	ADD4
+common end
+EOF
+bk difftool LEFT RIGHT
+echo OK

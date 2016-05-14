@@ -1,0 +1,143 @@
+# Copyright 2010-2013 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Some randomish stuff which helps things to be predictable and fail
+BK_RANDOM=1000197497459382
+BK_DATE_TIME_ZONE="98/09/22 16:23:31+00:00"
+_BK_NO_UNIQ=1
+export BK_DATE_TIME_ZONE _BK_NO_UNIQ BK_RANDOM
+
+# The attribute file messes up this test, I don't know why. --Wayne
+_BK_NO_ATTR=1
+export _BK_NO_ATTR
+
+echo $N Order check in cset checksum and file path ..................$NL
+# do not use cache, as we want predictable repo
+fresh_commercial --compat project
+# two files, one 'del' will get move to a component and partitioned.
+# from the product, it will look deleted.  The keep file is kept.
+echo line > keep
+touch del
+bk new $Q keep del
+bk commit $Q -ybase
+bk clone $Q . ../copy
+# make a diamon cset graph - here's the trunk - edit both
+bk edit $Q keep del
+echo 1 > del
+cat > keep <<EOF
+line
+EOF
+# this is branch on del, because of path sorting
+bk delta $Q -ytrunk keep
+bk delta $Q -ybranch del
+bk commit $Q -ytrunk
+# ... here's the branch - move del to component anno (anno sorts before del)
+cd ../copy
+bk mv del anno/del
+bk edit $Q keep
+echo 8 >> keep
+bk delta $Q -ybranch keep
+bk commit $Q -ybranch
+# make the merge
+bk pull $Q || fail
+# partition it up, which will remove 'del' from product and 'keep' from comp
+echo anno > comps
+bk partition $Q -Ccomps . ../partition
+cd ../partition
+# Sanity check that test case does indeed not work
+bk -r check || fail
+_BK_NO_SORTKEY=1 bk -r check 2> GOT && fail
+cat > WANT <<EOF
+SCCS/s.ChangeSet: 1.3 is not earlier than 1.2.1.1
+SCCS/s.ChangeSet: 1.3 is not earlier than 1.2.1.1
+anno/SCCS/s.ChangeSet: 1.3 is not earlier than 1.2.1.1
+anno/SCCS/s.ChangeSet: 1.3 is not earlier than 1.2.1.1
+EOF
+cmpfiles WANT GOT
+# And that file sorting works too
+cd anno
+bk -r check || fail
+_BK_NO_SORTKEY=1 bk -r check 2> GOT && fail
+cat > WANT <<EOF
+SCCS/s.ChangeSet: 1.3 is not earlier than 1.2.1.1
+SCCS/s.ChangeSet: 1.3 is not earlier than 1.2.1.1
+SCCS/s.del: 1.2 is not earlier than 1.1.1.1
+SCCS/s.del: 1.2 is not earlier than 1.1.1.1
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Sortkeys in a partition are the same as original keys .......$NL
+cd "$HERE"
+# rootkeys do not match - sortkeys does not track random bits
+# XXX for grafting, should it?
+bk changes -qr1.0.. -and:KEY: copy > WANT
+bk changes -qr1.0.. -and:SORTKEY: partition > GOT
+bk changes -qr1.0.. -and:KEY partition > GOT-key
+cmpfiles WANT GOT
+cmp -s WANT GOT-key && fail
+# check file keys
+cd copy/anno
+bk prs -hnd:KEY: del > ../../WANT-del
+cd ../../partition/anno
+bk prs -hnd:SORTKEY: del > ../../GOT-del
+bk prs -hnd:KEY: del > ../../GOT-del-key
+cd ../..
+cmpfiles WANT-del GOT-del
+cmp -s WANT-del GOT-del-key && fail
+echo OK
+
+echo $N Test that sortpath default to pathname ......................$NL
+cd "$HERE"/partition/anno
+bk mv del save
+SORTP=`bk prs -r+ -hnd:SORTKEY: save | perl -pe 's/[^|]*.([^|]*).*/$1/'`
+test "$SORTP" = save || fail sortpath "'$SORTP'" should be "'save'"
+echo OK
+
+echo $N Test that sortkeys do not store sortSum if the same .........$NL
+cd "$HERE/copy/anno"
+bk _scat SCCS/s.del > Y
+perl -pe 's/cK00059/cK00059|00059/' < Y | bk undos > X
+cmp -s X Y && fail should be different
+chmod 444 X
+bk _mv X SCCS/s.del
+bk admin -z -Znone del
+bk _cp SCCS/s.del X
+cmpfiles X Y
+echo OK
+
+echo $N Test that sortkeys are now set by bk cp .....................$NL
+# make two kids of a node, a and b, with same timestamp, courtesy
+# of env vars and uniq db.  'a' sorts to trunk because of name.
+# bk cp a c, so now inherited name of node is 'c', and see that 'c'
+# sorts before 'b' because of sortkeys.
+cd "$HERE/copy"
+touch a
+bk new $Q a
+bk commit $Q -ya || fail
+bk push $Q
+bk mv a b
+cd ..
+# these fork deltas 'a' and 'b' get the same time stamp
+bk edit $Q project/a copy/b
+bk delta $Q -fysync project/a copy/b
+bk --cd=project commit $Q -ya
+bk --cd=copy commit $Q -yb
+cd copy
+bk pull $Q
+test -f Bitkeeper/log/features && fail has features
+bk cp b c 2>ERR
+grep -q sortkey BitKeeper/log/features || fail no sortkey
+bk check c || fail
+echo OK

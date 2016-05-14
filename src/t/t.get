@@ -1,0 +1,702 @@
+# Copyright 1999-2001,2003-2011,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test "$PLATFORM" = "WIN32" && USER=`bk getuser -r`
+
+SAVE=`bk getuser`
+commercial project
+echo Hallo > date
+printf "bam\0data\0" > bam
+bk new $Q date bam
+
+echo $N Check for path in initial checkin ...........................$NL
+test `bk prs -hnd:DPN: -r+ date` = date || fail
+echo OK
+mkdir -p aa/bb/cc/dd
+cd aa/bb/cc/dd
+echo Hallo > date
+bk new $Q date
+
+echo $N Check for path in sub dir1 ..................................$NL
+test `bk prs -hnd:DPN: -r+ date` = aa/bb/cc/dd/date || fail
+echo OK
+
+echo $N Check for path in sub dir2 ..................................$NL
+cd ../../../..
+echo Hallo > aa/bb/cc/dd/date2
+bk new $Q  aa/bb/cc/dd/date2
+test `bk prs -hnd:DPN: -r+ aa/bb/cc/dd/date2` = aa/bb/cc/dd/date2 || fail
+echo OK
+
+bk co $Q -l date
+echo Hi >> date
+bk ci $Q -y date
+bk co $Q -l date
+echo Hi >> date
+bk ci $Q -y date
+
+echo $N Make sure -Gname works ......................................$NL
+bk get $S -GA -r1.1 date
+bk get $S -G B -r1.2 date
+bk get $S -GC -r1.1 bam
+if [ ! -f A ]; then echo Failed to creat A.; exit 1; fi
+if [ ! -f B ]; then echo Failed to creat B.; exit 1; fi
+if [ ! -f C ]; then echo Failed to creat C.; exit 1; fi
+if writable B; then echo B is writable; exit 1; fi
+if [ -f date ]; then echo Created date and it should not have; exit 1; fi
+grep -q Hallo A
+if [ $? -ne 0 ]; then echo Bad data in A.; exit 1; fi
+grep -q HI A
+if [ $? -ne 1 ]; then echo Bad data in A.; exit 1; fi
+grep -q Hallo B
+if [ $? -ne 0 ]; then echo Bad data in B.; exit 1; fi
+grep -q Hi B
+if [ $? -ne 0 ]; then echo Bad data in B.; exit 1; fi
+printf "bam\0data\0" > WANT
+checkfiles WANT C
+echo OK
+rm -f A B C WANT
+
+echo $N Make sure -Ga/b/c/name works ................................$NL
+mkdir -p a/b/c
+bk get $S -Ga/b/c/A -r1.1 date
+bk get $S -G a/b/c/B -r1.2 date
+if [ ! -f a/b/c/A ]; then echo Failed to creat a/b/c/A.; exit 1; fi
+if [ ! -f a/b/c/B ]; then echo Failed to creat a/b/c/A.; exit 1; fi
+if [ -f date ]; then echo Created date and it should not have; exit 1; fi
+if [ -f a/b/c/date ]; then echo Created date and it should not have; exit 1; fi
+grep -q Hallo a/b/c/A
+if [ $? -ne 0 ]; then echo Bad data in a/b/c/A.; exit 1; fi
+grep -q HI a/b/c/A
+if [ $? -ne 1 ]; then echo Bad data in a/b/c/A.; exit 1; fi
+grep -q Hallo a/b/c/B
+if [ $? -ne 0 ]; then echo Bad data in a/b/c/B.; exit 1; fi
+grep -q Hi a/b/c/B
+if [ $? -ne 0 ]; then echo Bad data in a/b/c/B.; exit 1; fi
+echo OK
+
+echo $N Make sure -p works ..........................................$NL
+rm -rf A	# may be the "a" dir from previous test (case folding)
+bk get $Q -p -r1.1 date > A
+test -f A || fail
+grep -q Hallo A || fail
+rm -f A
+bk get $Q -p -r1.1 bam > A
+test -f A || fail
+printf "bam\0data\0" > WANT
+checkfiles WANT A
+echo OK
+rm -f A WANT
+
+echo $N Check error if get -r with no -p ............................$NL
+bk get $Q -r1.1 date 2> ERR
+if [ $? -eq 0 ]; then echo Get succeed; exit 1; fi
+grep -q "specify revisions without" ERR
+if [ $? -ne 0 ]; then echo Wrong error msg; exit 1; fi
+echo OK
+echo $N Check error if get -i with no -p ............................$NL
+bk get $Q -i1.1 date 2> ERR
+if [ $? -eq 0 ]; then echo Get succeed; exit 1; fi
+grep -q "specify include/exclude without" ERR
+if [ $? -ne 0 ]; then echo Wrong error msg; exit 1; fi
+echo OK
+echo $N Check error if get -x with no -p ............................$NL
+bk get $Q -x1.1 date 2> ERR
+if [ $? -eq 0 ]; then echo Get succeed; exit 1; fi
+grep -q "specify include/exclude without" ERR
+if [ $? -ne 0 ]; then echo Wrong error msg; exit 1; fi
+echo OK
+echo $N Check error if get -i and -x of same revision ...............$NL
+bk get $Q -p -i1.1 -x1.1 date 2> ERR
+if [ $? -eq 0 ]; then echo Get succeed; exit 1; fi
+grep -q "Same revision appears in both lists" ERR
+if [ $? -ne 0 ]; then echo Wrong error msg; exit 1; fi
+echo OK
+
+echo $N Check paths in file .........................................$NL
+test `bk prs -hnd:DPN: -r+ date` = date || fail
+echo OK
+
+echo $N Check hosts in file .........................................$NL
+hostname=bk_regression.bk
+test `bk prs -hnd:HOST: -r+ date` = $hostname || fail
+X=`bk _heapdump date | grep ^USERHOST | sort -u | wc -l`
+if [ $X -ne 1 ]; then echo Duplicate hosts.; exit 1; fi
+echo OK
+
+echo $N Check zones in file .........................................$NL
+zone=`bk zone`
+test `bk prs -hnd:TZ: -r+ date` = $zone || fail
+X=`bk _heapdump date | grep ^ZONE | sort -u | wc -l`
+if [ $X -ne 1 ]; then echo Duplicate zones; exit 1; fi
+echo OK
+
+echo $N Check paths in moved file ...................................$NL
+bk _cp SCCS/s.date SCCS/s.moved
+bk get $Q -e moved
+_BK_MV_OK=1 bk delta $Q -y moved
+test `bk prs -hnd':DPN|PARENT:-:DPN:' -r+ moved` = 'date-moved' || fail
+echo OK
+
+echo $N Make sure get -g does not get file ..........................$NL
+bk get $S -g date
+if [ -f date ]; then echo Failed, got file.; exit 1; fi
+echo OK
+
+echo $N Make sure get -k does not expand keywords ...................$NL
+bk get $S -e date
+if [ -f core ]; then echo core dumped; exit 1; fi
+echo '@A@ @B@ @D@ @E@ @F@ @G@ @H@ @I@ @L@ @M@ @P@ @R@ @S@ @T@ @U@ @W@ @Y@ @Z@ @@@' | sed s/@/%/g | bk undos > date
+X=`wc date`
+bk ci $Q -y date
+bk get $S -k date
+if [ -f core ]; then echo core dumped; exit 1; fi
+if writable date; then echo date is writable and should not be; exit 1; fi
+if [ "$X" != "`wc date`" ]; then echo Failed - wrong size.; exit 1; fi
+echo OK
+
+echo $N Make sure get does expand keywords ..........................$NL
+bk get $S date
+if [ -f core ]; then echo core dumped; exit 1; fi
+if writable date; then echo date is writable and should not be; exit 1; fi
+if [ "$X" = "`wc date`" ]; then echo Failed - wrong size.; exit 1; fi
+echo OK
+
+echo $N RCS keywords should fail w/o -fRCS ..........................$NL
+bk get $S -e date
+echo '$Id$' > date
+bk ci $S -y date
+bk get $S date
+if writable date; then echo date is writable and should not be; exit 1; fi
+if [ '$Id$' != "`cat date`" ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N RCS keywords should work w/ -fRCS ...........................$NL
+bk admin $Q -fRCS date
+bk get $S date
+if writable date; then echo date is writable and should not be; exit 1; fi
+if [ '$Id$' = "`cat date`" ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N Get -ep should fail .........................................$NL
+bk get $S -ep date > junk 2>&1 && fail -f junk
+if bk _test -f "SCCS/p.date"; then echo failed, created p.file; exit 1; fi
+echo OK
+
+echo $N Get -eg should remove readonly gfile ........................$NL
+bk get $S -eg date
+if [ -f "date" ]; then echo failed, did not remove file; exit 1; fi
+if writable date; then echo failed, added writable file; exit 1; fi
+bk _rm "SCCS/p.date"
+echo OK
+
+echo $N Get -er will roll back to rev r .............................$NL
+rm -f olddate
+bk get $Q -Golddate -k -r1.4 date
+bk edit $Q -r1.4 date || fail
+if ! cmp olddate date; then echo Fail; exit 1; fi
+bk delta $Q -y1.4 date || fail
+if [ "`bk prs -r+ -hnd:DI: date`" != '-7,6' ]; then echo Fail; exit 1; fi
+rm -f olddate
+bk get $Q -Golddate -k -r1.6 date
+bk edit $Q -r1.6 date || fail
+if ! cmp olddate date; then echo Fail; exit 1; fi
+bk delta $Q -y1.6 date || fail
+if [ "`bk prs -r+ -hnd:DI: date`" != '-8' ]; then echo Fail; exit 1; fi
+echo OK
+
+echo $N Test that there is no leak of exclude list between files ....$NL
+cat <<EOF > list
+moved|1.3
+date|1.4
+EOF
+bk edit - 2> GOT < list
+bk unedit moved date
+cat <<EOF > WANT
+moved 1.4 exc: 1.4 -> 1.5: 3 lines
+date 1.8 exc: 1.5,1.6,1.7,1.8 -> 1.9: 1 lines
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Make sure get -ab works .....................................$NL
+echo HI > T
+bk ci $Q -i T
+if [ "`bk get $S -pab T`" != "T	HI" ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N Make sure get -ar works .....................................$NL
+if [ "`bk get $S -par T`" != "1.1	HI" ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N Make sure get -aO works .....................................$NL
+name=`bk prs -r+ -hnd:MD5KEY: T`
+if [ "`bk get $S -paO T`" != "$name.1	HI" ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N Make sure get -au works .....................................$NL
+if [ "`bk get $S -pau T`" != "bk/$USER	HI" ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N Make sure get -Ab works .....................................$NL
+echo HI > T
+chmod -w T
+if [ "`bk get $S -pAb T`" != "T     | HI" ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N Make sure get -Ar works .....................................$NL
+if [ "`bk get $S -pAr T`" != "1.1   | HI" ]; then echo Failed.; exit 1; fi
+echo OK
+
+echo $N Make sure get -Au works .....................................$NL
+test "`bk get $S -pAu T | sed 's/ +/\\s/g'`" != "bk/$USER\s|\sHI" || {
+	echo Failed
+	bk get $S -pAu T | sed 's/ +/\\s/g'
+	exit 1
+}
+echo OK
+
+echo $N Make sure get does not get ChangeSet ........................$NL
+rm -f T
+bk clean
+bk get -q
+test -f ChangeSet && {
+	echo should not have gotten ChangeSet
+	exit 1
+}
+bk get -q .
+test -f ChangeSet && {
+	echo should not have gotten ChangeSet
+	exit 1
+}
+bk clean
+echo OK
+
+echo $N Make sure get -e does not get ChangeSet .....................$NL
+bk get -qe
+test -f ChangeSet && {
+	echo should not have gotten ChangeSet
+	exit 1
+}
+bk get -qe .
+test -f ChangeSet && {
+	echo should not have gotten ChangeSet
+	exit 1
+}
+bk clean
+echo OK
+
+echo $N Make sure get ChangeSet does get the ChangeSet file .........$NL
+bk get -q ChangeSet
+test -f ChangeSet || {
+	echo should have gotten ChangeSet
+	exit 1
+}
+bk clean
+echo OK
+
+echo $N Make sure get -e ChangeSet does get the ChangeSet file ......$NL
+bk get -qe ChangeSet
+test -f ChangeSet || {
+	echo should have gotten ChangeSet
+	exit 1
+}
+bk clean
+echo OK
+
+echo $N Make sure get -S does not reget a read only file ............$NL
+bk get $Q moved
+sed s/Hi/Bye/ < moved > M
+rm -f moved
+mv M moved
+chmod 0444 moved
+bk get -S moved || {
+	echo get should not have errored
+	exit 1
+}
+bk get -qkp moved | cmp -s - moved && {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Make sure get -S does not reget an edited file ..............$NL
+bk get $Q -e moved
+sed s/Hi/Bye/ < moved > M
+mv M moved
+bk get -S moved || {
+	echo get should not have errored
+	exit 1
+}
+bk get -qkp moved | cmp -s - moved && {
+	echo failed
+	exit 1
+}
+bk unedit moved
+echo OK
+
+echo $N Make sure get -S does get an ungotten file ..................$NL
+bk get $Q -S moved
+test -f moved || {
+	echo failed
+	exit 1
+}
+echo OK
+
+if [ $PLATFORM = "WIN32" ]
+then #-------------------------------------------------------------
+
+echo $N Make sure get creats gfile with real name ...................$NL
+echo "hi" > test.c
+bk ci $Q -i test.c
+bk edit $Q TEST.C
+echo new > test.C
+bk delta $Q -ychk_path  test.C
+DPN=`bk prs -h -r+ -d:DPN: test.C`
+if [ "$DPN" != "test.c" ]; then echo failed; exit 1; fi
+echo OK
+fi #---------------------------------------------------------------
+
+echo $N Test get with foo.c -Gbar.c .................................$NL
+echo foo.c > foo.c
+bk new $Q foo.c
+bk get $Q foo.c -Gbar.c || {
+	echo failed to exit cleanly
+	exit 1
+}
+test -f bar.c -a ! -w bar.c || {
+	echo failed get bar.c
+	exit 1
+}
+test `cat bar.c` = foo.c || {
+	echo incorrect contents
+	cat bar.c
+	exit 1
+}
+echo OK
+
+echo $N Test edit with foo.c -Gbar.c ................................$NL
+bk edit $Q foo.c -Gbar.c || fail
+test -f bar.c -a -w bar.c || fail
+test `cat bar.c` = foo.c || fail
+bk _test -f SCCS/s.foo.c || fail
+bk _test -f SCCS/p.foo.c && fail
+echo OK
+
+echo $N Test get with -Gsubdir foo.c ................................$NL
+mkdir subdir
+REV=`bk prs -r+ -hnd:I: foo.c`
+bk mv foo.c src/foo.c
+bk get $Q -Gsubdir src/foo.c || {
+	echo failed to exit cleanly
+	exit 1
+}
+test -f src/foo.c && fail got src/foo.c in . not in subdir/src/foo.c
+test -f subdir/foo.c && fail got foo.c in subdir not subdir/src
+test -f subdir/src/foo.c || fail expected file in subdir/src/foo.c
+test -w subdir/src/foo.c && fail expected non-writable file in subdir/src/foo.c
+test `cat subdir/src/foo.c` = foo.c || {
+	echo incorrect contents
+	cat subdir/foo.c
+	exit 1
+}
+rm -fr subdir/src
+echo OK
+
+echo $N Test edit with -Gsubdir foo.c ...............................$NL
+bk edit $Q -Gsubdir src/foo.c || fail
+test -f src/foo.c && fail got src/foo.c in . not in subdir/src/foo.c
+test -f subdir/foo.c && fail got foo.c in subdir not subdir/src
+test -f subdir/src/foo.c || fail expected file in subdir/src/foo.c
+test -w subdir/src/foo.c || fail expected writable file in subdir/src/foo.c
+test `cat subdir/src/foo.c` = foo.c || {
+	echo incorrect contents
+	cat subdir/foo.c
+	exit 1
+}
+rm -fr subdir/src
+echo OK
+
+echo $N Test editwith -Gsubdir -rREV foo.c uses historical name .....$NL
+# same as bk edit -r$REV -Gsubdir src/foo.c showing rset lists can be processed
+echo "src/foo.c|$REV" | bk edit -Gsubdir - 2> GOT || {
+	echo failed to exit cleanly
+	exit 1
+}
+# historical name is foo.c
+test -f src/foo.c && fail got src/foo.c in . not in subdir/src/foo.c
+test -f subdir/src/foo.c && fail got foo.c in subdir/src not subdir
+test -f subdir/foo.c || fail expected file in subdir/foo.c
+test -w subdir/foo.c || fail expected writable file in subdir/foo.c
+test `cat subdir/foo.c` = foo.c || {
+	echo incorrect contents
+	cat subdir/foo.c
+	exit 1
+}
+echo "src/foo.c 1.1: 1 lines" > WANT
+cmpfiles GOT WANT
+rm -fr subdir/foo.c
+bk mv src/foo.c foo.c
+echo OK
+
+echo $N Test get with -Gsubdir ......................................$NL
+bk get $Q -Gsubdir || {
+	echo failed to exit cleanly
+	exit 1
+}
+for i in `bk gfiles -1 | grep -v ChangeSet`
+do	test -f subdir/$i || {
+		echo failed get $i
+		exit 1
+	}
+done
+echo OK
+
+
+echo $N Test sccs get with foo.c -Gbar.c ............................$NL
+mkdir bin
+BK="`bk bin`"/bk
+SCCS=bin/sccs
+test -f "${BK}.exe" && {
+	BK="${BK}.exe"
+	SCCS=bin/sccs.exe
+}
+cp "$BK" $SCCS
+rm -rf subdir T
+./bin/sccs clean
+./bin/sccs get $Q foo.c -Gbar.c || {
+	echo failed to exit cleanly
+	exit 1
+}
+test -f bar.c || {
+	echo failed get bar.c
+	exit 1
+}
+test `cat bar.c` = foo.c || {
+	echo incorrect contents
+	cat bar.c
+	exit 1
+}
+echo OK
+
+echo $N Test sccs get with -Gsubdir foo.c ...........................$NL
+mkdir subdir
+rm -f bar.c
+./bin/sccs get $Q -Gsubdir foo.c || {
+	echo failed to exit cleanly
+	exit 1
+}
+test -f foo.c && {
+	echo got foo.c in . not in subdir
+	exit 1
+}
+test -f subdir/foo.c || {
+	echo failed get foo.c
+	exit 1
+}
+test `cat subdir/foo.c` = foo.c || {
+	echo incorrect contents
+	cat subdir/foo.c
+	exit 1
+}
+echo OK
+
+echo $N Test sccs get with -Gsubdir .................................$NL
+./bin/sccs get $Q -Gsubdir || {
+	echo failed to exit cleanly
+	exit 1
+}
+for i in `./bin/sccs sfiles -g1 | grep -v ChangeSet`
+do	test -f subdir/$i || {
+		echo failed get $i
+		exit 1
+	}
+done
+echo OK
+
+echo $N Check get -e -x+ works ......................................$NL
+bk get $Q -kp foo.c > WANT
+bk get $Q -e -g foo.c
+echo newfoo.c > foo.c
+bk delta $Q -ynew foo.c
+bk get $Q -e foo.c
+# assert data is different
+cmp -s WANT foo.c && fail
+bk unedit foo.c
+bk get $Q -e -x+ foo.c
+checkfiles WANT foo.c
+bk unedit foo.c
+echo OK
+
+echo $N Check get -e -x+ fails with bam data ........................$NL
+bk get $Q -e -x+ bam || { echo fix test; exit 1; }
+bk unedit bam
+echo "failed (bug not filed)"
+
+echo $N Check get -e when running checkout: edit ....................$NL
+BK_CONFIG="checkout:edit! "
+export BK_CONFIG
+bk get $Q -e foo.c || fail
+# trying to re-edit fails
+bk get $Q -e foo.c && fail
+bk get -e foo.c 2> ERR && fail
+grep -q 'Writable foo\.c exists' ERR || fail
+# trying to add -x+ passes
+bk get $Q -e -x+ foo.c || fail
+checkfiles foo.c WANT
+# but if we do it again -- fail
+bk get $Q -e -x+ foo.c && fail
+bk get -e -x+ foo.c 2> ERR && fail
+grep -q 'Writable foo\.c exists' ERR || fail
+# switching back to plain edit fails
+bk get $Q -e foo.c && fail
+# reset to just edited, then modify and retest
+bk unedit foo.c
+echo x > foo.c
+bk get $Q -e foo.c 2> ERR && fail
+bk get -e foo.c 2> ERR && fail
+grep -q 'Writable foo\.c exists' ERR || fail
+bk get $Q -e -x+ foo.c && fail
+bk get -e -x+ foo.c 2> ERR && fail
+grep -q 'Writable foo\.c exists' ERR || fail
+# set to just edit, mv foo.c bar.c and test
+bk unedit foo.c
+test -f bar.c && exit 1		# shouldn't be there; just checking
+mv foo.c bar.c
+bk _mv SCCS/s.foo.c SCCS/s.bar.c
+bk _mv SCCS/p.foo.c SCCS/p.bar.c
+bk _mv SCCS/d.foo.c SCCS/d.bar.c
+bk get -e -x+ bar.c 2> ERR && fail
+grep -q 'Writable bar\.c exists' ERR || fail
+bk get $Q -e -x+ foo.c 2> ERR && fail
+bk get -e bar.c 2> ERR && fail
+grep -q 'Writable bar\.c exists' ERR || fail
+bk get $Q -e bar.c 2> ERR && fail
+echo OK
+
+echo $N Check that get cleans up pfile...............................$NL
+cd "$HERE"/project
+BK_CONFIG="checkout:none! " bk clean $Q
+BK_CONFIG="checkout:get! "
+export BK_CONFIG
+touch foo.c
+bk new $Q foo.c
+bk edit $Q foo.c
+bk _test -f SCCS/p.foo.c || fail
+bk get $Q foo.c && {
+	echo failed
+	echo get should have errored
+	exit 1
+}
+rm -f foo.c
+# because of keywords, it's a physical pfile and it is still there.
+bk _test -f SCCS/p.foo.c || fail
+bk get $Q foo.c || {
+	echo failed
+	echo get should have worked
+	exit 1
+}
+bk _test -f SCCS/p.foo.c && fail
+echo OK
+
+echo $N Check that get does not clean up when -i/-x .................$NL
+bk clean foo.c
+bk edit $Q -x+ foo.c
+rm foo.c
+bk _test -f SCCS/p.foo.c || {
+	echo failed
+	echo edit did not create pfile
+	exit 1
+}
+bk get foo.c > OUT 2>&1 && {
+	echo failed
+	echo get should have failed
+	cat OUT
+	exit 1
+}
+grep -q 'foo.c has merge.include.exclude but no gfile' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Check that get -p does not care about -i/-x .................$NL
+bk edit -x+ $Q ChangeSet
+rm ChangeSet
+bk get -p -hr+ ChangeSet > XXX 2>&1
+test `wc -l < XXX` -eq 6 || {
+	echo wrong answer
+	cat XXX
+	exit 1
+}
+echo OK
+
+echo $N Check that get -D does not care about -i/-x .................$NL
+bk get -D -hr+ ChangeSet > XXX 2>&1
+test `wc -l < XXX` -eq 6 || {
+	echo wrong answer
+	cat XXX
+	exit 1
+}
+echo OK
+
+echo $N Check that get -DD does not care about -i/-x ................$NL
+bk get -DD -hr+ ChangeSet > XXX 2>&1
+test `wc -l < XXX` -eq 6 || {
+	echo wrong answer
+	cat XXX
+	exit 1
+}
+echo OK
+
+echo $N Check that get -G does not care about -i/-x .................$NL
+bk get -Gmyfoo -hr+ ChangeSet 2> ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+grep -q "ChangeSet 1.1: 5 lines" ERR || {
+	echo wrong msg
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Check that prs does not care about -i/-x ....................$NL
+bk prs -hr+ -nd:HASHCOUNT: ChangeSet > XXX 2>&1
+test "`cat XXX`" = "5" || {
+	echo wrong answer
+	cat XXX
+	exit 1
+}
+echo OK
+
+echo $N Check that edit -S does not complain about writable files ...$NL
+bk clean bar.c
+bk edit $Q bar.c
+bk edit -S bar.c 2>ERR
+test -s ERR && fail -f ERR
+echo OK
+
+echo $N Check that -S is not allowed with -M/-i/-x ..................$NL
+bk edit -S -x1.1 bar.c 2>ERR && fail -f ERR
+grep -q ": -S cannot be used with -r/-M/-i/-x" ERR || fail -f ERR
+bk edit -S -i1.1 bar.c 2>ERR && fail -f ERR
+grep -q ": -S cannot be used with -r/-M/-i/-x" ERR || fail -f ERR
+bk edit -S -M1.2 bar.c 2>ERR && fail -f ERR
+grep -q ": -S cannot be used with -r/-M/-i/-x" ERR || fail -f ERR
+bk edit -S -r1.2 bar.c 2>ERR && fail -f ERR
+grep -q ": -S cannot be used with -r/-M/-i/-x" ERR || fail -f ERR
+echo OK

@@ -1,0 +1,298 @@
+# Copyright 2013-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+checkbk()
+{
+	bk --cd="$1" features | grep -q BKFILE || fail  missing BKFILE
+	ENC=`bk prs -hnd:ENCODING: -r+ "$1"/ChangeSet`
+	test X"$ENC" = XBK,bweave,bkmerge || fail "$1" not BKfile $ENC
+	ENC=`bk prs -hnd:ENCODING: -r+ "$1"/BitKeeper/etc/config`
+	test X"$ENC" = XBK,bkmerge || fail "$1/.../config" not BKfile $ENC
+	bk _test -f "$1"/SCCS/1.ChangeSet || fail no heap @ $1
+	test -d "$1"/.bk/SCCS || fail $1 no remap
+
+	# call recursively for all components
+	bk repotype -q "$1" && {
+		for c in `bk --cd="$1" comps -h`
+		do    checkbk "$1"/"$c"
+		      test -f "$1"/BitKeeper/log/features || fail
+		done
+	}
+	true
+}
+
+checkascii()
+{
+	FEAT="$1"/BitKeeper/log/features
+
+	test -f "$FEAT" || return
+	grep -q BKFILE "$FEAT" && fail $FEAT has BKFILE
+	ENC=`bk prs -hnd:ENCODING: -r+ "$1"/ChangeSet`
+	test X"$ENC" = Xascii,gzip || fail "$1" is BKfile $ENC
+	ENC=`bk prs -hnd:ENCODING: -r+ "$1"/BitKeeper/etc/config`
+	test X"$ENC" = Xascii,gzip || fail "$1/.../config" is BKfile $ENC
+	bk _test -f "$1"/SCCS/1.ChangeSet && fail heap @ $1
+	test -d "$1"/SCCS || fail $1 not SCCS
+
+	# call recursively for all components
+	bk repotype -q "$1" && {
+		for c in `bk --cd="$1" comps -h`
+		do    checkascii "$1"/"$c"
+		done
+	}
+	true
+}
+
+echo $N Test that bk setup creates BK sfiles by default .............$NL
+touch c
+bk setup -cc -f repo.bk || fail
+checkbk repo.bk
+
+bk setup -cc -f --compat repo.ascii || fail
+checkascii repo.ascii
+echo OK
+
+echo $N Test that bk clone creates BK sfiles at the right time ......$NL
+for f in ascii bk; do
+	for t in "" "--no-bk-sfile" "--upgrade-repo"; do
+		bk clone $Q $t repo.$f clone.$f$t || fail
+	done
+done
+bk clone $Q repo.ascii repo.bk/clone.ascii || fail
+bk clone $Q repo.bk repo.ascii/clone.bk || fail
+
+# all of these are ascii
+checkascii clone.ascii
+checkascii clone.ascii--compat
+checkascii clone.bk--compat
+checkascii repo.bk/clone.ascii
+
+# all of these are BK
+checkbk clone.bk
+checkbk clone.ascii--upgrade-repo
+checkbk clone.bk--upgrade-repo
+checkbk repo.ascii/clone.bk
+
+echo OK
+
+echo $N Attach an ascii and BK standalone to ascii and BK nested ....$NL
+bk setup -P -cc -f nest.bk || fail
+checkbk nest.bk
+
+bk setup -P -cc -f --compat nest.ascii || fail
+checkascii nest.ascii
+
+cd "$HERE"
+for NEST in bk ascii; do
+	bk setup -f nest.$NEST/newcomp || fail
+	for C in bk ascii; do
+		# For more testing, add -C here, then commit later
+		# The commit "fixes" the ChangeSet file
+		bk attach $Q "$HERE"/repo.$C nest.$NEST/comp.$NEST.$C || fail
+	done
+done
+# And toss in a few standalones living under a product
+bk clone $Q repo.ascii nest.bk/clone.ascii || fail
+bk clone $Q repo.bk nest.ascii/clone.bk || fail
+
+checkascii nest.ascii
+# XXX standalone under nested will match remap of nested tree.
+#checkascii nest.bk/clone.ascii
+checkbk nest.bk
+#checkbk nest.ascii/clone.bk
+echo OK
+
+echo $N Demonstrate that we can convert to BWEAVEv2 .................$NL
+bk clone $Q nest.ascii nest.ascii.mixed || fail
+cd nest.ascii.mixed/newcomp
+#replace product features
+(echo BKFILE; echo BWEAVEv2; echo SAMv3) > ../BitKeeper/log/features
+bk -r admin -Zsame || fail
+echo OK
+
+echo $N Setup a mixed/broken nested repository ......................$NL
+#replace product features
+(echo BKFILE; echo BWEAVEv3; echo SAMv3) > ../BitKeeper/log/features
+bk -r admin -Zsame || fail
+#restore
+echo SAMv3 > ../BitKeeper/log/features
+cd ..
+bk repocheck $Q 2>ERR && fail should fail
+cd ..
+bk clone $Q --no-bk-sfile nest.ascii.mixed nest.ascii.fixed || fail
+checkascii nest.ascii.fixed
+echo OK
+
+
+echo $N Undocumented form of attach is supported ....................$NL
+bk setup -cc -f --compat repo.ascii-2 || fail
+bk clone $Q repo.ascii-2 nest.bk/comp.ascii-2 || fail
+cd nest.bk
+bk attach $Q -N comp.ascii-2 || fail
+checkbk .
+echo OK
+
+echo $N Pull sfio ...................................................$NL
+cd "$HERE"
+bk clone $Q --upgrade-repo repo.ascii repo.bin-copy
+cd repo.ascii
+echo new file > foo
+bk new $Q foo
+bk commit $Q -yfoo
+cd ../repo.bin-copy
+bk pull $Q || fail
+echo new file > bar
+bk new $Q bar
+bk commit $Q -ybar
+cd ../repo.ascii
+bk pull $Q ../repo.bin-copy || fail
+echo OK
+
+echo $N Show that check fixes files with the wrong format ...........$NL
+for h in ascii bk; do
+	cd "$HERE"/repo.$h
+	echo hi > file1
+	echo bye > file2
+	bk new $Q file1 file2
+	if [ $h = ascii ]
+	then	echo BKFILE > BitKeeper/log/features
+		_BK_DEVELOPER= bk check file1
+		rm -f BitKeeper/log/features
+	else	mv BitKeeper/log/features SAVE.feat
+		_BK_DEVELOPER= bk check file1
+		mv SAVE.feat BitKeeper/log/features
+	fi
+	bk repocheck -q 2>ERR && fail -f ERR should fail
+	test `wc -l < ERR` -eq 1 || fail -f ERR
+	grep -q "format wrong file1" ERR || fail
+	_BK_DEVELOPER= bk repocheck $Q || fail
+	bk repocheck $Q || fail should pass now
+done
+echo OK
+
+echo $N Do a clone --upgrade-repo from an non-bweave BK repo ........$NL
+cd "$HERE"
+bk clone $Q nest.ascii nest.oldbk || fail
+cd nest.oldbk
+
+# fake upgrade ascii repo to use BK sfiles (still with SCCS dirs)
+echo BKFILE >> BitKeeper/log/features
+_BK_DEVELOPER= bk repocheck $Q || fail
+
+# show that we auto-upgrade to BWEAVEv2
+bk -e --headers prs -hnd:ENCODING: -r+ ChangeSet > GOT || fail
+cat <<EOF > WANT
+#### 1/4 comp.ascii.ascii ####
+BK,BWEAVEv2
+#### 2/4 comp.ascii.bk ####
+BK,BWEAVEv2
+#### 3/4 newcomp ####
+BK,BWEAVEv2
+#### 4/4 . ####
+BK,BWEAVEv2
+EOF
+cmpfiles GOT WANT
+cd ..
+
+# show --upgrade-repo switches to remap and bweave
+bk clone $Q --upgrade-repo nest.oldbk nest.bin2bweave || fail
+checkbk nest.bin2bweave
+echo OK
+
+echo $N Show that bSFILEv1 is removed when formats change ...........$NL
+cd "$HERE"
+bk clone $Q repo.ascii repo.bsfile || fail
+
+# repo old bSFILEv1 repo
+cd repo.bsfile
+echo bSFILEv1 >> BitKeeper/log/features
+_BK_DEVELOPER= bk repocheck $Q || fail
+
+# simple clone replaces bSFILEv1 with BKFILE
+bk clone $Q . ../repo.bsfile-copy ||fail
+grep -q BKFILE ../repo.bsfile-copy/BitKeeper/log/features || fail
+
+# --upgrade-repo upgrades to BKFILE
+bk clone $Q --upgrade-repo . ../repo.bsfile-upgrade-repo || fail
+checkbk ../repo.bsfile-upgrade-repo
+grep -q bSFILEv1 ../repo.bsfile-upgrade-repo/BitKeeper/log/features && fail
+
+bk clone $Q --no-bk-sfile . ../repo.bsfile-compat || fail
+checkascii ../repo.bsfile-compat
+# the file should be gone
+test -f ../repo.bsfile-compat/BitKeeper/log/features && fail
+echo OK
+
+echo $N Show that --upgrade-repo on upgraded runs no check ..........$NL
+cd "$HERE"
+bk clone $Q --upgrade-repo repo.bsfile-upgrade-repo repo.also-upgraded || fail
+grep -q ' check' repo.also-upgraded/BitKeeper/log/cmd_log && fail full check
+echo OK
+
+echo $N Show that --no-bk-sfile on compat runs no check .............$NL
+bk clone $Q --no-bk-sfile repo.ascii repo.also-ascii || fail
+grep -q ' check' repo.also-ascii/BitKeeper/log/cmd_log && fail full check
+echo OK
+
+cat <<EOF > script
+#!/bin/sh
+grep -q ' check' BitKeeper/log/cmd_log && exit 1
+exit 0
+EOF
+chmod +x script
+
+echo $N Show that --upgrade-repo on same works in nested ............$NL
+# This clone has a full check in newcomp and product
+bk clone $Q --upgrade-repo nest.bk nest.also-upgraded || fail
+grep -q ' check' nest.also-upgraded/BitKeeper/log/cmd_log || fail
+grep -q ' check' nest.also-upgraded/newcomp/BitKeeper/log/cmd_log || fail
+# But do the same thing again and all the checking is cleaned up
+_BK_HEAP_NOREPACK=1 \
+bk clone $Q --upgrade-repo nest.bk nest.also-upgraded-2 || fail
+bk --cd=nest.also-upgraded-2 -e sh -c "'$PWD/script'" || fail
+echo OK
+
+echo $N Show that --compat on same works in nested ..................$NL
+bk clone $Q --compat nest.ascii nest.also-ascii || fail
+bk --cd=nest.also-upgraded-2 -e sh -c "'$PWD/script'" || fail
+echo OK
+
+echo $N Run comps --no-extras on a binary repo ......................$NL
+cd "$HERE"/nest.bk
+bk comps -ch --no-extras >OUT || fail
+echo OK
+
+echo $N Run citool --no-extras on a compat repo .....................$NL
+cd ../nest.ascii
+bk comps -ch --no-extras || fail
+echo OK
+
+echo $N Downgrade repo by by editing features file ..................$NL
+cd ../nest.also-upgraded
+bk repocheck $Q
+rm -f BitKeeper/log/features
+_BK_DEVELOPER= bk repocheck $Q || fail
+cat <<EOF > WANT
+SAMv3
+remap
+EOF
+cmpfiles BitKeeper/log/features WANT
+echo OK
+
+echo $N Add BWEAVEv3 and not BKFILE to features .....................$NL
+echo BWEAVEv3 >> BitKeeper/log/features
+_BK_DEVELOPER= bk repocheck $Q || fail
+ENC=`bk prs -hnd:ENCODING: -r+ ChangeSet`
+test "$ENC" = "BK,bweave" || fail "$ENC"
+echo OK

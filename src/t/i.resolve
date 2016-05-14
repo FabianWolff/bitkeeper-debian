@@ -1,0 +1,103 @@
+# Copyright 2003,2006,2009 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echon Creating initial repositories ...............................
+commercial proj
+echo line 1 > file
+bk new $Q file || exit 1
+mkdir dir1
+echo ff > dir1/ff
+mkdir dir2
+echo gg > dir2/gg
+bk new $Q dir1/ff dir2/gg || exit 1
+bk commit $Q -ystart || exit 1
+cd "$HERE"
+bk clone $Q proj copy3 || exit 1
+for d in proj copy3; do
+	cd "$HERE/"$d
+	for f in file dir1/ff dir2/gg; do
+		bk edit $Q $f
+		echo $d >> $f
+		bk delta $Q -y"$d side" $f || exit 1
+	done
+	bk commit -y"$d" $Q || exit 1
+done
+cd "$HERE/copy3"
+bk pull -s $Q 2> OUT && {
+	echo pull should have had conflict
+	exit 1
+}
+echo OK
+
+echon Testing -p option to conflicts command ......................
+echo
+echo "================================================================="
+echo "Make sure revtool displays the GCA in white, the 1.2 node in red"
+echo "and the 1.1.1.1 branch in green."
+echo "================================================================="
+bk conflicts -p file > /dev/null
+echo OK
+
+echon Testing -f option to conflicts command ......................
+echo
+echo "================================================================="
+echo "Make sure fm3tool comes up and shows the 1.1.1.1 conflict on the"
+echo "left and the 1.2 part on the right.  Type CTRL-Q to quit."
+echo "================================================================="
+bk conflicts -f file > /dev/null
+read
+echo OK
+
+echon Testing -d option to conflicts command ......................
+echo
+echo "================================================================="
+echo "Check the text diffs to make sure they look reasonable."
+echo "================================================================="
+bk conflicts -d file
+echo OK
+
+echon Testing -D option to conflicts command ......................
+echo
+echo "================================================================="
+echo "Make sure difftool shows the same thing that the text diffs did."
+echo "================================================================="
+bk conflicts -D file > /dev/null
+echo OK
+
+echon Checking citool behavior ....................................
+rm -f OUT
+echo
+echo "================================================================="
+echo "Resolve by choosing first the right addition, then the left."
+echo "Commit on the commandline and make sure citool shows only the file"
+echo "you resolved. Quit without doing anything."
+echo "================================================================="
+bk resolve file < /dev/tty
+echo "================================================================="
+echo "Resolve the other two files by just typing 'ul'."
+echo "================================================================="
+bk resolve -q \* < /dev/tty
+echo "================================================================="
+echo "Make sure all three files plus the ChangeSet file are listed."
+echo "Type in comments for the third file plus the ChangeSet file"
+echo "but do NOT commit."
+echo "================================================================="
+bk resolve < /dev/tty
+echo "================================================================="
+echo "Make sure the state of citool is the same as you left it."
+echo "Commit the ChangeSet."
+echo "================================================================="
+bk resolve < /dev/tty
+test -d RESYNC && { echo "ERROR: RESYNC directory should be gone." ; exit 1; }
+echo OK

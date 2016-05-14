@@ -1,0 +1,481 @@
+# Copyright 1999-2000,2004-2006,2009-2010,2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Create first changeset with foo.c and bar.c .................$NL
+cd "$HERE/project"
+echo foo.c > foo.c
+echo bar.c > bar.c
+bk new $Q foo.c bar.c
+bk commit $S --tag=CSET1 -y'foo.c and bar.c'
+echo OK
+
+echo $N Create 2nd changeset with a change to bar.c .................$NL
+bk edit $Q bar.c
+echo bar.c version 2 > bar.c
+bk delta $Q -ywhatever bar.c
+bk commit $S --tag=CSET2 -y'bar.c v2'
+echo OK
+
+echo $N Create 3rd changeset in which we bk rm foo.c ................$NL
+bk rm foo.c
+bk commit $S -y'rm foo.c'
+if bk _test -f SCCS/s.foo.c
+then	echo failed to remove foo.c; exit 1
+fi
+echo OK
+
+echo $N Export 2nd cset and make sure foo.c is there ................$NL
+bk export -rCSET2 ../EXPORT
+if [ ! -f ../EXPORT/foo.c ]
+then	echo failed to get foo.c; exit 1
+fi
+echo OK
+
+echo $N Create 4th changeset in which we bk rm bar.c ................$NL
+bk rm bar.c
+bk commit $S -y'rm bar.c'
+if bk _test -f SCCS/s.bar.c
+then	echo failed to remove bar.c; exit 1
+fi
+if bk _test -f SCCS/s..del-bar.c
+then	echo failed to remove bar.c into deleted dir; exit 1
+fi
+echo OK
+
+echo $N Export 2nd cset and make sure bar.c is there ................$NL
+rm -rf ../EXPORT
+bk export -rCSET2 ../EXPORT
+if [ ! -f ../EXPORT/bar.c ]
+then	echo failed to get bar.c; exit 1
+fi
+echo OK
+
+echo $N Set up for include/exclude tests ............................$NL
+cd "$HERE/project"
+for i in man src html
+do	mkdir $i
+done
+for i in foo bar blech
+do	echo $i > man/${i}.1
+	echo $i > src/${i}.c
+	echo $i > src/${i}.h
+	echo $i > html/${i}.html
+done
+bk extras | bk new $Q -
+bk commit $Q -ywhatever
+bk sfiles -gU | bk sort | while read x
+do echo ./$x
+done > ../LIST
+echo OK
+
+# ===========================================================================
+
+echo $N Exclude src subdirectory ....................................$NL
+rm -rf ../EXPORT
+bk export -tplain -x'src/*' ../EXPORT
+cd ../EXPORT
+find . -type f | bk sort > ../GOT
+cd ..
+grep -v src/ < LIST > WANT
+checkfiles GOT WANT
+echo OK
+
+echo $N Exclude man and html subdirectories .........................$NL
+cd "$HERE/project"
+rm -rf ../EXPORT
+bk export -tplain -x'man/*' -x'html/*' ../EXPORT
+cd ../EXPORT
+find . -type f | bk sort > ../GOT
+cd ..
+grep -v man/ < LIST | grep -v html/ > WANT
+checkfiles GOT WANT
+echo OK
+
+echo $N Exclude all .c and .h files .................................$NL
+cd "$HERE/project"
+rm -rf ../EXPORT
+bk export -tplain -x'*.c' -x'*.h' ../EXPORT
+cd ../EXPORT
+find . -type f | bk sort > ../GOT
+cd ..
+grep -v 'src/' < LIST > WANT
+checkfiles GOT WANT
+echo OK
+
+echo $N Include html pages only .....................................$NL
+cd "$HERE/project"
+rm -rf ../EXPORT
+bk export -tplain -i'*.html' ../EXPORT
+cd ../EXPORT
+find . -type f | bk sort > ../GOT
+cd ..
+grep 'html/' < LIST > WANT
+checkfiles GOT WANT
+echo OK
+
+echo $N Exclude all .c and .h files and include man pages ...........$NL
+cd "$HERE/project"
+rm -rf ../EXPORT
+bk export -tplain -x'*.c' -x'*.h' -i'*.1' ../EXPORT
+cd ../EXPORT
+find . -type f | bk sort > ../GOT
+cd ..
+grep man/ < LIST > WANT
+checkfiles GOT WANT
+echo OK
+
+echo $N Include all .c and .h files .................................$NL
+cd "$HERE/project"
+rm -rf ../EXPORT
+bk export -tplain -i'*.c' -i'*.h' ../EXPORT
+cd ../EXPORT
+find . -type f | bk sort > ../GOT
+cd ..
+grep src/ < LIST > WANT
+checkfiles GOT WANT
+echo OK
+
+echo $N Include all .c and .h files but exclude src/foo.c ...........$NL
+cd "$HERE/project"
+rm -rf ../EXPORT
+bk export -tplain -i'*.c' -i'*.h' -xsrc/foo.c ../EXPORT
+cd ../EXPORT
+find . -type f | bk sort > ../GOT
+cd ..
+grep src/ < LIST | grep -v foo.c > WANT
+checkfiles GOT WANT
+echo OK
+
+# =================== Time test =============================================
+test -d "$TESTDATA/export" && {
+echo $N Set export file time when sfile is owned by another .........$NL
+cd "$HERE"
+# Times used from t.timestamps
+T11=864154091
+bk export -Tktplain "$TESTDATA/export" export
+cd export
+test -f foo || fail no foo
+test $T11 -eq `_mtime foo` || fail $T11 `_mtime foo`
+echo OK
+}
+
+# =================== Patch tests ===========================================
+
+echo $N Exclude src subdirectory in a patch .........................$NL
+cd "$HERE/project"
+bk export -tpatch -x'src/*' > ../PATCH
+grep -q b/src/ ../PATCH && {
+	echo failed to exclude src directory
+	cat ../PATCH
+	exit 1
+}
+echo OK
+
+echo $N Exclude man and html subdirectories in a patch ..............$NL
+bk export -tpatch -x'man/*' -x'html/*' > ../PATCH
+grep -q b/man/ ../PATCH && {
+	echo failed to exclude man directory
+	cat ../PATCH
+	exit 1
+}
+grep -q b/html/ ../PATCH && {
+	echo failed to exclude html directory
+	cat ../PATCH
+	exit 1
+}
+grep -q b/src/ ../PATCH || {
+	echo failed to include src directory
+	cat ../PATCH
+	exit 1
+}
+echo OK
+
+echo $N Exclude all .c and .h files in a patch ......................$NL
+bk export -tpatch -x'*.c' -x'*.h' > ../PATCH
+grep -q b/src/ ../PATCH && {
+	echo failed to exclude some files
+	cat ../PATCH
+	exit 1
+}
+echo OK
+
+echo $N Include html pages only in a patch ..........................$NL
+bk export -tpatch -i'*.html' > ../PATCH
+grep -q html ../PATCH || {
+	echo failed to include html in patch
+	cat ../PATCH
+	exit 1
+}
+grep -q b/src/ ../PATCH && {
+	echo failed to exclude src directory
+	cat ../PATCH
+	exit 1
+}
+grep -q b/man/ ../PATCH && {
+	echo failed to exclude man directory
+	cat ../PATCH
+	exit 1
+}
+echo OK
+
+echo $N Exclude all .c and .h files and include man pages in a patch.$NL
+bk export -tpatch -x'*.c' -x'*.h' -i'*.1' > ../PATCH
+grep -q b/src/ ../PATCH && {
+	echo failed to exclude src directory
+	cat ../PATCH
+	exit 1
+}
+grep -q b/html/ ../PATCH && {
+	echo failed to exclude html directory
+	cat ../PATCH
+	exit 1
+}
+grep -q b/man/ ../PATCH || {
+	echo failed to include man directory
+	cat ../PATCH
+	exit 1
+}
+echo OK
+
+echo $N Include all .c and .h files in a patch ......................$NL
+bk export -tpatch -i'*.c' -i'*.h' > ../PATCH
+grep -q b/man/ ../PATCH && {
+	echo failed to exclude man directory
+	cat ../PATCH
+	exit 1
+}
+grep -q b/html/ ../PATCH && {
+	echo failed to exclude html directory
+	cat ../PATCH
+	exit 1
+}
+grep -q b/src/foo.c ../PATCH || {
+	echo failed to include src/foo.c
+	cat ../PATCH
+	exit 1
+}
+echo OK
+
+echo $N Include all .c and .h files but exclude src/foo.c in a patch.$NL
+bk export -tpatch -i'*.c' -i'*.h' -xsrc/foo.c > ../PATCH
+grep -q b/src/foo.c ../PATCH && {
+	echo failed to exclude src/foo.c
+	cat ../PATCH
+	exit 1
+}
+grep -q b/src/foo.h ../PATCH || {
+	echo failed to include src/foo.h
+	cat ../PATCH
+	exit 1
+}
+echo OK
+
+echo $N Test unified/procedural diffs in a patch ....................$NL
+cat > lod.c <<EOF
+int
+lod_main(int ac, char **av)
+{
+	int	i;
+	int	j;
+	int	k;
+
+	/* This is some filler */
+	/* This is some filler */
+	/* This is some filler */
+	return (lodMain(ac, av, 0));
+}
+EOF
+bk new $Q lod.c
+bk commit $Q -ylod.c
+bk edit $Q lod.c
+sed 's/, 0//' < lod.c > XXX
+mv XXX lod.c
+bk delta $Q -ydiff lod.c
+bk commit $Q -ydiff
+bk export -tpatch -dup > PATCH
+grep -q '@@ lod_main(int' PATCH || {
+	echo failed to do procedural diffs
+	cat PATCH
+	exit 1
+}
+echo OK
+
+echo $N Test regular diffs in a patch ...............................$NL
+bk export -tpatch -d > PATCH
+grep -q '> 	return' PATCH || {
+	echo failed to do regular diffs
+	cat PATCH
+	exit 1
+}
+echo OK
+# XXX - todo, test case where a patch includes a rename
+
+# 2004-02-06-001 - error out if source does not exist
+echo $N Export should fail if source+dest specified but no source ...$NL
+cd "$HERE/project"
+bk export ../bar "$HERE/whoops-plain" 2>ERR
+test -d "$HERE/whoops-plain" && {
+	echo failed when exporting -tplain
+	exit 1
+}
+echo OK
+
+if [ "$PLATFORM" = UNIX ]
+then #-------------------------------------------------------------------
+echo $N Export should work if source is a symlink to a directory ....$NL
+cd "$HERE"
+ln -s project projlink
+bk export projlink fromlink || fail
+cd fromlink || fail
+test -f lod.c || fail
+cd ..
+ln -s fromlink/lod.c filelink
+bk export filelink fromlink 2>ERR && fail
+grep -q "not a directory" ERR || fail
+echo OK
+
+echo $N Check export \-w with symlink ................................$NL
+cd "$HERE/project/src"
+ln -s no/such/file symlnk
+bk new $Q symlnk
+bk commit $Q -ysym
+bk export -w "$HERE/project" "$HERE/exp-sym" || fail
+islink "$HERE/exp-sym/src/symlnk" || fail
+echo OK
+fi #---------------------------------------------------------------------
+
+if [ "`uname -s`" = "Darwin" ]; then
+
+img_cleanup() {
+	# Clean up
+	local mntpoint=$1
+	local device=`df | awk -v MP="$1$" '$0 ~ MP {print $1}'`
+	test -z "$device" && {
+		echo Could not find device
+		exit 1
+	}
+	cd "$HERE"
+	hdiutil detach ${Q:+-quiet} $device
+	rm -f regression.dmg
+}
+
+echo $N Check that exporting to a full disk will fail ...............$NL
+cd "$HERE"
+# Create a small Mac volume and mount it; do test there
+hdiutil create -quiet -size 2m -fs HFS+J -volname Regression regression.dmg
+mkdir regression
+REG="$HERE/regression"
+hdiutil attach ${Q:+-quiet} -mountpoint "$REG" regression.dmg
+test $? = 0 || {
+	echo failed
+	echo Could not mount disk image
+}
+trap 'img_cleanup "$REG"' 0
+cd regression
+commercial project
+awk 'BEGIN { for (i = 0; i < 75000; i++) printf("line %d\n", i); }' > file
+bk new $Q file
+bk commit $Q -y'added files'
+bk get $Q file
+cd ..
+bk export project export 2>"$HERE/ERR" && {
+    echo fail
+    cat "$HERE/ERR"
+    exit 1
+}
+echo OK
+
+fi	# if Darwin
+
+echo $N Demonstrate export -tpatch on nested tree ...................$NL
+cd "$HERE"
+nested nest
+cd gcc
+echo hi > file
+bk new $Q file
+bk commit $Q -S -yhi file
+cd ../gdb
+echo hi > file
+bk new $Q file
+bk commit $Q -S -yhi file
+cd ..
+bk commit $Q -S -yhi
+
+bk export -tpatch -r1.2..1.3 | grep ^diff > OUT
+cat <<EOF > WANT
+diff -Nru a/gcc/file b/gcc/file
+diff -Nru a/gdb/file b/gdb/file
+EOF
+cmpfiles OUT WANT
+
+cd gcc
+bk export -tpatch -s. -r1.2..1.3 | grep ^diff > OUT
+cat <<EOF > WANT
+diff -Nru a/gcc/file b/gcc/file
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N nested export -tpatch -S in component .......................$NL
+bk export -tpatch -S -r1.1..1.2 | grep ^diff > OUT
+cat <<EOF > WANT
+diff -Nru a/file b/file
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N nested export -tplain .......................................$NL
+bk export -tplain "$HERE"/nout || fail
+cd "$HERE"/nout
+bk _find -type f > ../OUT
+cat <<EOF > WANT
+gcc/file
+gdb/file
+EOF
+cmpfiles ../OUT WANT
+echo OK
+
+echo $N nested export -tplain -s. in component.......................$NL
+cd ..
+rm -rf nout
+cd nest/gcc
+bk export -tplain -s. "$HERE"/nout || fail
+cd "$HERE"/nout
+bk _find -type f > ../OUT
+cat <<EOF > WANT
+gcc/file
+EOF
+cmpfiles ../OUT WANT
+echo OK
+
+echo $N nested export -tplain -S in component........................$NL
+cd ..
+rm -rf nout
+cd nest/gcc
+bk export -tplain -S "$HERE"/nout || fail
+cd "$HERE"/nout
+bk _find -type f > ../OUT
+cat <<EOF > WANT
+file
+EOF
+cmpfiles ../OUT WANT
+echo OK

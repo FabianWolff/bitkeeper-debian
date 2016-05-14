@@ -1,0 +1,245 @@
+# Copyright 1999-2003,2005-2009,2011-2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -e
+
+mkBINs
+
+_BK_MIXED_FORMAT=1
+export _BK_MIXED_FORMAT
+
+# force ascii repository
+_commercial_config > c
+echo 'BAM: off!' >> c
+echo compression:none >> c
+bk setup -cc -f --compat proj || fail
+cd proj
+cp ../c .
+bk edit $Q BitKeeper/etc/config
+
+echo $N Run some raw data through the hopper ........................$NL
+mkdir test
+cd test
+touch empty
+echo 0 > empty.size
+cp "$BIN2" data
+bk _stat data | perl -ne '@_ = split(/\|/); print "$_[7]\n"' > data.size
+for mode in c z cz; do
+	for file in empty data; do
+		bk _fgzip -$mode < $file > $file.store.$mode
+		bk _fgzip -d -$mode < $file.store.$mode > $file.orig.$mode
+		cmpfiles $file $file.orig.$mode
+		bk _fgzip -Sd -$mode < $file.store.$mode > $file.test.size
+		cmpfiles $file.size $file.test.size
+		test $mode = cz && {
+			bk _fgzip -a -cz $file.store.$mode < data
+			# Verify XOR is correct by reading the whole file
+			bk _fgzip -d -c < $file.store.$mode > zipped || fail
+			bk _fgzip -d -cz < $file.store.$mode > GOT
+			cat $file data > WANT
+			cmpfiles WANT GOT
+		}
+		true
+	done
+done
+
+# might as well check our gzip
+for file in empty data; do
+	bk _gzip -z6 < $file > $file.store
+	bk _gzip -d < $file.store > $file.orig
+	cmpfiles $file $file.orig
+done
+cd ..
+rm -fr test
+echo OK
+
+test -d "$TESTDATA/binformat2" && {
+echo $N Verify /home/bk/test_data/binformat2 ........................$NL
+cd "$HERE"
+# prove we can read all files in this repository (old crc format)
+bk clone $Q --checkout=get "$TESTDATA/binformat2" || fail
+echo OK
+}
+
+test -d "$TESTDATA/binformat3" && {
+echo $N Verify /home/bk/test_data/binformat3 ........................$NL
+cd "$HERE"
+# prove we can read all files in this repository
+bk clone $Q --checkout=get "$TESTDATA/binformat3" || fail
+echo OK
+}
+
+echo $N Trying to check in some binary data .........................$NL
+cd "$HERE"/proj
+cp "$BIN1" data
+chmod u+w data
+# This makes sure we aren't expanding keywords.
+echo '@A@ @B@ @D@ @E@ @F@ @G@ @H@ @I@ @L@ @M@ @P@ @R@ @S@ @T@ @U@ @W@ @Y@ @Z@ @@@' | sed s/@/%/g >> data
+cp data saved_bin
+BIN1=saved_bin
+cp "$BIN1" uuencode1
+cp "$BIN1" uuencode1z
+# test old auto-binary
+bk new $Q uuencode1 || fail
+# test old auto-binary zipped
+grep -v compression c > BitKeeper/etc/config
+bk new $Q uuencode1z || fail
+cp c BitKeeper/etc/config
+echo 'BAM:1!' >> BitKeeper/etc/config
+cp data uuencode2
+bk new $Q -Euuencode uuencode2 || fail
+cp "$BIN1" bam1
+cp "$BIN1" bam2
+# test auto-binary
+bk new $Q bam1 || fail
+bk new $Q -EBAM bam2 || fail
+for f in uuencode1 uuencode1z uuencode2 bam1 bam2
+do	bk co $Q -l $f
+	cmp -s "$BIN1" $f || fail failed $f
+done
+bk prs -hnr+ -d:COMPRESSION:,:ENC: uuencode1z uuencode1 uuencode2 bam1 bam2 \
+    > OUT
+cat <<EOF >WANT
+gzip,uuencode
+none,uuencode
+none,uuencode
+none,BAM
+none,BAM
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N Trying to diffs unchanged binary data .......................$NL
+bk diffs uuencode1 > d.out 2>&1
+touch d.ref
+checkfiles d.out d.ref
+bk diffs bam1 > d.out 2>&1
+checkfiles d.out d.ref
+echo OK
+
+echo $N Trying to check in unchanged binary data ....................$NL
+bk ci $Q -y uuencode1 || fail
+bk co $Q -l uuencode1 || fail
+echo OK
+
+echo $N Trying to change some binary data ...........................$NL
+for f in uuencode1 bam1
+do	cp "$BIN2" $f
+	bk ci $Q -y $f || fail
+	bk co $Q $f || fail
+	checkfiles "$BIN2" $f
+done
+echo OK
+
+echo $N Checking that revision 1.1 is still OK ......................$NL
+for f in uuencode1 bam1
+do	bk co -r1.1 $Q -G$f $f || fail
+	checkfiles "$BIN1" $f
+done
+echo OK
+
+echo $N Trying to clean an encoded file .............................$NL
+for f in uuencode1 bam1
+do	bk co $Q -l $f || fail
+	bk clean $f || fail
+	test -f $f && fail Clean failed
+	true
+done
+echo OK
+
+echo $N Trying to compress uuencoded data ...........................$NL
+bk admin -Z uuencode1
+bk co -r1.1 $Q -Guuencode1 uuencode1 || fail
+checkfiles "$BIN1" uuencode1
+echo OK
+
+echo $N Check in gzipped data with delta -Z .........................$NL
+bk delta $Q -Euuencode -i -Z data || fail
+ENC=`bk prs -hnr+ -d:COMPRESSION:,:ENC: data`
+test "X$ENC" != Xgzip,uuencode && fail Wrong encoding. $ENC
+echo OK
+
+echo $N Make sure -Z is allowed without -i ..........................$NL
+bk get $Q -e data || fail
+echo '! @ # $ % ^ & * ( )' >>data
+test `bk prs -r+ -hnd:COMPRESSION: data` = gzip || fail
+bk delta $Q -Znone -y data || fail
+test `bk prs -r+ -hnd:COMPRESSION: data` = none || fail
+echo OK
+
+echo $N Trying to change some gzipped data ..........................$NL
+echo "here is some data" > X
+bk undos X > gzipped
+cp gzipped ll
+bk ci -i $Q -y -Z gzipped
+bk co $Q gzipped
+cmp -s ll gzipped
+if [ $? -ne 0 ]; then fail Failed - files differ.; fi
+echo OK
+
+echo $N Trying to clean gzipped data ................................$NL
+bk co $Q -l gzipped
+bk clean gzipped
+if [ $? -ne 0 ]; then fail Clean failed ; fi
+if [ -f gzipped ]; then fail Clean failed ; fi
+echo OK
+
+echo $N Make a gzipped file ascii ...................................$NL
+bk admin -Znone gzipped
+ENC=`bk prs -hnr+ -d:COMPRESSION:,:ENC: gzipped`
+if [ X$ENC != X"none,ascii" ]
+then	fail Wrong encoding. $ENC
+fi
+echo OK
+
+echo $N Make sure it still has the same data ........................$NL
+bk co $Q gzipped
+cmp -s ll gzipped
+if [ $? -ne 0 ]; then fail Failed - files differ.; fi
+echo OK
+
+echo $N Make it gzipped again .......................................$NL
+bk admin -Z gzipped || fail
+ENC=`bk prs -hnr+ -d:COMPRESSION:,:ENC: gzipped`
+if [ X$ENC != X"gzip,ascii" ]
+then	fail Wrong encoding. $ENC
+fi
+echo OK
+
+echo $N Make sure it still has the same data ........................$NL
+bk co $Q gzipped
+cmp -s ll gzipped
+if [ $? -ne 0 ]; then fail Failed - files differ.; fi
+echo OK
+
+echo $N Verifying data checksum .....................................$NL
+bk co $Q -kr1.1 -Ggzipped gzipped
+A=`bk prs -r1.1 -hd:DSUM: gzipped`
+B=`bk checksum -s < gzipped`
+if [ $A -ne $B ]; then fail Failed - chksums $A $B differ.; fi
+echo OK
+
+echo $N Binary data problem: false match ............................$NL
+cd "$HERE"
+commercial project2
+echo 'Binary files foo.c differ' > test
+cd "$HERE"
+bk clone $Q project2 copy || fail
+cd project2
+bk new $Q test || fail
+bk commit $Q -yjunk || fail
+cd "$HERE/copy"
+bk pull $Q || fail
+echo OK
+

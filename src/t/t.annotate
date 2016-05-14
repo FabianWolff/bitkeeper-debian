@@ -1,0 +1,350 @@
+# Copyright 2005-2006,2011-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test "$PLATFORM" = "WIN32" && USER=`bk getuser -r`
+
+echo $N Create initial repository ...................................$NL
+commercial project
+mkdir subdir
+cd subdir
+cat <<EOF > file
+line1
+line2
+line3
+EOF
+BK_DATE_TIME_ZONE="04/08/01 13:13:13-8:00" BK_USER=joe BK_HOST=blow.com \
+    bk new $Q file
+bk commit $Q -yfirst || fail
+bk edit $Q file
+cat <<EOF > file
+line1
+notseen
+line3
+EOF
+BK_DATE_TIME_ZONE="04/08/12 14:13:12-2:00" BK_USER=traveler BK_HOST=boat.com \
+    bk delta -ywhatever $Q file || fail
+bk edit $Q -x+ file
+echo line4 >> file
+BK_DATE_TIME_ZONE="04/08/23 14:14:14-8:00" BK_USER=jane BK_HOST=shoes.com \
+    bk delta -ywhatever $Q file || fail
+bk commit $Q -ysecond || fail
+echo OK
+
+echo $N Check bk annotate ...........................................$NL
+bk annotate file > GOT
+cat <<EOF > WANT
+joe/$USER	1.1	line1
+joe/$USER	1.1	line2
+joe/$USER	1.1	line3
+jane/$USER	1.3	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -a0 .......................................$NL
+bk annotate -a0 file > GOT
+cat <<EOF > WANT
+1	line1
+2	line2
+4	line3
+5	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Demo bk annotate -A0 not lining up at boundary ..............$NL
+# We don't know how many lines before data is output, so use "%7d ".
+# When number overflows, the string will use more space than anticipated.
+bk -?_BK_SEQ_START=9999997 annotate -A0 file > GOT
+cat <<EOF > WANT
+9999998       | line1
+9999999       | line2
+10000001       | line3
+10000002       | line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -ab .......................................$NL
+bk annotate -ab file > GOT
+cat <<EOF > WANT
+file	line1
+file	line2
+file	line3
+file	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -ad .......................................$NL
+bk annotate -ad file > GOT
+cat <<EOF > WANT
+2004/08/01	line1
+2004/08/01	line2
+2004/08/01	line3
+2004/08/23	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -ap .......................................$NL
+bk annotate -ap file > GOT
+cat <<EOF > WANT
+file	line1
+file	line2
+file	line3
+file	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -ar .......................................$NL
+bk annotate -ar file > GOT
+cat <<EOF > WANT
+1.1	line1
+1.1	line2
+1.1	line3
+1.3	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -a5........................................$NL
+MD5KEY1=`bk log -nd:MD5KEY: -r1.1 file`
+MD5KEY2=`bk log -nd:MD5KEY: -r1.3 file`
+bk annotate -a5 file > GOT
+cat <<EOF > WANT
+$MD5KEY1	line1
+$MD5KEY1	line2
+$MD5KEY1	line3
+$MD5KEY2	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -A5........................................$NL
+bk annotate -A5 file > GOT
+cat <<EOF > WANT
+$MD5KEY1        | line1
+$MD5KEY1        | line2
+$MD5KEY1        | line3
+$MD5KEY2        | line4
+EOF
+cmpfiles WANT GOT
+# Does the data line up on a 8 char tab stop?  Tab stops are 8X + 1
+cut -c41- < GOT > WANT
+bk cat file > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -ar -r1.1 .................................$NL
+bk annotate -ar -r1.1 file > GOT
+cat <<EOF > WANT
+1.1	line1
+1.1	line2
+1.1	line3
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -au .......................................$NL
+bk annotate -au file > GOT
+cat <<EOF > WANT
+joe/$USER	line1
+joe/$USER	line2
+joe/$USER	line3
+jane/$USER	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -an .......................................$NL
+bk annotate -an file > GOT
+cat <<EOF > WANT
+1	line1
+2	line2
+3	line3
+4	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -a0bdnru ..................................$NL
+bk annotate -a0bdnru file > GOT
+cat <<EOF > WANT
+1	file	2004/08/01	joe/$USER	1.1	1	line1
+2	file	2004/08/01	joe/$USER	1.1	2	line2
+4	file	2004/08/01	joe/$USER	1.1	3	line3
+5	file	2004/08/23	jane/$USER	1.3	4	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -ab -R+ ...................................$NL
+bk annotate -ab -R+ file > GOT
+cat <<EOF > WANT
+file	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -ad -R1.1 .................................$NL
+bk annotate -ad -R1.1 file > GOT
+cat <<EOF > WANT
+2004/08/01	line1
+2004/08/01	line2
+2004/08/01	line3
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -an -R ....................................$NL
+bk annotate -an -R file > GOT
+cat <<EOF > WANT
+1	line1
+2	line2
+3	notseen
+4	line3
+5	line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -Ar -R+ ...................................$NL
+# This verifies revLen calculated
+bk annotate -Ar -R+ file > GOT
+cat <<EOF > WANT
+1.3   | line4
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check that bk annotate -r and -R are mutually exclusive .....$NL
+bk annotate -R+ -r+ file > GOT 2>&1 && fail should have failed
+echo OK
+
+echo $N Check that bk annotate -c and -R are mutually exclusive .....$NL
+bk annotate -R+ -c2004 file > GOT 2>&1 && fail should have failed
+echo OK
+
+# XXX - doesn't actually test ranges, we do that elsewhere
+echo $N Check that bk annotate -c accepts ranges ....................$NL
+bk annotate -c2004..2004 file > GOT 2>&1 || fail should not have failed
+echo OK
+
+echo $N Check that bk annotate -r does not accept ranges ............$NL
+bk annotate -r1.1..+ file > GOT 2>&1 && fail should have failed
+echo OK
+
+echo $N Make sure that we can use annotate -R -h like sccscat -h ....$NL
+cd "$HERE/project"
+bk annotate -R+ -h ChangeSet > GOT
+bk prs -hr+ -nd':ROOTKEY: :KEY:' subdir/file > WANT
+cmpfiles WANT GOT
+bk annotate -R1.2 -h ChangeSet > GOT
+bk prs -hr1.1 -nd':ROOTKEY: :KEY:' subdir/file > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check that bk annotate -aS ChangeSet works ..................$NL
+# this annotates the hash output, which is new in this cset
+# Just take the file name out of the deltakey
+bk annotate -aS ChangeSet \
+    | sed 's/	.* .*|\([a-zA-Z][^|]*\).*/	\1/' | bk _sort > GOT
+cat <<EOF > WANT
+2	BitKeeper/etc/attr
+2	BitKeeper/etc/collapsed
+2	BitKeeper/etc/config
+2	BitKeeper/etc/gone
+2	BitKeeper/etc/ignore
+4	subdir/file
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -an -R after we delete all the lines ......$NL
+cd subdir
+bk edit $Q file
+echo foo > file
+bk delta -ywhatever $Q file
+bk annotate -R file > GOT
+cat <<EOF > WANT
+joe/$USER	1.1	line1
+joe/$USER	1.1	line2
+traveler/$USER	1.2	notseen
+joe/$USER	1.1	line3
+jane/$USER	1.3	line4
+bk/$USER	1.4	foo
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -w by replacing a line, then excluding ....$NL
+bk edit $Q file
+echo bar > file
+bk delta -ywhatever $Q file
+bk edit $Q -x+ file
+bk delta -ywhatever $Q file
+bk annotate -w -R file > GOT
+cat <<EOF > WANT
+joe/$USER	1.1-d1.4	line1
+joe/$USER	1.1-d1.4	line2
+traveler/$USER	1.2-x1.3	notseen
+joe/$USER	1.1-d1.4	line3
+jane/$USER	1.3-d1.4	line4
+bk/$USER	1.4	foo
+bk/$USER	1.5-x1.6	bar
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -Ar -w -R .................................$NL
+bk annotate -Ar -w -R file > GOT
+cat <<EOF > WANT
+1.1-d1.4      | line1
+1.1-d1.4      | line2
+1.2-x1.3      | notseen
+1.1-d1.4      | line3
+1.3-d1.4      | line4
+1.4           | foo
+1.5-x1.6      | bar
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -Ar -wOLD -rNEW ...........................$NL
+bk annotate -Ar -w1.6 -r1.5 file > GOT
+cat <<EOF > WANT
+1.5-x1.6      | bar
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check bk annotate -Ar -wNEW -rOLD ...........................$NL
+bk annotate -Ar -w1.5 -r1.6 file > GOT
+# The output isn't clear that the line is here because the -x re-included it.
+cat <<EOF > WANT
+1.4-d1.5      | foo
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Demonstrate --seq-limit .....................................$NL
+bk annotate -A0r -R --seq-limit=3..4 file > OUT
+cat <<EOF > WANT
+      3 1.2   | notseen
+      4 1.1   | line3
+EOF
+cmpfiles OUT WANT
+echo OK

@@ -1,0 +1,36 @@
+# Copyright 2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+if [ "$PLATFORM" != "WIN32" ]
+then
+	echo "Tests for Windows only .......................................skipped"
+	exit 0
+fi
+
+echo $N Setup ......................................................$NL
+commercial project # no-op to accept eula
+echo OK
+
+echo $N Checking symlink get on Windows passes, but is quiet .......$NL
+cd "$HERE"
+bk clone $Q bk://data.bitkeeper.com/test_data/symlink
+cd symlink
+bk get $Q foo 2>OUT || fail -f OUT should have passed
+test -s OUT && fail -f OUT OUT file should be empty
+echo OK
+
+echo $N Checking symlink get on Windows with env var set ...........$NL
+BK_WARN_SYMLINK=1 bk get $Q foo 2>OUT || fail -f OUT should have worked
+grep -q "warning: foo is a symlink, skipping it" OUT || fail -f OUT
+echo OK

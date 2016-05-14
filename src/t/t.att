@@ -1,0 +1,49 @@
+# Copyright 2000-2001,2003-2006,2009,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Setup license server for AT\&T files .........................$NL
+commercial license
+bk bkd -q -d -aPORT -ikill || fail
+P=`cat PORT`
+echo OK
+
+echo $N Setup some files ............................................$NL
+cd "$HERE"
+date > date
+bk ci $Q -i -l date || fail
+echo new > date
+bk ci $Q -y date || fail
+echo OK
+bk _kill bk://localhost:$P || fail
+
+echo $N Make sure get -r1.1 works w/ no b flag ......................$NL
+bk get $S -er1.1 date
+if bk _test ! -f SCCS/p.date; then echo Failed, did not edit file.; fail; fi
+bk _cat SCCS/p.date | grep -q '1.1 1.1.1.1 '
+if [ $? -ne 0 ]; then echo Failed, bad rev.; fail; fi
+bk clean date
+echo OK
+#echo $N Make sure get -b works w/ no -b flag ........................$NL
+#bk get $S -eb date
+#grep -q '1.3 1.4 ' SCCS/p.date
+#if [ $? -ne 0 ]; then echo Failed, bad rev.; exit 1; fi
+#bk clean date
+#echo OK
+#echo $N Make sure get -b works with -b flag .........................$NL
+#bk admin $Q -fb date
+#bk get $S -eb date
+#grep -q '1.3 1.3.1.1 ' SCCS/p.date
+#if [ $? -ne 0 ]; then echo Failed, bad rev.; exit 1; fi
+#bk clean date
+#echo OK

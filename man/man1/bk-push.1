@@ -1,0 +1,75 @@
+.so ../bk-macros
+.TH "bk push" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk push \- send local changes to parent repository
+.SH SYNOPSIS
+.B bk push
+.[B] \-aqT
+.[OPTequal] \-E env var
+.[OPTreq] \-c n
+.[ARG] parent \ \.\|.\|.
+.SH DESCRIPTION
+.B bk push
+sends changes in the current repository back to its parent[s] if
+and only if the current repository is a superset of the parent.
+When a parent has changes not found in the current repository,
+.B bk push
+will fail and you will need to do a
+.BR "bk pull" ,
+merge those changes, and retry the push.
+The reason is that the parent is typically a shared
+resource and should not be locked for merging.
+.LP
+If there is no new work in the parent, then all changes in the child
+will be sent to the parent and auto-applied.
+.LP
+To see what would be pushed run
+.DS
+bk changes -aL
+.DE
+You can override the default parent by specifying a different one.
+Doing so changes the parent[s] for the duration of this command only.
+.LP
+You can override the no-merge policy by going to the parent and doing
+a 
+.B bk pull
+and specify the child as the 
+.BR bk\ parent .
+.SH OPTIONS
+.TP \-E\*<env\*>=\*<val\*>
+.B \-a
+If the parent is ahead of your repository, turn the push into a pull
+to merge the new work in your repository.
+.tp
+.OPTreq \-c n
+Try to get the remote lock 
+.ARG n
+times before giving up (default forever).
+.tp
+.OPTequal \-E env val
+Export environment variable to remote site.
+.tp
+.B \-q
+Run quietly.
+.tp
+.B \-T
+Pass 
+.Q \-T
+to
+.B bk resolve
+(\c
+.Q \-T
+means do not use the GUI tools) during
+the pull operation (requires 
+.Q \-a
+and that the parent is a superset).
+.SH "SEE ALSO"
+.SA pull
+.SA parent
+.SA changes
+.SA resolve
+.SA triggers
+.SH CATEGORY
+.B Common
+.br
+.B Repository

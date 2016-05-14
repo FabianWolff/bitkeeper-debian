@@ -1,0 +1,217 @@
+.so ../bk-macros
+.TH "bk pull" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    ============== Pulling changes into your repository ==============
+.SH NAME
+bk pull \- update a repository from its parent[s]
+.SH SYNOPSIS
+.B bk pull
+.[B] \-iqRsTuv
+.[OPTreq] \-c n
+.[OPTreq] \-r rev
+.[ARG] parent \ .\|.\|.
+.SH DESCRIPTION
+.LP
+.B bk pull
+updates a repository from its incoming parent[s].
+Changes are retrieved and automatically applied, if possible.
+You will only be asked to resolve conflicts by hand if a file
+has overlapping changes (changes where both repositories have
+touched the same line in the same file).
+.LP
+To see what would be pulled run
+.DS
+bk changes -aR
+.DE
+.\" XXX - do I really want to tell them this?
+.ig
+.LP
+.B bk pull
+will refuse bring in changes to files which are modified in the
+local repository.
+Should this occur, one way around it is to do
+.DS
+bk -Ac diffs -up > DIFFS
+bk -A unedit
+bk pull
+bk patch -p1 -g1 < DIFFS
+.DE
+If that works, you are done.  If that does not work then the best thing
+is to unedit the attempted patch, unpull the changes, redo the patch
+(which will now work), commit those changes and redo the pull.
+..
+.LP
+.B bk pull
+normally runs resolve, the tool which applies the pulled changes,
+automatically.  Resolve will look at each change, make sure there are
+no conflicts that it can't merge, and apply the change.  You may have to
+(or want to) run resolve manually.  If you do not want automatic merges,
+i.e., you want to diff them by hand, then use the
+.Q \-i
+option.  If resolve
+was run automatically and it found conflicts, the changes have 
+.B not
+been applied;
+you will need to run an interactive resolve to merge and apply the changes.
+.LP
+You can override the default parent by specifying a different one.
+Doing so changes the parent for the duration of this command only.
+.LP
+If you've pulled in error you may use
+.B bk unpull
+to remove the changesets introduced by the pull.
+Please read the 
+.B bk unpull
+man page for important information about what is and is not unpulled.
+.SH SAFETY
+.LP
+In non-nested BitKeeper, after you have pulled from a given
+repository, it is safe to delete the sending side as all the changes
+it contained have been transferred. This is not necessarily true in a
+nested collection since the set of components populated in the sending
+side and the set of components populated in the receiving side might
+not be the same.
+.LP
+In order to solve this problem, BitKeeper utilizes gates, which are
+repositories that you set up as permanent (e.g. integration
+repositories or masters). The URLs for the gates are remembered by
+BitKeeper and used when pulling from non-gate repositories.
+.LP
+When pulling from a nested repository, if the sending side of the pull
+is not a gate, BitKeeper will default to 'safe' mode. In safe mode,
+all components populated in the sending side that are not found in
+gates are transferred to the receiving side. This preserves the
+attribute that pulling from a repository transfers all unique
+information thus allowing the sending side of the pull to be
+deleted.
+.LP
+When pulling from a gate, BitKeeper defaults to unsafe mode. In this
+mode, only the components that are populated in the receiving side are
+included in the pull. ChangeSets made to components in the sending
+side (the gate) that are not populated in the receiving side will not
+be transferred. In this case, removing the sending side (the gate)
+could result in lost work. Only mark as gates repositories that you
+know are not going to be deleted.
+.LP
+When pulling in safe mode, BitKeeper will try hard not to break the
+aliases in the sending side while at the same time minimizing the
+amount of information that needs to be transferred to the receiving
+side. This means that if the sending side has many aliases populated,
+and only some of those would be sufficient to account for all the
+components with unique work, only those aliases would be transferred.
+.LP
+An example: suppose the sending side has components A and B, with new
+work in both.  Suppose the receiving repository just has A.  Pulling
+from the sending side is considered "unsafe" when only the A csets are
+sent but "safe" when the A csets and B component are sent.
+.SH OPTIONS
+.TP \-\-auto\-populate
+.B \-\-auto\-populate
+automatically populate missing components as needed to perform a
+"safe" pull.
+.tp
+.TP \-\-auto\-port
+.B \-\-auto\-port
+automatically turn the pull into a port if needed. Only works in
+standalone repositories. Useful when multiple parents are a
+combination of standalone and components.
+.tp
+.B \-\-batch
+Pass 
+.Q \-\-batch
+to resolve (\c
+.Q \-\-batch
+means do not do interactive resolve of any conflicts, leave that for later.)
+Mutually exclusive with
+.QR \-i .
+.tp
+.OPTreq \-c n
+try to get the remote lock
+.ARG n
+times before giving up (default forever).
+.tp
+.OPTequal \-E env val
+Export environment variable to remote site.
+The environment variable must start with
+.V BKU_ .
+.tp
+.B \-i
+Turn off automerge feature in resolve.
+For each file with parallel work, you are prompted
+to examine the changes and either manually or automatically
+merge them.
+Mutually exclusive with
+.QR \-\-batch .
+.tp
+.B \-q
+Be quiet.
+.tp
+.B \-R
+Do not run resolve at all.  You must run 
+.B bk resolve 
+later.
+.tp
+.OPTreq \-r rev
+Pull up to and including this revision, but exclude later changes.
+(Or key or changeset revision. See 
+.B bk help terms
+under 'rev argument')
+.tp
+.B \-\-safe
+In a nested collection, using this option means that the source
+repository may be safely removed after a successful pull.  
+Either the destination received everything that the source had,
+or the non-pulled components were found in a safe location (a gate).
+This option is implied when pulling from a nested collection that
+is not a gate.
+This option has no effect in a traditional standalone repository.
+See also
+.B \-\-unsafe
+below.
+.tp
+.B \-\-stats
+After finishing the pull, print statistics about what was pulled. The
+format is compatible with the output of bk diffs --stats-only.
+This option can be permanently turned on with the
+.B stats_after_pull
+configuration variable. See
+.B bk help config
+for more information.
+.tp
+.B \-T
+Pass 
+.Q \-T
+to resolve (\c
+.Q \-T
+means do not use the GUI tools.)
+.tp
+.B \-u
+Do not complete the pull if there are local changesets, i.e., insist
+that this operation is an update operation.
+.tp
+.B \-\-unsafe
+In a nested collection, using this option means that the source
+repository may contain work that is not pulled into the destination.
+.B \-\-unsafe
+means pull updates only to the components and/or aliases populated
+in the destination.
+This option has no effect in a traditional standalone repository.
+This option is implied when pulling from a gate.
+See also
+.B \-\-safe
+above.
+.tp
+.B \-v
+Be verbose by listing each file.
+.SH "SEE ALSO"
+.SA bkd
+.SA changes
+.SA gate
+.SA parent
+.SA push
+.SA resolve
+.SA triggers
+.SA unpull
+.SH CATEGORY
+.B Common
+.br
+.B Repository

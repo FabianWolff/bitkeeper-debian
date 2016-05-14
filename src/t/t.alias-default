@@ -1,0 +1,114 @@
+# Copyright 2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Test clone with clone_default=HERE ..........................$NL
+nested project
+bk edit $Q BitKeeper/etc/config
+echo clone_default: HERE\! >> BitKeeper/etc/config
+bk ci $Q -yhere BitKeeper/etc/config
+bk commit $Q -yhere
+bk alias new $Q BAR
+bk here set $Q ALL || fail
+bk clone $Q -sBAR . ../copy2 || fail
+bk clone $Q ../copy2 ../copy3 || fail
+cat <<EOF > WANT
+BAR
+PRODUCT
+EOF
+cmpfiles ../copy2/BitKeeper/log/HERE WANT
+cmpfiles ../copy3/BitKeeper/log/HERE WANT
+echo OK
+
+echo $N Test error message with bad data in clone_default ...........$NL
+BK_CONFIG=clone_default:JUNK\! bk clone -q . ../copy4 2>ERR && {
+	fail -f ERR should fail
+}
+cat <<EOF > WANT
+clone: 'JUNK' is not a valid alias
+clone_default: JUNK
+Please run 'bk config -v' to see where 'JUNK' came from.
+clone: component fetch failed, only product is populated
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N Demo just product in clone_default ..........................$NL
+BK_CONFIG=clone_default:PRODUCT\! bk clone $Q . ../copy5 || fail
+echo OK
+
+echo $N Test default clone_default ..................................$NL
+cd BitKeeper/etc
+bk edit $Q config
+cp config c
+grep -v clone_default < c > config
+bk ci -yclear $Q config
+cd ../..
+bk commit $Q -yclear || fail
+bk clone $Q . ../copy6 || fail
+(cd ../copy6; bk here) > GOT
+cat <<EOF > WANT
+ALL
+PRODUCT
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test multiple aliases in clone_default ......................$NL
+bk alias new $Q FOO
+BK_CONFIG='clone_default:    FOO  , BAR   !' \
+	bk clone $Q . ../copy7 >ERR 2>&1 && fail -f ERR should have failed
+cat >WANT <<EOF
+clone: 'FOO  , BAR' is not a valid alias
+clone_default: FOO  , BAR
+Please run 'bk config -v' to see where 'FOO  , BAR' came from.
+clone: component fetch failed, only product is populated
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N Test that clone_default in edited config gfile is honored ...$NL
+cd "$HERE/project"
+bk alias new ALIAS1 ./gcc || fail
+# Commit clone_default: HERE.
+cd BitKeeper/etc
+bk edit $Q config || fail
+echo "clone_default: HERE" >>config
+bk delta $Q -y'clone_default: HERE' config || fail
+bk commit $Q -yconfig || fail
+# Now edit config so it has clone_default: ALIAS1.
+bk edit $Q config || fail
+sed -e 's/clone_default: HERE/clone_default: ALIAS1/' <config >x
+mv x config
+cd ../../..
+# Clone project.  The child should get ALIAS1 (./gcc) only.
+bk clone $Q project clone || fail
+cd clone
+bk comps -h >HAVE
+cat >WANT <<EOF
+./gcc
+EOF
+cmpfiles HAVE WANT
+# Now populate to be different than parent
+bk here set $Q ALL
+# Now clone the child.  This clone should get same as parent's HERE
+cd ..
+bk clone $Q clone clone-of-clone || fail
+cd clone-of-clone
+bk comps -h >HAVE
+cat >WANT <<EOF
+./gcc
+./gdb
+EOF
+cmpfiles HAVE WANT
+echo OK

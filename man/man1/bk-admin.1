@@ -1,0 +1,165 @@
+.so ../bk-macros
+.TH "bk admin" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk admin \- administer \*(BK files
+.SH SYNOPSIS
+.B bk admin 
+.I
+options
+.BKARGS
+.SH DESCRIPTION
+.LP
+The 
+.B bk admin
+command is used to administer \*(BK files.
+There are options for changing per file features, modifying file metadata,
+verifying file checksum and metadata, changing the file compression mode,
+and/or recalculating the file checksum.
+.SH OPTIONS
+.TP \-y\*<comment\*>
+.OPTopt \-C id
+set or remove the changeset file string in the 1.0 delta
+(very rarely used, \fBnot\fP recommended).
+The string is used to associate the file with a particular repository
+idea and usually the same as the output of
+.BR "bk id" .
+.tp
+.B \-D
+remove the delta changeset marks (rarely used\(em\fBnot\fP recommended).
+.\"unless
+.\"followed by a 
+.\".BR "bk cset \-M.\|." ).
+.tp
+.OPTreq \-f flag
+set a per file flag.
+Many of the flags may be set automatically upon file creation by adding 
+an entry to the
+.B BitKeeper/etc/config
+file.
+See
+.B "bk help config-etc"
+for information on how to do so.
+The possible values for
+.ARG flag
+are:
+.RS
+.TP \fBEOLN_WINDOWS\fP
+.B BITKEEPER
+mark the file as a \*(BK file (very rarely used, \fBnot\fP recommended)
+.tp
+.B EOLN_NATIVE
+use the operating system's native end-of-line termination (i.e., 
+.B \er\en
+on Windows and
+.B \en
+on all other platforms.)
+.B EOLN_NATIVE
+is set to \*(lqon\*(rq by default. 
+.tp
+.B EOLN_UNIX
+use the \*[UNIX] end-of-line termination (i.e., 
+.BR \en )
+on all platforms.
+.tp
+.B EOLN_WINDOWS
+use the Windows end-of-line termination (i.e., 
+.BR \er\en )
+on all platforms.
+.tp
+.B EXPAND1
+expand keywords in first line that contains keywords only (printf conflicts)
+(May be set in
+.BR BitKeeper/etc/config ).
+.tp
+.B NOMERGE
+do not attempt to automerge this file; treat it as if it were a binary
+file and always force a choice between the local and remote versions of
+the file.
+.tp
+.B RCS
+expand RCS keywords, i.e., $\fIkeyword\fP$ etc.
+(May be set in
+.BR BitKeeper/etc/config ).
+.tp
+.B SCCS
+expand SCCS keywords, i.e., %\fIK\fP% etc.
+(Setting this in
+.B BitKeeper/etc/config
+applies this behavior to all subsequently created files; it does
+.I not
+affect existing files! You must use
+.B bk admin
+to explicitly on existing files.)
+.RE
+.tp
+.OPTreq \-F flag
+delete flag 
+.ARG flag ,
+reverting to default behavior.
+.tp
+.B \-h
+check s.file structure in general, but limited to \*[ATT] features.
+.tp
+.B \-hh
+as above, but also check \*(BK specific (in addition to \*[ATT]) features.
+.tp
+.B \-hhh
+as above, but also check time stamps.
+.tp
+.OPTopt \-i file
+read initial text from
+.ARG file
+(default stdin).
+.tp
+.B \-q
+run quietly.
+.tp
+.OPTreq \-y comment
+make 
+.ARG comment
+be the checkin comment for the initial checkin (only valid with 
+.BR \-i ).
+.tp
+.B \-z
+recalculate file checksum.
+.tp
+.OPTreq \-Z alg
+compress stored s.file with 
+.ARG alg .
+Compression is on by default because the space savings are substantial and
+there is little or no performance difference.
+The default may be set in
+.BR BitKeeper/etc/config .
+.ARG alg
+may be:
+.RS
+.TP \fBEOLN_NATIVE\fP
+.B  gzip
+like 
+.BR gzip (1)
+.tp
+.B none
+no compression
+.RE
+.br
+.if t .ll 6.5i
+.if n .ll 6.5i
+.SH BUGS
+.LP
+This command does way too much and is likely to be split apart.
+Do not depend on these options for scripts.
+.SH SEE ALSO
+.LP
+.SA check
+.SA checksum
+.SA chmod
+.SA ci
+.SA co
+.SA cset
+.SA id
+.SA new
+.SA log
+.SA keywords
+.SA config-etc
+.SH CATEGORY
+.B Admin

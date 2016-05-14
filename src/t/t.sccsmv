@@ -1,0 +1,634 @@
+# Copyright 1999-2011,2013-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Because we use tar xmf we don't check for timestamp errors here.
+unset _BK_DEVELOPER
+
+commercial project
+echo $N Test sccsmv w/ p locked file ................................$NL
+mkdir A B D E
+echo "This is file 1" > A/file1
+echo "This is file 2" > B/file2
+echo "This is file 3" > A/file3
+echo "This is file 4" > A/file4
+echo "This is file 4" > B/file4
+echo "This is file 5" > D/file5
+bk ci $Q -i -l A/file1 B/file2 A/file3 A/file4 B/file4 D/file5
+for i in 2 3 4
+do
+	echo "This is file 1, rev 1.$i" > A/file1
+	echo "This is file 2, rev 1.$i" > B/file2
+	echo "This is file 3, rev 1.$i" > A/file3
+	echo "This is file 4, rev 1.$i" > A/file4
+	echo "This is file 4, rev 1.$i" > B/file4
+	echo "This is file 5, rev 1.$i" > D/file5
+	bk ci $Q -yrev1.$i -l A/file1 B/file2 A/file3 A/file4 B/file4 D/file5
+done
+bk sfiles -l A B | bk clean -
+sleep 1
+bk co $Q -l A/file1
+
+# demonstrate that not having an idcache is OK
+rm -f BitKeeper/log/x.id_cache
+
+echo "this is a comment for file1" | bk cfile save A/file1
+bk mv A/file1 B/file1
+# We need this on cygwin (dir cache lag?)
+while true
+do
+	if bk _test ! -f B/SCCS/s.file1
+	then echo waiting; sleep 1
+	else break
+	fi
+done
+# The file should have been moved, but not checked in.
+if [ ! -f B/file1 ]; then echo failed 1; exit 1; fi
+if bk _test ! -f B/SCCS/s.file1; then echo failed 2; exit 1; fi
+if bk _test ! -f B/SCCS/p.file1; then echo failed 3; exit 1; fi
+if bk _test ! -f B/SCCS/c.file1; then echo failed 4; exit 1; fi
+if bk _test ! -f A/SCCS/s.file3; then echo failed 5; exit 1; fi
+# XXX - I think this is right but am not sure.
+DPATH=`bk prs -hr1.5 -d:DPN: B/file1`
+if [ ${DPATH}X != "B/file1"X ]; then echo failed 5; exit 1; fi
+# Now check it in so later tests aren't confused.
+bk ci $Q -yrename B/file1
+bk -r check -a || { echo check exits $?; exit 1; }
+echo OK
+
+echo $N Test sccsmv w/ unlocked file ................................$NL
+bk mv B/file2 C/file3
+if [ -f C/file3 ]; then echo failed; exit 1; fi
+if bk _test ! -f C/SCCS/s.file3; then echo failed; exit 1; fi
+if bk _test -f C/SCCS/p.file3; then echo failed; exit 1; fi
+DPATH=`bk prs -hr+ -d:DPN: C/file3`
+if [ ${DPATH}X != "C/file3"X ]; then echo failed; exit 1; fi
+DPATH=`bk prs -hr1.1 -d:DPN: C/file3`
+if [ ${DPATH}X != "B/file2"X ]; then echo failed; exit 1; fi
+bk -r check -a || fail
+echo OK
+
+echo $N Make sure we do not dump core if a bad file name is given ...$NL
+bk mv C/SCCS/file3 B/file2 2> ERR && fail
+sed 's/orphan lock file .*/orphan lock file/' ERR > GOT
+cat <<EOF > WANT
+mv: invalid file name C/SCCS/file3
+EOF
+cmpfiles WANT GOT
+rm WANT GOT ERR
+echo OK
+
+echo $N Test sccsmv to directory ....................................$NL
+bk mv B/file1 B/file4 C
+if bk _test ! -f C/SCCS/s.file1; then echo failed; exit 1; fi
+if bk _test ! -f C/SCCS/s.file4; then echo failed; exit 1; fi
+if [ -d B ]; then echo failed; exit 1; fi
+mkdir B
+bk mv C/file1 C/file4 B
+bk -r check -a || fail
+echo OK
+
+echo $N Test bk mvdir to directory that does not exist ..............$NL
+mkdir B/B1
+date > B/B1/fileB1
+bk new $Q B/B1/fileB1
+bk mv B "BB BB/CCCC/DDDD"
+if bk _test ! -f "BB BB/CCCC/DDDD/SCCS/s.file4"
+then	echo failed to move file; exit 1
+fi
+if bk _test ! -f "BB BB/CCCC/DDDD/B1/SCCS/s.fileB1"
+then	echo failed to move fileB1; exit 1
+fi
+bk -r check -a || fail
+echo OK
+
+echo $N And move it back ............................................$NL
+bk mv "BB BB/CCCC/DDDD" B || { echo error; exit 1; }
+if bk _test ! -f B/B1/SCCS/s.fileB1
+then	echo failed to move fileB1; exit 1
+fi
+echo OK
+
+echo $N Test move sub-dir to dot ....................................$NL
+bk get $Q B/B1/fileB1
+mv B/B1 .
+if [ ! -f B1/fileB1 ]; then echo failed; exit 1; fi
+# move it back
+mv B1 B/B1
+bk mv B/B1 .
+if bk _test ! -f B1/SCCS/s.fileB1; then echo failed; exit 1; fi
+bk mv B1 B
+if bk _test ! -f B/B1/SCCS/s.fileB1; then echo failed; exit 1; fi
+echo OK
+
+echo $N Test bk rm w/ p locked file .................................$NL
+bk get $Q -e B/file1
+RMNAME=`bk prs -hr1.0 -nd:RM_NAME: B/file1`
+bk rm B/file1
+SRMNAME=`bk prs -hr+ -nd:SFILE: "$RMNAME"`
+bk _test -f "$SRMNAME" || {
+	echo failed to move file to deleted
+	find . -type f
+	exit 1
+}
+bk _test -f B/SCCS/p.file1 && {
+	echo failed to clean up old p.file
+	exit 1
+}
+PRMNAME=`echo $SRMNAME | sed -e 's/s\./p\./'`
+bk _test -f "$PRMNAME" && {
+	echo failed to toss p..del
+	exit 1
+}
+REV=`bk prs -hr+ -nd:I: "$RMNAME"`
+if [ ${REV}X != "1.10"X ]; then echo failed 3 $REV; exit 1; fi
+echo OK
+
+echo $N Test bk rm w/ p locked file with changes ....................$NL
+echo foo > foo
+bk new $Q foo
+bk edit $Q foo
+echo bar > foo
+bk rm foo > OUT 2>&1 && {
+	echo should have failed
+	cat OUT
+	exit 1
+}
+grep -q "rm: $HERE/project/foo is modified" OUT || fail -f OUT
+bk rm -f foo || fail
+delfile=`bk sfiles -p BitKeeper/deleted | grep 's.foo~'`
+bk _test -f "$delfile" || {
+	echo failed to move file to deleted
+	exit 1
+}
+bk _test -f SCCS/p.foo && {
+	echo failed to clean up old p.file
+	exit 1
+}
+delpfile=`echo $delfil | sed 's:SCCS/s.:SCCS/p.:'`
+bk _test -f "$delpfile" && {
+	echo failed to clean deleted p.file
+	exit 1
+}
+rm -f OUT
+echo OK
+
+echo $N Test bk rm w non p-locked file ..............................$NL
+bk rm C/file3
+delfile=`bk sfiles -p BitKeeper/deleted | grep s.file2`
+bk _test -f $delfile || {
+	echo failed to move file to deleted
+	exit 1
+}
+echo OK
+
+echo $N Explicitly get a removed file ...............................$NL
+mkdir C
+cd C
+echo foo > foo
+bk new $Q foo
+bk mv foo .del-foo
+bk co $Q .del-foo
+if [ ! -f .del-foo ]; then echo Failed to get file; exit 1; fi
+echo OK
+
+echo $N Clean all including rm-ed file ..............................$NL
+bk clean
+if [ -f .del-foo ]; then echo Failed to clean file; exit 1; fi
+echo OK
+
+echo $N Test sccsrm and empty directory .............................$NL
+cd "$HERE/project/D"
+bk rm file5 || { echo failed.; exit 1; }
+if bk _test -d SCCS; then echo fail to remove empty SCCS; exit 1; fi
+echo OK
+
+echo $N Test bk unrm ................................................$NL
+cd "$HERE/project"
+bk rm A/file4
+bk unrm A/file4 > /dev/null
+if bk _test ! -f A/SCCS/s.file4; then echo failed; exit 1; fi
+if bk _test -f A/SCCS/c.file4; then echo failed; exit 1; fi
+XFILES=`bk -R sfiles -x`
+if [ "$XFILES" != "" ]; then echo failed; echo $XFILES; exit 1; fi
+bk rm A/file4
+echo OK
+
+echo $N Test bk unrm on a file in BitKeeper area ....................$NL
+touch BitKeeper/etc/foo
+bk new $Q BitKeeper/etc/foo
+bk rm -f BitKeeper/etc/foo
+bk unrm BitKeeper/etc/foo > OUT 2>&1
+grep -q 'Will not' OUT && {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Test bk unrm -f .............................................$NL
+touch A/file4
+bk new $Q A/file4
+bk rm A/file4
+bk unrm -f A/file4 > OUT 2>&1
+grep -q '2 possible files found, choosing newest' OUT || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Test mvdir to directory that does not exist .................$NL
+date > C/file6
+bk new $Q C/file6
+bk mvdir C CCCC
+bk _test -f CCCC/SCCS/s.file6 || {
+	echo failed to move file
+	exit 1
+}
+bk _test -f CCCC/SCCS/s..del-foo || {
+	echo failed to move deleted file
+	exit 1
+}
+echo OK
+
+echo $N Edit G, rm G, should create rm delta ........................$NL
+date > G
+bk new $Q G
+bk _cp SCCS/s.G S.G
+bk edit $Q G
+rm -f G
+bk rm G 2> $DEV_NULL
+bk _cp `bk sfiles -p BitKeeper/deleted | grep 's.G~'` S..del-G
+cmp -s S.G S..del-G
+if [ $? = 0 ]; then echo Failed to add rm delta; exit 1; fi
+if [ -f p.G ]; then echo Failed to rm p.G; exit 1; fi
+echo OK
+
+echo $N Test bk rmdir ...............................................$NL
+date > B/B1/fileB2
+bk rmdir B 2>&1 | grep -q "extra" || fail
+bk delta $Q -i -l B/B1/fileB2 || fail
+echo new > B/B1/fileB2
+bk rmdir B 2>&1 | grep -q "edited" || fail
+bk delta $Q -y B/B1/fileB2 || fail
+bk rmdir B || fail
+if [ -d B ]; then echo failed; exit 1; fi
+bk -r check -a
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Test bk rm on non bitkeeper file ............................$NL
+echo hi > non_bk_file 
+bk rm non_bk_file 2> rm.out
+grep -q "not a BitKeeper file, ignored" rm.out
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Test check -ag ..............................................$NL
+echo y | bk commit $Q -ycset
+bk _rm CCCC/SCCS/s.file6
+bk -r check -a 2>  ck.out
+grep -q 'Missing file (bk help chk3) .*@bk_regression.bk'  ck.out || {
+	echo Bad error message
+	cat ck.out
+	exit 1
+}
+bk -r check -ag | bk gone -q -
+bk -r check -a
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Test clones of an editted moved file ........................$NL
+cd "$HERE"
+rm -rf project
+commercial project
+date > d
+bk delta -i $Q d
+bk commit -q -ywhatever
+bk edit $Q d
+date >> d
+bk mv d newd
+cd "$HERE"
+# is there a better way to make clone silent when the
+# check pass finds errors?
+if [ "X$Q" = "X-q" ]; then
+	O=' 2> /dev/null'
+else
+	O=
+fi
+eval bk clone $Q project copy $O
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Test pulls into a project with an editted moved file ........$NL
+cd "$HERE"
+rm -rf project copy
+commercial project
+date > d
+bk delta -i $Q d
+bk commit $Q -ywhatever
+cd "$HERE"
+bk clone $Q project copy
+cd project
+bk edit $Q d
+echo dd > d
+bk delta $Q -yd d
+echo ff > qqq
+bk new $Q qqq
+bk commit $Q -ywhat2 
+cd "$HERE/copy"
+echo ff > f
+bk new $Q f
+bk edit $Q f
+date >> f
+bk mv f newf
+bk pull $Q || fail
+if bk _test ! -f SCCS/s.qqq; then echo failed; exit 1; fi
+echo OK
+
+echo $N Test mv of directory ........................................$NL
+cd "$HERE"
+commercial src
+mkdir foo
+cd foo
+echo bar > bar
+bk new $Q bar || fail
+mkdir sub1
+cd sub1
+echo sub > sub
+bk new $Q sub || fail
+cd ../..
+bk mvdir foo foo2 || fail
+if bk _test -f foo/sub1/SCCS/s.sub; then echo failed; exit 1; fi
+echo OK
+
+echo $N Make sure we can not remove BitKeeper files .................$NL
+cd "$HERE"
+tar cf TAR src 2> /dev/null
+cd "$HERE/src/BitKeeper/etc"
+bk rm config 2> OUT && {
+	echo failed to exit with an error
+	exit 1
+}
+grep -q 'Will not move BitKeeper file' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+bk _test -f SCCS/s.config || {
+	echo Gave us an error message but removed it anyway
+	exit 1
+}
+cd "$HERE/src"
+bk rm ChangeSet 2> OUT && {
+	echo failed to exit with an error
+	exit 1
+}
+grep -q 'Will not move ChangeSet file' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+bk _test -f SCCS/s.ChangeSet || {
+	echo Gave us an error message but removed it anyway
+	exit 1
+}
+echo OK
+
+echo $N Make sure we can force the removal of BitKeeper files .......$NL
+cd "$HERE/src/BitKeeper/etc"
+bk rm -f config 2> OUT || {
+	echo failed to let us remove the file
+	cat OUT
+	exit 1
+}
+bk _test -f SCCS/s.config && {
+	echo failed to remove file
+	exit 1
+}
+echo OK
+
+echo $N Except for the ChangeSet file ...............................$NL
+cd "$HERE/src"
+bk rm -f ChangeSet 2> OUT && {
+	echo let us remove the file
+	exit 1
+}
+bk _test -f SCCS/s.ChangeSet || {
+	echo removed the ChangeSet file
+	exit 1
+}
+echo OK
+
+echo $N Make sure we can not move BitKeeper files ...................$NL
+cd "$HERE"
+rm -rf src
+tar xmf TAR
+cd "$HERE/src/BitKeeper/etc"
+bk mv config JUNK 2> OUT && {
+	echo failed to exit with an error
+	exit 1
+}
+grep -q 'Will not move BitKeeper file' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+bk _test -f SCCS/s.config || {
+	echo Gave us an error message but moved it anyway
+	exit 1
+}
+cd "$HERE/src"
+bk mv ChangeSet JUNK 2> OUT && {
+	echo failed to exit with an error
+	exit 1
+}
+grep -q 'Will not move ChangeSet file' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+bk _test -f SCCS/s.ChangeSet || {
+	echo Gave us an error message but moved it anyway
+	exit 1
+}
+echo OK
+
+echo $N Make sure we can force the moving of BitKeeper files ........$NL
+cd "$HERE/src/BitKeeper/etc"
+bk mv -f config JUNK 2> OUT || {
+	echo failed to let us move the file
+	exit 1
+}
+bk _test -f SCCS/s.config && {
+	echo failed to move file
+	exit 1
+}
+echo OK
+
+echo $N Make sure triggers don\'t require -f to move .................$NL
+cd ../
+mkdir triggers
+cd triggers
+echo 'exit 0' > post-commit
+bk new $Q post-commit
+bk mv post-commit post-commit.moved 2>OUT || {
+	echo failed to let us move the file
+	cat OUT
+	exit 1
+}
+test -f SCCS/s.post-commit && {
+	echo failed to move file
+	exit 1
+}
+echo OK
+
+echo $N Except for the ChangeSet file ...............................$NL
+cd "$HERE/src"
+bk mv -f ChangeSet JUNK 2> OUT && {
+	echo let us move the file
+	exit 1
+}
+bk _test -f SCCS/s.ChangeSet || {
+	echo moved the ChangeSet file
+	exit 1
+}
+echo OK
+
+echo $N Make sure we can not move BitKeeper directories .............$NL
+cd "$HERE"
+rm -rf src
+tar xmf TAR
+cd "$HERE/src/BitKeeper"
+bk mvdir etc no-no-no 2> OUT && {
+	echo failed to exit with an error
+	exit 1
+}
+grep -q 'Moving directories' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+test -d no-no-no && {
+	echo Gave us an error message but moved it anyway
+	cat OUT
+	exit 1
+}
+cd "$HERE/src"
+bk mvdir BitKeeper no-no-no 2> OUT && {
+	echo failed to exit with an error
+	exit 1
+}
+grep -q 'Moving directories' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+test -d no-no-no && {
+	echo Gave us an error message but moved it anyway
+	exit 1
+}
+echo OK
+
+echo $N Make sure we can not remove BitKeeper directories ...........$NL
+cd "$HERE"
+rm -rf src
+tar xmf TAR
+cd "$HERE/src/BitKeeper"
+bk rmdir etc 2> OUT && {
+	echo failed to exit with an error
+	exit 1
+}
+grep -q 'Removing directories' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+test -d etc || {
+	echo Gave us an error message but removed it anyway
+	cat OUT
+	exit 1
+}
+cd "$HERE/src"
+bk rmdir BitKeeper 2> OUT && {
+	echo failed to exit with an error
+	exit 1
+}
+grep -q 'Removing directories' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+test -d BitKeeper || {
+	echo Gave us an error message but removed it anyway
+	exit 1
+}
+echo OK
+
+if [ "$PLATFORM" = "WIN32" ]
+then    #----------------------------------------------------------------
+echo $N Make sure bk mv work with back slash style dos path..........$NL
+        cd "$HERE"
+        commercial project2
+        mkdir src
+        cd src
+        echo foo > foo.c
+        bk new $Q foo.c
+	cd ..
+        bk mv .\\src\\foo.c .\\src\\bar.c
+        if bk _test ! -f src/SCCS/s.bar.c; then echo failed; exit 1; fi
+	bk rm src\\bar.c
+        if bk _test -f src/SCCS/s.bar.c; then echo failed 2; exit 1; fi
+        echo OK
+fi      #----------------------------------------------------------------
+
+echo $N Make sure we can not move outside bitkeeper directories .....$NL
+cd "$HERE/project"
+echo "stuff" > foo.c
+bk new $Q foo.c
+bk mv foo.c "$HERE" 2> mv.out
+grep -q "not in a BitKeeper repository" mv.out || { echo failed; exit 1; }
+bk mv foo.c "$HERE/copy" 2> mv.out
+grep -q "not in the same BitKeeper repository" mv.out || { echo failed; exit 1; }
+echo OK
+
+if [ $PLATFORM != "WIN32" ]
+then	#----------------------------------------------------------------
+echo $N BugID 2007-02-07-001 - see if bk rm follows symlinks ........$NL
+	cd "$HERE"
+	commercial inner
+	cd "$HERE"
+	bk clone $Q inner outer
+	cd inner
+	mkdir somedir
+	echo whatever > somedir/a.txt
+	bk new $Q somedir/a.txt
+	bk commit $Q -ywhatever
+	cd ../outer
+	ln -s ../inner/somedir somedir
+	bk rm somedir/a.txt
+	test `bk sfiles -p | wc -l` -eq 0 || {
+		    echo should not have pending files
+		    exit 1
+	}
+	bk -r check -ac || fail
+	cd ../inner
+	test `bk sfiles -p | wc -l` -eq 1 || {
+		    echo should have pending files
+		    exit 1
+	}
+	bk commit $Q -ywhatever
+	bk -r check -ac || fail
+	echo OK
+fi	#----------------------------------------------------------------

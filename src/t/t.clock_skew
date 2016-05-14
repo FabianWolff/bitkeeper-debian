@@ -1,0 +1,101 @@
+# Copyright 2009 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+TZ='GMT'
+export TZ
+
+# lifted from t.timestamps
+T11=864154091
+
+echo $N Check that clock_skew: off works ............................$NL
+commercial project
+BK_CONFIG='clock_skew:off!'; export BK_CONFIG
+echo 'foo' > file
+bk _touch -t $T11 file
+bk delta $Q -i -T file
+bk commit $Q -y'Created file'
+bk edit $Q -T file
+# Build timestampDB
+bk sfiles -c
+# Change file and reset the mtime
+echo 'oof' > file
+bk _touch -t $T11 file
+bk sfiles -c > OUT
+# OUT should contain SCCS/s.file
+[ ! -s OUT ] && {
+    echo failed
+    cat OUT
+    exit 1
+}
+echo OK
+
+echo $N Check that default clock_skew works .........................$NL
+rm -f BitKeeper/log/timestamps
+unset BK_CONFIG
+bk unedit file
+bk edit $Q -T file
+# Build timestampDB
+bk sfiles -c
+# Change file
+echo 'oof' > file
+# Make timestamp match timestampDB
+bk _touch -t $T11 file
+bk sfiles -c > OUT
+# OUT should be empty
+[ -s OUT ] && {
+    echo failed
+    cat OUT
+    exit 1
+}
+echo OK
+
+echo $N Check that a large value for clock_skew works ...............$NL
+rm -f BitKeeper/log/timestamps
+BK_CONFIG='clock_skew:3000000000!'; export BK_CONFIG
+bk unedit file
+bk edit $Q -T file
+# Build timestampDB
+bk sfiles -c
+# Change file
+echo 'oof' > file
+# Make timestamp match timestampDB
+bk _touch -t $T11 file
+bk sfiles -c > OUT
+# OUT should contain SCCS/s.file
+[ ! -s OUT ] && {
+    echo failed
+    cat OUT
+    exit 1
+}
+echo OK
+
+echo $N Check that a small value for clock_skew works ...............$NL
+rm -f BitKeeper/log/timestamps
+BK_CONFIG='clock_skew:10!'; export BK_CONFIG
+bk unedit file
+bk edit $Q -T file
+# Build timestampDB
+bk sfiles -c
+# Change file
+echo 'oof' > file
+# Make timestamp match timestampDB
+bk _touch -t $T11 file
+bk sfiles -c > OUT
+# OUT should be empty
+[ -s OUT ] && {
+    echo failed
+    cat OUT
+    exit 1
+}
+echo OK

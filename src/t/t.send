@@ -1,0 +1,261 @@
+# Copyright 1999-2000,2003-2011,2013 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+IDCACHE=BitKeeper/etc/SCCS/x.id_cache
+
+echo $N Create initial repository ...................................$NL
+# this test does a binary compare of repos
+fresh_commercial --compat project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Create some data and some changesets ........................$NL
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i foo.c bar.c h.h
+bk commit $S -yCset
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo failed to clear pending list; bk pending; exit 1; fi
+if bk _test ! -f SCCS/s.foo.c; then echo failed to create history; exit 1; fi
+for i in 2 3 4 5 6
+do
+	bk edit $Q foo.c bar.c
+	date >> foo.c
+	date >> bar.c
+	bk ci $Q -y$i foo.c bar.c
+	bk commit $S -yCset$i
+done
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo failed to clear pending list; bk pending; exit 1; fi
+echo OK
+
+echo $N Create a copy of the project using send / receive ...........$NL
+cd "$HERE/project"
+# this dance removes the empty 1.0 weave entry
+echo BKFILE >> BitKeeper/log/features
+_BK_DEVELOPER= bk check ChangeSet
+rm -f BitKeeper/log/features
+_BK_DEVELOPER= bk check ChangeSet
+
+bk send $Q -  > ../bkpatch
+cd ..
+bk receive -iaT copy2 < bkpatch || fail
+bk clone $Q $COMPAT4 copy2 copy || fail
+rm copy/BitKeeper/etc/level
+if [ ! -d copy/BitKeeper ]; then echo failed to receive; exit 1; fi
+if bk _test ! -f copy/src/SCCS/s.h.h; then echo failed to receive; exit 1; fi
+cd "$HERE/project"; bk -r clean; bk -r admin -Zgzip
+cd "$HERE/copy"; bk -r clean; bk -r admin -Zgzip
+cd "$HERE"
+bk _rm project/$IDCACHE
+bk _rm copy/$IDCACHE
+rm -f project/BitKeeper/log/cmd copy/BitKeeper/log/cmd
+rm -f copy/BitKeeper/etc/csets-in
+rm -f project/BitKeeper/log/*
+bk _rm -r project/BitKeeper/tmp/SCCS
+rm -f copy/BitKeeper/log/*
+bk diff -r project copy > diff$$
+if [ $? != 0 ]; then echo Failed because of differences; cat diff$$; exit 1; fi
+echo OK
+
+echo $N Make sure we can wrap and unwrap patches with uuwrap ........$NL
+cd "$HERE/project"
+bk send $Q -wuu -  | bk unwrap | ( while read x
+do	case "$x" in
+	    "# Patch vers:"*)
+		echo ""
+		echo "$x"
+		exec cat
+		;;
+	esac
+done ) > p1
+bk send $Q -  | bk unwrap > p2
+bk diff p1 p2
+if [ $? != 0 ]; then echo Failed because of diffs; exit 1; fi
+rm -f p1 p2
+echo OK
+
+echo $N Make sure we can wrap and unwrap patches with b64wrap .......$NL
+cd "$HERE/project"
+bk send $Q -wb64 -  | bk unwrap | ( while read x
+do	case "$x" in
+	    "# Patch vers:"*)
+		echo ""
+		echo "$x"
+		exec cat
+		;;
+	esac
+done ) > p1
+bk send $Q -  | bk unwrap > p2
+bk diff p1 p2
+if [ $? != 0 ]; then echo Failed because of diffs; exit 1; fi
+rm -f p1 p2
+echo OK
+
+echo $N Make sure we can wrap and unwrap gzipped patches ............$NL
+cd "$HERE/project"
+bk send $Q -wgzip_b64 - | bk unwrap | ( while read x
+do	case "$x" in
+	    "# Patch vers:"*)
+		echo ""
+		echo "$x"
+		exec cat
+		;;
+	esac
+done ) > p1
+bk send $Q -  | bk unwrap > p2
+bk diff p1 p2
+if [ $? != 0 ]; then echo Failed because of diffs; exit 1; fi
+rm -f p1 p2
+echo OK
+
+echo $N Create copy using send / receive and wrappers ...............$NL
+cd "$HERE/project"
+bk send $Q -wuu -  | bk receive -iaT ../uu2
+bk clone $Q --sccsdirs --no-bk-sfile --no-bk-merge ../uu2 ../uu || fail
+rm ../uu/BitKeeper/etc/level
+if [ ! -d ../uu/BitKeeper ]; then echo failed to receive; exit 1; fi
+cd "$HERE/project"; bk -r clean; bk -r admin -Zgzip
+cd "$HERE/uu"; bk -r clean; bk -r admin -Zgzip
+cd "$HERE"
+bk _rm project/$IDCACHE
+bk _rm uu/$IDCACHE
+rm -f project/BitKeeper/log/cmd uu/BitKeeper/log/cmd
+rm -f uu/BitKeeper/etc/csets-in
+rm -f project/BitKeeper/log/*
+rm -f uu/BitKeeper/log/*
+bk diff -r project uu > diff$$
+if [ $? != 0 ]; then echo Failed because of differences; cat diff$$; exit 1; fi
+echo OK
+
+echo $N Create copy using send / receive 1 cset at a time ...........$NL
+cd "$HERE/project"
+bk send $Q -r..1.1 -  | bk receive -iaT ../csets2
+bk clone $Q --sccsdirs --no-bk-sfile --no-bk-merge ../csets2 ../csets || fail
+rm ../csets/BitKeeper/etc/level
+if [ ! -d ../csets/BitKeeper ]; then echo failed to receive; exit 1; fi
+for i in 2 3 4 5 6 7
+do	bk send $Q -r1.$i -  | bk receive -aT ../csets
+done
+cd "$HERE/project"; bk -r clean; bk -r admin -Zgzip
+cd "$HERE/csets"; bk -r clean; bk -r admin -Zgzip
+cd "$HERE"
+bk _rm project/$IDCACHE
+bk _rm csets/$IDCACHE
+rm -f project/BitKeeper/log/cmd csets/BitKeeper/log/cmd
+rm -f csets/BitKeeper/etc/csets-in
+rm -f project/BitKeeper/log/*
+rm -f csets/BitKeeper/log/*
+bk diff -r project csets > diff$$
+if [ $? != 0 ]; then echo Failed because of differences; cat diff$$; exit 1; fi
+echo OK
+
+echo $N Make sure that it records sends .............................$NL
+cd "$HERE/project"
+echo "Nothing to send to hoser@nevdull.com, use -f to force." > YYY
+bk send $Q -r..1.3 hoser@nevdull.com > XXX 2>&1
+cmp -s XXX YYY
+if [ $? = 0 -o ! -s XXX ]; then echo failed to create patch; exit 1; fi
+for i in 1.1 1.2 1.3 ..1.3 ..1.2
+do	bk send $Q -r$i hoser@nevdull.com > XXX 2>&1
+	cmp -s XXX YYY
+	if [ $? != 0 ]; then echo created patch ..$i twice; cat XXX; exit 1; fi
+done
+echo OK
+
+echo $N Make sure that it does not overrecord sends .................$NL
+cd "$HERE/project"
+bk send $Q -r1.4 hoser@nevdull.com > XXX
+cmp -s XXX YYY
+if [ $? = 0 ]; then echo failed to create patch 1.4; exit 1; fi
+bk send $Q hoser@nevdull.com > XXX
+cmp -s XXX YYY
+if [ $? = 0 ]; then echo failed to create patch 1.5..; exit 1; fi
+echo OK
+
+echo $N Make sure it accepts -sSubject ..............................$NL
+bk send $Q -r1.4 -s'My verbose subject line' hoser@nevdull.com > XXX 2>&1
+grep 'usage:' XXX > /dev/null 2>&1
+if [ $? = 0 ]; then echo complains about -s; exit 1; fi
+echo OK
+
+echo $N Send and receive a patch with a tag .........................$NL
+cd "$HERE/project"
+bk tag $Q TIP
+bk send $Q -r+ - | bk receive -aT ../csets
+cd "$HERE/project"; bk -r clean; bk -r admin -Zgzip; rm -f XXX YYY
+cd "$HERE/csets"; bk -r clean; bk -r admin -Zgzip
+cd "$HERE"
+bk _rm project/$IDCACHE
+bk _rm csets/$IDCACHE
+rm -f project/BitKeeper/log/cmd csets/BitKeeper/log/cmd
+rm -f csets/BitKeeper/etc/csets-in
+rm -f project/BitKeeper/log/*
+rm -f csets/BitKeeper/log/*
+bk diff -r project csets > diff$$
+if [ $? != 0 ]; then echo Failed because of differences; cat diff$$; exit 1; fi
+echo OK
+
+echo $N Send a patch using a key in a range .........................$NL
+cd "$HERE/project"
+bk repocheck $Q
+KEY="`bk changes -kr1.5`"
+bk send -qr"$KEY".. - > KEYS
+bk send -qr1.6,1.7 - > LIST
+bk diff KEYS LIST > GOT
+cat <<EOF > WANT
+2c2
+< $KEY..
+---
+> 1.6,1.7
+EOF
+cmpfiles WANT GOT
+cd ../csets
+bk undo -qsfa1.5
+cd ../project
+bk receive -aT ../csets < KEYS
+rm GOT WANT KEYS LIST
+cd "$HERE"
+mkdir -p project/BitKeeper/readers
+mkdir -p csets/BitKeeper/readers
+bk _rm project/$IDCACHE
+bk _rm csets/$IDCACHE
+rm -f project/BitKeeper/log/cmd csets/BitKeeper/log/cmd
+rm -f csets/BitKeeper/etc/csets-in
+rm -f project/BitKeeper/log/*
+rm -f csets/BitKeeper/log/*
+bk diff -r project csets > diff$$
+if [ $? != 0 ]; then echo Failed because of differences; cat diff$$; exit 1; fi
+echo OK
+
+echo $N Send and receive an empty patch .............................$NL
+# customer backing up from last known point and range was empty
+cd "$HERE/project"
+bk send -qr+..+ - > ../empty.bkp || fail
+bk receive -aT ../csets < ../empty.bkp || fail
+cd "$HERE"
+bk _rm csets/$IDCACHE
+rm -f project/BitKeeper/log/cmd csets/BitKeeper/log/cmd
+rm -f csets/BitKeeper/etc/csets-in
+rm -f project/BitKeeper/log/*
+rm -f csets/BitKeeper/log/*
+bk diff -r project csets > diff$$
+if [ $? != 0 ]; then echo Failed because of differences; cat diff$$; exit 1; fi
+echo OK

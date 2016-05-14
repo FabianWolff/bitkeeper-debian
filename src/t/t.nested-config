@@ -1,0 +1,149 @@
+# Copyright 2010-2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Test precedence
+# env var BKD_CLONE_DEFAULT
+# component log/config
+# component etc/config
+# product log/config
+# product etc/config
+
+echo $N Test BKD_CLONE_DEFAULT ......................................$NL
+# setup
+nested project
+cd gcc
+bk edit $Q BitKeeper/etc/config ../BitKeeper/etc/config
+grep -v clone_default ../BitKeeper/etc/config > nodef
+cp nodef ../BitKeeper/etc/config
+# the test
+BKD_CLONE_DEFAULT=ENV bk config clone_default > GOT
+echo ENV > WANT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test component etc/config and override of previous ..........$NL
+# See that adding it without override doesn't override - it was before
+echo clone_default: COMPETC > BitKeeper/etc/config
+BKD_CLONE_DEFAULT=ENV bk config clone_default > GOT
+cmpfiles GOT WANT
+# see with no competition, it wins
+echo COMPETC > WANT
+bk config clone_default > GOT
+cmpfiles GOT WANT
+# with override, it wins
+echo 'clone_default: COMPETC!' > BitKeeper/etc/config
+BKD_CLONE_DEFAULT=ENV bk config clone_default > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test product etc/config and override of previous ............$NL
+# See that adding it without override doesn't override - it was before
+# Note: there's already a file, so need to append
+echo clone_default: PRODETC >> ../BitKeeper/etc/config
+BKD_CLONE_DEFAULT=ENV bk config clone_default > GOT
+cmpfiles GOT WANT
+# see with no competition, it wins
+echo PRODETC > WANT
+echo > BitKeeper/etc/config
+bk config clone_default > GOT
+cmpfiles GOT WANT
+# with override, log wins.  Restore our saved copy without clone_default def
+echo PRODETC > WANT
+cp nodef ../BitKeeper/etc/config
+echo 'clone_default: PRODETC!' >> ../BitKeeper/etc/config
+echo 'clone_default: COMPETC!' > BitKeeper/etc/config
+BKD_CLONE_DEFAULT=ENV bk config clone_default > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test dotbk/config and override of previous ..................$NL
+echo clone_default: DOTBK > "$BK_DOTBK/config"
+bk config clone_default > GOT
+cmpfiles GOT WANT
+# see with no competition, it wins
+echo DOTBK > WANT
+cp nodef ../BitKeeper/etc/config
+echo > BitKeeper/etc/config
+bk config clone_default > GOT
+cmpfiles GOT WANT
+# with override, it wins
+echo 'clone_default: PRODETC!' >> ../BitKeeper/etc/config
+echo 'clone_default: COMPETC!' > BitKeeper/etc/config
+echo 'clone_default: DOTBK!' > "$BK_DOTBK/config"
+bk config clone_default > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test component log/config and override of previous ..........$NL
+echo clone_default: COMPLOG > BitKeeper/log/config
+bk config clone_default > GOT
+cmpfiles GOT WANT
+# see with no competition, it wins
+echo COMPLOG > WANT
+cp nodef ../BitKeeper/etc/config
+echo > BitKeeper/etc/config
+echo > "$BK_DOTBK/config"
+bk config clone_default > GOT
+cmpfiles GOT WANT
+# with override, it wins
+echo 'clone_default: PRODETC!' >> ../BitKeeper/etc/config
+echo 'clone_default: COMPETC!' > BitKeeper/etc/config
+echo 'clone_default: COMPLOG!' > BitKeeper/log/config
+echo 'clone_default: DOTBK!' > "$BK_DOTBK/config"
+echo COMPLOG > WANT
+bk config clone_default > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test product log/config and override of previous ............$NL
+# See that adding it without override doesn't override - it was before
+echo clone_default: PRODLOG > ../BitKeeper/log/config
+bk config clone_default > GOT
+cmpfiles GOT WANT
+# see with no competition, it wins
+echo PRODLOG > WANT
+cp nodef ../BitKeeper/etc/config
+echo > BitKeeper/log/config
+echo > BitKeeper/etc/config
+echo > "$BK_DOTBK/config"
+bk config clone_default > GOT
+cmpfiles GOT WANT
+# with override, it wins
+echo 'clone_default: PRODETC!' >> ../BitKeeper/etc/config
+echo 'clone_default: PRODLOG!' > ../BitKeeper/log/config
+echo 'clone_default: COMPLOG!' > BitKeeper/log/config
+echo 'clone_default: COMPETC!' > BitKeeper/etc/config
+echo 'clone_default: DOTBK!' > "$BK_DOTBK/config"
+BKD_CLONE_DEFAULT=ENV bk config clone_default > GOT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Config -v should help the customer out - right order ........$NL
+bk config -v | perl -ne 'print if m(^[^#\t].|clone_default)' > GOT
+cat <<EOF > WANT
+$HERE/project/gcc/BitKeeper/etc/config:
+#	clone_default:  COMPETC!
+$HERE/project/BitKeeper/etc/config:
+#	clone_default:  PRODETC!
+$HERE/.bk/config:
+#	clone_default:  DOTBK!
+$HERE/project/gcc/BitKeeper/log/config:
+#	clone_default:  COMPLOG!
+$HERE/project/BitKeeper/log/config:
+	clone_default:  PRODLOG!
+defaults:
+#	clone_default:  ALL
+EOF
+cmpfiles GOT WANT
+echo OK

@@ -1,0 +1,1572 @@
+# Copyright 2008-2011,2014-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+DASHA=
+test X`uname -s` = XDarwin && DASHA=-a
+PERL=`type perl | awk '{ print $NF }'`
+echo $PERL | grep -q "not found"  && fail
+
+echo $N Check commit trigger environment variables ..................$NL
+cd "$HERE"
+commercial project
+bk edit $Q BitKeeper/etc/config
+echo "checkout: get" >> BitKeeper/etc/config
+bk delta $Q -ycheckout BitKeeper/etc/config
+# Force BAM data into the repo to test those code paths.
+BK="`bk bin`/bk"
+test $PLATFORM = WIN32 && BK=${BK}.exe
+perl -e 'sysread(STDIN, $buf, 81920);
+syswrite(STDOUT, $buf, 81920);' < $BK > data
+bk new $Q data
+#
+bk commit $Q -ycheckout
+mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/pre-commit <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+bk sort > "$HERE/pre-commit"
+exit 0
+EOF
+cat > BitKeeper/triggers/post-commit <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+bk sort > "$HERE/post-commit"
+exit 0
+EOF
+chmod +x BitKeeper/triggers/*
+echo h > h.h
+bk ci $Q -i h.h
+bk commit $S -yCset
+grep -q BK_CSETS "$HERE/pre-commit" && {
+	fail should not have defined BK_CSETS in pre-commit
+}
+grep -q BK_STATUS=OK "$HERE/post-commit" || {
+	fail -f "$HERE/post-commit" no/bad exit status
+}
+grep -q "pre-commit returns 0" BitKeeper/log/cmd_log || {
+	fail should have logged trigger
+}
+grep -q "post-commit returns 0" BitKeeper/log/cmd_log || {
+	fail should have logged trigger
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== pre-commit ==========
+	cat "$HERE/pre-commit"
+	echo ========== post-commit ==========
+	cat "$HERE/post-commit"
+}
+
+echo $N Test trigger path support by running repo triggers 3x .......$NL
+cd "$HERE"
+bk clone $Q project test_path
+cd test_path
+mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/pre-commit <<EOF
+#!/bin/bash
+echo \$BK_TRIGGERPATH >> "$HERE/paths"
+exit 0
+EOF
+chmod +x BitKeeper/triggers/*
+echo whatever > whatever
+bk new $Q whatever
+BK_CONFIG='triggers: .|.|.' bk commit $Q -ywhatever
+test -f "$HERE/paths" || fail did not run the triggers
+grep -q "./BitKeeper/triggers/pre-commit" "$HERE/paths" || {
+	fail -f "$HERE/paths" bad paths
+}
+test `wc -l < "$HERE/paths"` -eq 3 || {
+	fail -f "$HERE/paths" did not run all trigger paths
+}
+echo OK
+
+echo $N make sure that triggers:none works ..........................$NL
+echo whatever > whatever2
+bk new $Q whatever2
+rm -f "$HERE/paths"
+BK_CONFIG='triggers: none' bk commit $Q -ywhatever
+test -f "$HERE/paths" && fail should not have run the triggers
+echo OK
+
+echo $N Test trigger path support with path outside of repo .........$NL
+mkdir -p "$HERE/trigger_dir/BitKeeper/triggers"
+cp BitKeeper/triggers/pre-commit "$HERE/trigger_dir/BitKeeper/triggers/"
+chmod +x "$HERE/trigger_dir/BitKeeper/triggers/pre-commit"
+echo whatever > whatever3
+bk new $Q whatever3
+rm -f "$HERE/paths"
+BK_CONFIG="triggers: $HERE/trigger_dir" bk commit $Q -ywhatever
+test -f "$HERE/paths" || fail did not run the triggers
+cat > WANT <<EOF
+$HERE/trigger_dir/BitKeeper/triggers/pre-commit
+EOF
+cmpfiles WANT "$HERE/paths"
+echo OK
+
+echo $N Test trigger path support with path inside+outside repo .....$NL
+echo whatever > whatever4
+bk new $Q whatever4
+rm -f "$HERE/paths"
+BK_CONFIG="triggers: .|$HERE/trigger_dir" bk commit $Q -ywhatever
+test -f "$HERE/paths" || fail did not run the triggers
+cat > WANT <<EOF
+$HERE/test_path/BitKeeper/triggers/pre-commit
+$HERE/trigger_dir/BitKeeper/triggers/pre-commit
+EOF
+cmpfiles WANT "$HERE/paths"
+echo OK
+
+echo $N Test trigger path support with path inside+BK_DOTBK .........$NL
+mv "$HERE/trigger_dir/BitKeeper" "$BK_DOTBK"
+rmdir "$HERE/trigger_dir"
+echo whatever > whatever5
+bk new $Q whatever5
+rm -f "$HERE/paths"
+BK_CONFIG='triggers: .|$BK_DOTBK' bk commit $Q -ywhatever
+test -f "$HERE/paths" || fail did not run the triggers
+cat > WANT <<EOF
+$HERE/test_path/BitKeeper/triggers/pre-commit
+$BK_DOTBK/BitKeeper/triggers/pre-commit
+EOF
+cmpfiles WANT "$HERE/paths"
+echo OK
+
+echo $N Make sure commit can be told to fail and it does so nicely ..$NL
+cd "$HERE/project"
+cat > BitKeeper/triggers/pre-commit <<EOF
+#!/bin/bash
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+echo c > c.c
+bk ci $Q -i c.c
+bk commit -yCset2 2>ERR && fail failed to exit with an error status
+if [ `bk sfiles -gp` != c.c ]
+then	fail bad pending list
+fi
+echo '>> Trigger "pre-commit" (exit status was 1)' > WANT
+cmpfiles ERR WANT
+echo OK
+
+cd "$HERE"
+tar cf TAR project
+cd project
+
+echo $N Test noisy pre-trigger in commit ............................$NL
+rm -f BitKeeper/triggers/*
+cat > BitKeeper/triggers/pre-commit-noisy <<EOF
+#!/bin/sh
+echo Hi there, I am a trigger.
+echo Hi there to stderr 1>&2
+exit 0
+EOF
+chmod +x BitKeeper/triggers/pre-commit-noisy
+echo whatever > somefile
+bk new $Q somefile
+bk commit -ywhatever > OUT 2>&1 || {
+	fail -f OUT commit failed unexpectedly
+}
+grep -q 'Hi there, I am a trigger.' OUT && grep -q 'Hi there to stderr' OUT || {
+	fail -f OUT wrong trigger outout
+}
+echo OK
+
+echo $N Make sure that we can silence pre-triggers in commit ........$NL
+bk edit $Q somefile
+echo whatever >> somefile
+bk delta -ywhatever $Q somefile
+bk commit -q -ywhatever > OUT 2>&1 || {
+	fail -f OUT commit failed unexpectedly
+}
+test -s OUT && {
+	fail -f OUT commit should have been silent and was not
+}
+echo OK
+
+echo $N Test noisy post-trigger in commit ...........................$NL
+rm -f BitKeeper/triggers/*
+cat > BitKeeper/triggers/post-commit-noisy <<EOF
+#!/bin/sh
+echo Hi there, I am a trigger.
+echo Hi there to stderr 1>&2
+exit 0
+EOF
+chmod +x BitKeeper/triggers/post-commit-noisy
+bk edit $Q somefile
+echo whatever >> somefile
+bk delta $Q -ywhatever somefile
+bk commit -ywhatever > OUT 2>&1 || fail -f OUT commit failed unexpectedly
+grep -q 'Hi there, I am a trigger.' OUT && grep -q 'Hi there to stderr' OUT || {
+	fail -f OUT wrong trigger outout
+}
+echo OK
+
+echo $N Make sure that we can silence post-triggers in commit .......$NL
+bk edit $Q somefile
+echo whatever >> somefile
+bk delta -ywhatever $Q somefile
+bk commit -q -ywhatever > OUT 2>&1 || {
+	fail -f OUT commit failed unexpectedly
+}
+test -s OUT && {
+	fail -f OUT commit should have been silent and was not
+}
+echo OK
+
+echo $N Test noisy post-trigger in pull .............................$NL
+bk clone -q -r1.4 "$HERE/project" "$HERE/noise" || fail
+cd "$HERE/noise"
+mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/post-incoming-noisy <<EOF
+#!/bin/sh
+echo Hi there, I am a trigger.
+echo Hi there to stderr 1>&2
+exit 0
+EOF
+chmod +x BitKeeper/triggers/post-incoming-noisy
+bk pull > OUT 2>ERR || {
+	cat OUT ERR > ERR2
+	fail -f ERR2 pull failed unexpectedly
+}
+grep -q 'Hi there, I am a trigger.' ERR && grep -q 'Hi there to stderr' ERR || {
+	fail -f ERR wrong trigger outout
+}
+echo OK
+
+echo $N Make sure that we can silence post-triggers in pull .........$NL
+bk unpull -fsq
+bk pull -q > OUT 2>&1 || {
+	fail -f OUT pull failed unexpectedly
+}
+test -s OUT && fail -f OUT pull should have been silent and was not
+echo OK
+
+echo $N Test noisy pre-trigger in pull ..............................$NL
+rm -f BitKeeper/triggers/*
+cd "$HERE/project"
+cat > BitKeeper/triggers/pre-outgoing-noisy <<EOF
+#!/bin/sh
+echo This is the pre-outgoing-noisy trigger
+echo Hi there to stderr 1>&2
+exit 0
+EOF
+chmod +x BitKeeper/triggers/pre-outgoing-noisy
+cd "$HERE/noise"
+bk unpull -fsq
+bk pull > OUT 2>ERR || {
+	fail -f OUT pull failed unexpectedly
+}
+grep -q 'This is the pre-outgoing-noisy trigger' ERR &&
+grep -q 'Hi there to stderr' ERR || {
+	cat OUT ERR > ERR2
+	fail -f ERR2 wrong trigger outout
+}
+echo OK
+
+echo $N Make sure that we can silence pre-triggers in pull ..........$NL
+bk unpull -fsq
+bk pull -q > OUT 2>&1 || fail -f OUT pull failed unexpectedly
+test -s OUT && fail -f OUT pull should have been silent and was not
+echo OK
+
+echo $N Test noisy pre-trigger in pull via bkd ......................$NL
+cd "$HERE/project"
+bk bkd -daPORT -l"$HERE/BKD.log" -P"$HERE/BKD.pid" -ikill || fail
+PORT=`cat PORT`
+cd "$HERE/noise"
+bk unpull -fsq
+bk pull bk://localhost:$PORT > OUT 2>ERR || fail -f OUT pull failed unexpectedly
+grep -q 'This is the pre-outgoing-noisy trigger' ERR &&
+grep -q 'Hi there to stderr' ERR || {
+	cat OUT ERR > ERR2
+	fail -f ERR2 wrong trigger outout
+}
+echo OK
+
+echo $N Make sure that we can silence pre-triggers in pull via bkd ..$NL
+bk unpull -fsq
+bk pull -q bk://localhost:$PORT > OUT 2>&1 || {
+	fail -f OUT pull failed unexpectedly
+}
+test -s OUT && fail -f OUT pull should have been silent and was not
+echo OK
+
+echo $N Test noisy post-trigger in pull via bkd .....................$NL
+cd "$HERE/project"
+cat > BitKeeper/triggers/post-outgoing-noisy <<EOF
+#!/bin/sh
+echo This is the post-outgoing-noisy trigger
+echo Hi there from post-outgoing-noisy to stderr 1>&2
+exit 0
+EOF
+chmod +x BitKeeper/triggers/post-outgoing-noisy
+cd "$HERE/noise"
+bk unpull -fsq
+bk pull bk://localhost:$PORT > OUT 2>ERR || fail -f OUT pull failed unexpectedly
+grep -q 'This is the pre-outgoing-noisy trigger' ERR &&
+grep -q 'Hi there to stderr' ERR || {
+	cat OUT ERR > ERR2
+	fail -f ERR2 wrong trigger outout
+}
+bk lock -U "$HERE/project"
+bk _kill bk://localhost:$PORT || fail
+grep -q '>> Trigger "post-outgoing-noisy"' "$HERE/BKD.log" &&
+grep -q 'This is the post-outgoing-noisy trigger' "$HERE/BKD.log" &&
+grep -q 'Hi there from post-outgoing-noisy to stderr' "$HERE/BKD.log" || {
+	fail failed to log post trigger to bkd logfile
+}
+echo OK
+
+echo $N Check tag trigger environment variables without rev .........$NL
+cd "$HERE"
+rm -rf project
+tar xf TAR
+cd project
+cat > BitKeeper/triggers/pre-tag <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+bk sort > "$HERE/pre-tag"
+exit 0
+EOF
+chmod +x BitKeeper/triggers/pre-tag
+bk tag $Q check_vars
+grep -q BK_TAG=check_vars "$HERE/pre-tag" || {
+	fail No BK_TAG in environment or wrong value
+}
+grep -q BK_TAG_REV "$HERE/pre-tag" && {
+	fail Should not have set BK_TAG_REV
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== pre-tag ==========
+	cat "$HERE/pre-tag"
+}
+
+echo $N Check tag trigger environment variables with rev ............$NL
+bk tag $Q -r1.1 primordial_ooze
+grep -q BK_TAG=primordial_ooze "$HERE/pre-tag" || {
+	fail No BK_TAG in environment or wrong value
+}
+grep -q BK_TAG_REV=1.1 "$HERE/pre-tag" || {
+	fail Should have set BK_TAG_REV=1.1
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== pre-tag ==========
+	cat "$HERE/pre-tag"
+}
+
+echo $N Make sure tag can be told to fail and it does so nicely .....$NL
+cat > BitKeeper/triggers/pre-tag <<EOF
+#!/bin/bash
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+bk tag foo 2>ERR && fail failed to exit with an error status
+echo '>> Trigger "pre-tag" (exit status was 1)' > WANT
+cmpfiles ERR WANT
+echo OK
+cd "$HERE"
+rm -rf project
+tar xf TAR
+cd project
+
+echo $N Make sure we get the list of pending files in pre-commit ....$NL
+cat > BitKeeper/triggers/pre-commit <<EOF
+#!/bin/bash 
+cp "\$BK_PENDING" "$HERE/BK_PENDING"
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+bk commit $S -yCset2 2>/dev/null && {
+	fail failed to exit with an error status
+}
+test -f "$HERE/BK_PENDING" || {
+	fail failed to copy the file
+}
+test c.c${BK_FS}1.1 = `cat "$HERE/BK_PENDING"` || {
+	fail -f "$HERE/BK_PENDING" bad file list
+}
+echo OK
+
+echo $N Extract user from file list of pending deltas ...............$NL
+test `bk prs -hd':USER:\n' - < "$HERE/BK_PENDING"` = bk || {
+	fail can not extract user from file list
+}
+echo OK
+
+echo $N Make sure commit succeeds when told it is OK ................$NL
+cat > BitKeeper/triggers/pre-commit <<EOF
+#!/bin/bash
+exit 0
+EOF
+chmod +x BitKeeper/triggers/*
+bk commit $S -yCset2 || fail
+echo OK
+
+echo $N Make sure clone is passed the right variables ...............$NL
+cat > BitKeeper/triggers/pre-outgoing <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+ 	bk sort > "$HERE/pre-outgoing"
+exit 1
+EOF
+cat > BitKeeper/triggers/post-outgoing <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+	bk sort > "$HERE/post-outgoing"
+EOF
+chmod +x BitKeeper/triggers/*
+project_repoid=`bk identity -r`
+cd "$HERE"
+bk clone -q project clone 2>/dev/null && {
+	fail failed to exit with an error status
+}
+test -d clone && fail should not have created repository
+bk clone -q -r1.1 project clone 2>/dev/null
+grep -q BK_CSETS=..1.1 "$HERE/pre-outgoing" || {
+	fail failed to put cset list in the env
+}
+rm project/BitKeeper/triggers/pre-outgoing
+bk clone $Q -r1.1 project clone || fail should have succeeded and did not
+bk clone -q -r1.1 project apply || fail should have succeeded and did not
+test -d clone || fail should have created repository
+grep -q BK_CSETS=..1.1 "$HERE/post-outgoing" || {
+	fail failed to put cset list in the env
+}
+grep BKD_REPO_ID= "$HERE/post-outgoing" > "$HERE/tmp"
+fgrep "$project_repoid" "$HERE/tmp" > /dev/null || {
+	fail -f "$HERE/post-outgoing" "failed to record where we came from which is $project_repoid"
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== pre-outgoing clone ==========
+	cat "$HERE/pre-outgoing"
+	echo ========== post-outgoing clone ==========
+	cat "$HERE/post-outgoing"
+}
+
+echo $N Make sure clone -l is passed the right variables ............$NL
+cd "$HERE/project"
+cat > BitKeeper/triggers/pre-outgoing <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+	bk sort > "$HERE/pre-outgoing-l"
+exit 1
+EOF
+cat > BitKeeper/triggers/post-outgoing <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+	bk sort > "$HERE/post-outgoing-l"
+EOF
+chmod +x BitKeeper/triggers/*
+cd "$HERE"
+bk clone -l -q project lclone 2>GOT && fail failed to exit with an error status
+test -d lclone && fail should not have created repository
+cat <<EOF > WANT
+------------------------- Remote trigger message --------------------------
+>> Trigger "pre-outgoing" (exit status was 1)
+---------------------------------------------------------------------------
+EOF
+cmpfiles WANT GOT
+bk clone -q -l -r1.1 project lclone 2> GOT
+cmpfiles WANT GOT
+grep -q BK_CSETS=..1.1 "$HERE/pre-outgoing" || {
+	fail failed to put cset list in the env
+}
+rm project/BitKeeper/triggers/pre-outgoing
+bk clone -q -l -r1.1 project lclone || {
+	fail should have succeeded and did not
+}
+test -d lclone || fail should have created repository
+grep -q BK_CSETS=..1.1 "$HERE/post-outgoing" || {
+	fail failed to put cset list in the env
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== pre-outgoing clone -l ==========
+	cat "$HERE/pre-outgoing-l"
+	echo ========== post-outgoing clone -l ==========
+	cat "$HERE/post-outgoing-l"
+}
+
+echo $N Make sure clone and clone -l have same pre-outgoing .........$NL
+cmp -s "$HERE/pre-outgoing" "$HERE/pre-outgoing-l" || {
+	diff -u "$HERE/pre-outgoing" "$HERE/pre-outgoing-l" > ERR
+	fail -f ERR
+}
+echo OK
+
+echo $N Make sure clone and clone -l have same post-outgoing ........$NL
+cmp -s "$HERE/post-outgoing" "$HERE/post-outgoing-l" || {
+	diff "$HERE/post-outgoing" "$HERE/post-outgoing-l" > ERR
+	fail -f ERR
+}
+echo OK
+
+# Make a post-incoming trigger be checked in, see if clone runs it.
+echo $N Test post-incoming in a clone ...............................$NL
+cd "$HERE"
+cp -rp project parent
+cd parent
+rm -f BitKeeper/triggers/*
+cat > BitKeeper/triggers/post-incoming <<EOF
+#!/bin/bash
+# ignore BK_REPO_ID because clone and clone-l had different ids
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    grep -v BK_REPO_ID= |
+    grep -v BKD_TIP |
+    bk sort > "$HERE/post-incoming-clone"
+exit 0
+EOF
+chmod +x BitKeeper/triggers/post-incoming
+bk new $Q BitKeeper/triggers/post-incoming
+bk commit $Q -ypost-incoming
+# kill time based race in repo_nfiles() by recomputing NFILES
+bk -r check -a
+cd "$HERE"
+bk clone $Q parent clone2
+test -f "$HERE/post-incoming-clone" || {
+	fail failed to run post-incoming trigger
+}
+grep BKD_REPO_ID= "$HERE/post-incoming-clone" > "$HERE/tmp"
+fgrep "$project_repoid" "$HERE/tmp" > /dev/null || {
+	fail -f "$HERE/post-incoming-clone" "failed to record where we came from which is $project_repoid"
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== post-incoming clone ==========
+	cat "$HERE/post-incoming-clone"
+}
+
+# Make a post-incoming trigger be checked in, see if clone -l runs it.
+echo $N Test post-incoming in a clone -l ............................$NL
+cd "$HERE/parent"
+bk edit $Q BitKeeper/triggers
+cat > BitKeeper/triggers/post-incoming <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | egrep -v '^[^=]+=$' |
+    grep -v BK_REPO_ID= |
+    grep -v BKD_TIP |
+    bk sort > "$HERE/post-incoming-clone-l"
+exit 0
+EOF
+bk delta -y-l $Q BitKeeper/triggers/post-incoming
+bk commit $Q -ypost-incoming-l
+# kill time based race in repo_nfiles() by recomputing NFILES
+bk -r check -a
+cd "$HERE"
+rm -rf clone2
+bk clone -l $Q parent clone2
+test -f "$HERE/post-incoming-clone-l" || {
+	fail failed to run post-incoming trigger
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== post-incoming clone -l ==========
+	cat "$HERE/post-incoming-clone-l"
+}
+
+echo $N Make sure clone and clone -l have same post-incoming ........$NL
+cmp -s "$HERE/post-incoming-clone" "$HERE/post-incoming-clone-l" || {
+	diff -u "$HERE/post-incoming-clone" "$HERE/post-incoming-clone-l" > ERR
+	fail -f ERR
+}
+echo OK
+
+cd "$HERE"
+rm -rf parent clone2
+
+echo $N Make sure pull is passed the right variables ................$NL
+cd "$HERE/project"
+cat > BitKeeper/triggers/pre-outgoing <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    bk sort > "$HERE/pre-outgoing"
+cp \$BK_CSETLIST "$HERE/CSETS"
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+cd "$HERE/clone"
+bk pull $Q 2>/dev/null && fail failed to exit with an error status
+grep -q BK_CSETLIST "$HERE/pre-outgoing" || {
+	fail -f "$HERE/pre-outgoing" failed to put cset list file in the env
+}
+grep -q BK_LOCALCSETS=2 "$HERE/pre-outgoing" || 
+grep -q BK_LOCALCSETS=3 "$HERE/pre-outgoing" || {
+	fail -f "$HERE/pre-outgoing" failed to put local csets in the env
+}
+grep -q BK_REMOTECSETS=0 "$HERE/pre-outgoing" || {
+	fail -f "$HERE/pre-outgoing" failed to put remote csets in the env
+}
+test -d RESYNC && fail failed to clean up RESYNC dir
+echo OK
+
+echo $N Make sure pre-incoming triggers fail the pull ...............$NL
+rm "$HERE/project/BitKeeper/triggers/pre-outgoing"
+cd "$HERE/clone"
+mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/pre-incoming <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    bk sort > "$HERE/pre-incoming"
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+bk pull $Q 2>ERR && {
+	fail failed to exit non zero with failed pre-incoming trigger
+}
+test -d RESYNC && fail failed to clean up RESYNC
+echo '>> Trigger "pre-incoming" (exit status was 1)' > WANT
+cmpfiles ERR WANT
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== pre-incoming ==========
+	cat "$HERE/pre-incoming"
+}
+
+echo $N Make sure pre-resolve triggers fail the pull ................$NL
+cd "$HERE/clone"
+rm BitKeeper/triggers/*
+cat > BitKeeper/triggers/pre-resolve <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    bk sort > "$HERE/pre-resolve"
+pwd > "$HERE/PWD"
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+bk pull -q 2>ERR && {
+	fail failed to exit non zero with failed pre-resolve trigger
+}
+test -d RESYNC && {
+	fail failed to clean up RESYNC
+}
+test -f "$HERE/pre-resolve" || {
+	fail failed to call trigger
+}
+grep -q "pre-resolve returns 1" BitKeeper/log/cmd_log || {
+	fail should have logged trigger
+}
+echo '>> Trigger "pre-resolve" (exit status was 1)' > WANT
+cmpfiles ERR WANT
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== pre-resolve ==========
+	cat "$HERE/pre-resolve"
+}
+
+echo $N Make sure we can see the data in the pre-resolve trigger ....$NL
+cat > BitKeeper/triggers/pre-resolve <<EOF
+#!/bin/bash
+bk changes - < \$BK_CSETLIST > "$HERE/changes"
+cp \$BK_CSETLIST "$HERE/csets-out"
+pwd > "$HERE/resolve-pwd"
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+bk pull -q 2>ERR && {
+	fail failed to exit non zero with failed pre-incoming trigger
+}
+test -d RESYNC && fail failed to clean up RESYNC
+test -s "$HERE/changes" || fail failed to create change list
+grep -q ChangeSet@1.3 "$HERE/changes" || fail failed to list the ChangeSet
+GOT=`wc -l < "$HERE/csets-out"`
+if [ $GOT -ne 2 -a $GOT -ne 3 ]; then
+	fail -f "$HERE/csets-out" csets-out contains extra junk
+fi
+GOT=`grep '^ChangeSet' "$HERE/changes" | wc -l`
+if [ $GOT -ne 2 -a $GOT -ne 3 ]; then
+	fail listed extra changes
+fi
+echo '>> Trigger "pre-resolve" (exit status was 1)' > WANT
+cmpfiles ERR WANT
+echo OK
+
+echo $N Make sure the pre-resolve trigger is run in RESYNC ..........$NL
+grep -q RESYNC "$HERE/resolve-pwd" || fail -f "$HERE/resolve-pwd"
+echo OK
+
+echo $N Check bk changes -v - .......................................$NL
+echo 1.1 > list
+echo junk >> list
+bk changes - < list > /dev/null 2>&1 && {
+	fail failed to reject junk
+}
+echo 1.1 > list
+echo \#junk >> list
+echo >> list
+bk changes - < list > out || {
+	fail didn\'t ignore blanks and comments
+}
+if [ `grep '^ChangeSet' out | wc -l` -ne 1 ]; then
+	fail returned extra junk
+fi
+echo OK
+
+echo $N Make sure pre-apply exiting 1 cleans up .....................$NL
+cd "$HERE/apply"
+test -d BitKeeper/triggers || mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/pre-apply <<EOF
+#!/bin/bash
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    bk sort -u > "$HERE/pre-apply"
+pwd > "$HERE/apply-pwd"
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+bk pull -q 2>ERR && {
+	fail failed to exit non zero with failed pre-apply trigger
+}
+test -d RESYNC && fail failed to clean up RESYNC
+test -d PENDING && fail failed to clean up PENDING
+echo '>> Trigger "pre-apply" (exit status was 1)' > WANT
+cmpfiles ERR WANT
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== pre-apply ==========
+	cat "$HERE/pre-apply"
+}
+
+echo $N Make sure the pre-apply trigger is run in RESYNC ............$NL
+grep -q RESYNC "$HERE/apply-pwd" || fail -f "$HERE/apply-pwd"
+echo OK
+
+echo $N Make sure pre-apply exiting 2 leaves patch in PENDING .......$NL
+cd "$HERE/apply"
+test -d BitKeeper/triggers || mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/pre-apply <<EOF
+#!/bin/bash
+exit 2
+EOF
+chmod +x BitKeeper/triggers/*
+bk pull -q 2>ERR && {
+	fail failed to exit non zero with failed pre-apply trigger
+}
+test -d RESYNC && fail failed to clean up RESYNC
+test -d PENDING || fail failed to leave PENDING
+echo '>> Trigger "pre-apply" (exit status was 2)' > WANT
+cmpfiles ERR WANT
+echo OK
+
+echo $N Make sure pre-apply exiting 3 leaves RESYNC and PENDING .....$NL
+cd "$HERE/apply"
+test -d BitKeeper/triggers || mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/pre-apply <<EOF
+#!/bin/bash
+exit 3
+EOF
+chmod +x BitKeeper/triggers/*
+bk pull -q 2>ERR && {
+	fail failed to exit non zero with failed pre-apply trigger
+}
+X="RESYNC-*"
+test "$X" || fail failed to leave RESYNC
+test -d PENDING || fail failed to leave PENDING
+echo '>> Trigger "pre-apply" (exit status was 3)' > WANT
+cmpfiles ERR WANT
+echo OK
+
+echo $N Do it again to see that it can rename RESYNC twice ..........$NL
+bk pull -q 2>ERR && {
+	fail failed to exit non zero with failed pre-apply trigger
+}
+test -d "RESYNC" && fail failed to rename RESYNC
+X="RESYNC-*"
+test "$X" || fail failed to leave RESYNC
+test -d PENDING || fail failed to leave PENDING
+echo '>> Trigger "pre-apply" (exit status was 3)' > WANT
+cmpfiles ERR WANT
+echo OK
+
+echo $N Make sure that pushes do not prompt in pre-apply ............$NL
+cd "$HERE/apply"
+test -d BitKeeper/triggers || mkdir BitKeeper/triggers
+# This is quoted so that I don't have to escape all the $VAR instances
+# in the shell script.  Sigh.
+bk base64 -d > BitKeeper/triggers/pre-apply <<EOF 
+IyEvYmluL3NoCgp0ZXN0IGBiayBnZmlsZXMgQml0S2VlcGVyL3RyaWdnZXJzIHwg
+d2MgLWxgIC1ndCAwIHx8IGV4aXQgMAppZiBbICRCS19TSURFID0gc2VydmVyIF0K
+dGhlbiAgICBlY2hvIFJlZnVzaW5nIHRvIGFjY2VwdCBhbnkgY2hhbmdlcyB0byB0
+cmlnZ2VycyBvbiBwdXNoLAogICAgICAgIGVjaG8gZ2V0IHRoZSBwcm9qZWN0IGFk
+bWluIHRvIHB1bGwgeW91ciBjaGFuZ2VzLgogICAgICAgIGV4aXQgMQpmaQoKcm0g
+LWYgQml0S2VlcGVyL3RtcC90X3JlamVjdApmb3IgaSBpbiBgYmsgZ2ZpbGVzIEJp
+dEtlZXBlci90cmlnZ2Vyc2AKZG8gICAgICAoCiAgICAgICAgZWNobyBQbGVhc2Ug
+cmV2aWV3IHRoZSBmb2xsb3dpbmcgdHJpZ2dlciBmb3Igc2VjdXJpdHkgcmlza3Mu
+CiAgICAgICAgZWNobyBEbyBub3QgYWNjZXB0IGl0IGlmIHlvdSB0aGluayBpdCBp
+cyBhIHByb2JsZW0uCiAgICAgICAgZWNobwogICAgICAgIGVjaG8gPT09PT0gJGkg
+PT09PT0KICAgICAgICBiayBjYXQgJGkKICAgICAgICApID4gQml0S2VlcGVyL3Rt
+cC9wcm9tcHQkJAogICAgICAgIGJrIHByb21wdCAtZkJpdEtlZXBlci90bXAvcHJv
+bXB0JCQgLXQiUmV2aWV3IHRyaWdnZXIiIC15QWNjZXB0IC1uUmVqZWN0CiAgICAg
+ICAgU1RBVFVTPSQ/CiAgICAgICAgcm0gLWYgQml0S2VlcGVyL3RtcC9wcm9tcHQk
+JAogICAgICAgIHRlc3QgJFNUQVRVUyA9IDAgfHwgewogICAgICAgICAgICAgICAg
+dG91Y2ggQml0S2VlcGVyL3RtcC90X3JlamVjdAogICAgICAgICAgICAgICAgYnJl
+YWsKICAgICAgICB9CmRvbmUKdGVzdCAtZiBCaXRLZWVwZXIvdG1wL3RfcmVqZWN0
+ICYmIHsKICAgICAgICBybSAtZiBCaXRLZWVwZXIvdG1wL3RfcmVqZWN0CiAgICAg
+ICAgZXhpdCAzCn0Kcm0gLWYgQml0S2VlcGVyL3RtcC90X3JlamVjdApleGl0IDAK
+EOF
+chmod +x BitKeeper/triggers/*
+cd "$HERE"
+bk clone -q project new-trigger
+test -d new-trigger/BitKeeper/triggers || mkdir new-trigger/BitKeeper/triggers
+cd new-trigger/BitKeeper/triggers
+cat > post-incoming-passwd <<EOF
+#!/bin/bash
+
+# I'm the bad trigger that will send the password file to the world
+grep root /etc/passwd
+EOF
+chmod +x post-incoming-passwd
+bk new $Q post-incoming-passwd
+bk commit $Q -ypost-incoming-passwd
+bk push "$HERE/apply" > OUT 2>&1 && fail -f OUT should have failed
+grep -q 'Refusing to accept any changes' OUT || fail -f OUT bad message
+echo OK
+
+test "$TEST_GUI" && {
+echo $N Make sure that pulls do prompt in pre-apply .................$NL
+cd "$HERE/apply"
+rm -rf PENDING RESYNC-*
+# If you accept this then expect to see the root password
+BK_MSG_GEOM=+200+200 BK_GUI=YES bk pull $Q "$HERE/new-trigger"
+echo OK
+ls -F 
+echo
+}
+
+echo $N Make sure we can see the data in the post-incoming trigger ..$NL
+cd "$HERE/clone"
+rm BitKeeper/triggers/* "$HERE/changes"
+cat > BitKeeper/triggers/post-incoming <<EOF
+#!/bin/bash
+bk changes - < \$BK_CSETLIST > "$HERE/changes"
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    bk sort -u > "$HERE/post-incoming"
+EOF
+chmod +x BitKeeper/triggers/*
+clone_repoid=`bk identity -r`
+# force checkout mode so pull will be happy.
+BK_CONFIG=checkout:get bk pull $Q >OUT || fail failed to exit zero
+test -d RESYNC && fail failed to clean up RESYNC
+test -s "$HERE/changes" || fail failed to create change list
+grep -q ChangeSet@1.3 "$HERE/changes" || fail failed to list the ChangeSet
+grep BKD_REPO_ID= "$HERE/post-incoming" > "$HERE/tmp"
+fgrep "$project_repoid" "$HERE/tmp" > /dev/null || {
+	fail failed to record where we came from
+}
+grep BK_REPO_ID= "$HERE/post-incoming" > "$HERE/tmp"
+fgrep "$clone_repoid" "$HERE/tmp" > /dev/null || {
+	fail failed to record where we are
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ========== post-incoming ==========
+	cat "$HERE/post-incoming"
+}
+
+echo $N Fail a push in pre-incoming and make sure we clean up .......$NL
+rm "$HERE/pre-"* "$HERE/post-"*
+cd "$HERE/project"
+rm BitKeeper/triggers/*
+cat > BitKeeper/triggers/pre-incoming <<EOF
+#!/bin/bash
+echo I am the remote pre-incoming trigger and I am failing
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    bk sort > "$HERE/pre-incoming"
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+cd "$HERE/clone"
+ls > LS
+bk new $Q LS
+bk commit -ywhatever $Q
+bk push >OUT 2>&1 && fail push should have failed
+test -d ../project/RESYNC && fail failed to clean up RESYNC
+test -d ../project/PENDING && fail failed to clean up PENDING
+grep -q 'I am the remote pre-incoming trigger' OUT || {
+	fail -f OUT failed to pass back the trigger message
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ====== pre-push-incoming ==========
+	cat "$HERE/pre-incoming"
+}
+
+echo $N Make sure pull -R does not run post-incoming ................$NL
+rm -f "$HERE/pre-"* "$HERE/post-"*
+cd "$HERE/project"
+rm BitKeeper/triggers/*
+cat > BitKeeper/triggers/post-incoming <<EOF
+#!/bin/bash
+echo I am the post-incoming trigger
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    bk sort > "$HERE/post-incoming"
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+cd "$HERE/clone"
+ls > whatever
+bk new $Q whatever
+bk commit -ywhatever $Q
+cd "$HERE/project"
+bk pull -R "$HERE/clone" > OUT 2>&1 || {
+	fail pull should not have failed
+}
+test -d RESYNC || fail failed to leave RESYNC
+test -f "$HERE/post-incoming" && {
+	fail should not have run trigger, we did not finish
+}
+echo OK
+
+echo $N Make sure resolve does run the post-incoming ................$NL
+rm -f "$HERE/post-incoming"
+bk co $Q data
+bk resolve >OUT 2>&1 || {
+	fail -f OUT resolve should not have failed
+}
+test -d RESYNC && fail failed to clean up RESYNC
+test -f "$HERE/post-incoming" || fail should have run trigger, we did finish
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ====== resolve post-incoming ==========
+	cat "$HERE/post-incoming"
+}
+
+echo $N Fail a push in pre-resolve and make sure we clean up ........$NL
+cd "$HERE/project"
+bk undo -qsfr+
+rm BitKeeper/triggers/*
+cat > BitKeeper/triggers/pre-resolve <<EOF
+#!/bin/bash
+echo pre-resolve failing
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    bk sort >> "$HERE/pre-resolve"
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+bk lock -U "$HERE/project"
+cd "$HERE/clone"
+rm -f BitKeeper/triggers/* "$HERE/pre-resolve"
+bk push > OUT 2>&1 && fail -f OUT push should have failed
+test -d ../project/RESYNC && fail failed to clean up RESYNC
+test -d ../project/PENDING && fail failed to clean up PENDING
+grep -q 'pre-resolve failing' OUT || {
+	fail -f OUT failed to pass back trigger output
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ====== pre-resolve ==========
+	cat "$HERE/pre-resolve"
+}
+
+echo $N Exit 2 out of a pre-resolve, make sure it leaves the patch ..$NL
+cd "$HERE/project"
+rm -rf PENDING
+rm BitKeeper/triggers/*
+cat > BitKeeper/triggers/pre-resolve <<EOF
+#!/bin/bash
+echo pre-resolve failing but leaving patch
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    bk sort >> "$HERE/pre-resolve"
+echo \$BK_PATCH > "$HERE/pre-resolve-BK_PATCH"
+exit 2
+EOF
+chmod +x BitKeeper/triggers/*
+cd "$HERE/clone"
+rm -f BitKeeper/triggers/* "$HERE/pre-resolve"
+bk push > OUT 2>&1 && fail push should have failed
+test -d ../project/RESYNC && fail failed to clean up RESYNC
+test -d ../project/PENDING || fail failed to leave PENDING
+grep -q 'pre-resolve failing but leaving patch' OUT || {
+	fail -f OUT failed to pass back trigger output
+}
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ====== pre-resolve ==========
+	cat "$HERE/pre-resolve"
+}
+
+echo $N Make sure we see BK_PATCH in the pre-resolve trigger ........$NL
+cd ../project/PENDING || fail
+GOT=`grep BK_PATCH= "$HERE/pre-resolve"`
+test "X$GOT" = X && fail -f "$HERE/pre-resolve"
+BK_PATCH="`cat ../../pre-resolve-BK_PATCH`"
+test -f "$BK_PATCH" || fail -f "$HERE/pre-resolve"
+echo OK
+
+echo $N Look for cset list in pre-resolve in the push ...............$NL
+cd "$HERE/clone"
+cat > "$HERE/project/BitKeeper/triggers/pre-resolve" <<EOF
+#!/bin/bash
+bk changes - < \$BK_CSETLIST > "$HERE/changes"
+exit 1
+EOF
+chmod +x "$HERE/project/BitKeeper/triggers/"*
+bk push $Q 2>/dev/null && fail failed to exit nonzero
+test -d "$HERE/project/RESYNC" && fail failed to clean up RESYNC
+test -s "$HERE/changes" || fail failed to create change list
+grep -q ChangeSet@1.5 "$HERE/changes" || 
+grep -q ChangeSet@1.6 "$HERE/changes" || {
+	fail -f "$HERE/changes" failed to list the ChangeSet
+}
+echo OK
+
+echo $N Look for cset list in post in the push ......................$NL
+cd "$HERE/clone"
+rm "$HERE/project/BitKeeper/triggers/"* "$HERE/changes"
+cat > "$HERE/project/BitKeeper/triggers/post-incoming" <<EOF
+#!/bin/bash
+bk changes - < \$BK_CSETLIST > "$HERE/changes"
+exit 0
+EOF
+chmod +x "$HERE/project/BitKeeper/triggers/"*
+bk push $Q || fail failed to exit zero, exited $?
+test -s "$HERE/changes" || fail failed to create change list
+grep -q ChangeSet@1.5 "$HERE/changes" || 
+grep -q ChangeSet@1.6 "$HERE/changes" || fail failed to list the ChangeSet
+echo OK
+
+cd "$HERE"
+bk _rm -rf *
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then fail failed to make BitKeeper/etc; fi
+if bk _test ! -f SCCS/s.ChangeSet; then fail failed to make ChangeSet; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then bk pending > ERR; fail -f ERR files are pending; fi
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i foo.c bar.c h.h
+if bk _test ! -f SCCS/s.foo.c; then fail failed to create history; fi
+P=`bk pending | wc -l`
+if [ $P -ne 15 ]; then bk pending > ERR; fail -f ERR wrong pending result $P; fi
+bk commit $S -yCset
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then
+	bk pending > ERR
+	fail -f ERR failed to clear pending list
+fi
+echo OK
+cores
+
+echo $N Create trivial server side triggers .........................$NL
+cd "$HERE"
+mkdir project/BitKeeper/triggers || fail
+cd project/BitKeeper/triggers
+bk undos > X <<EOF
+#!/bin/sh
+echo \$0: trigger fired
+exit 0
+EOF
+chmod +x X
+for x in pre post;do
+	for y in commit incoming outgoing;do
+		cp X $x-$y
+	done
+done
+
+# Overwrite the pre incoming trigger with a more interesting one
+cat >good2 <<EOF
+#!/bin/bash
+echo "\$0: trigger fired"
+test "X$BK_RESYNC" = XFALSE || exit 0
+if [ ! -d RESYNC ]; then echo "missing RESYNC TREE"; exit 1; fi
+if [ X\$BK_OUTGOING_USER != X`bk getuser` ]; then echo "Wrong user"; exit 1; fi
+echo "post-incoming trigger: user=\$BK_OUTGOING_USER"
+REV=\`cat RESYNC/BitKeeper/etc/csets-in\`
+echo "incoming rev=\$REV"
+for i in $REV
+do	echo ChangeSet${BK_FS}$i
+done | bk prs -h -
+exit 0
+EOF
+bk undos good2 > pre-incoming
+chmod +x pre-incoming
+
+cd "$HERE"
+echo "OK"
+
+echo $N Clone w/trivial triggers ....................................$NL
+cd "$HERE"
+bk clone $Q "$HERE/project" "$HERE/copy" 2> /dev/null || fail
+echo OK
+
+echo $N Create trivial client side triggers .........................$NL
+cd "$HERE"
+mkdir copy/BitKeeper/triggers || fail
+cd copy/BitKeeper/triggers
+echo "#! /bin/sh"                > good
+echo "echo \$0: trigger fired"	>> good
+echo "exit 0"                   >> good
+chmod +x good
+for x in pre post;do
+	for y in commit incoming outgoing;do
+		cp good $x-$y
+	done
+done
+cd "$HERE"
+echo "OK"
+
+echo $N Make sure delta fails with pre-delta trigger ................$NL
+cp -rp "$HERE/project" "$HERE/delta"
+cd "$HERE/delta/BitKeeper/triggers"
+cat > pre-delta <<EOF
+#!/bin/bash
+
+set | grep $DASHA ^BK | grep -v _BK_ | egrep -v '^[^=]+=$' |
+    bk sort > "$HERE/pre-delta"
+echo You bozo, you forgot to cstyle \$BK_FILE
+exit 1
+EOF
+chmod +x pre-delta
+cd "$HERE/delta/src"
+bk get $Q -e foo.c
+echo bad form, dude >> foo.c
+bk delta $Q -y'This is a multi
+line comment,
+to test if that works' foo.c > OUT 2>&1 && fail delta should have failed
+bk _test -f SCCS/p.foo.c || fail delta should have failed
+grep -q 'you forgot to cstyle src/foo.c' OUT || {
+	fail -f OUT echo bad error message
+}
+grep -q BK_FILE= "$HERE/pre-delta" || fail failed to set BK_FILE
+echo OK
+test -z "$DUMP_VARS" || {
+	echo ====== pre-delta ==========
+	cat "$HERE/pre-delta"
+}
+
+if [ X$BK_TESTGUI != X ]; then
+    echo $N citool w/failing pre-delta trigger...........................$NL
+    bk citool
+    echo OK
+    echo $N citool w/working pre-delta trigger...........................$NL
+    cd "$HERE/delta/BitKeeper/triggers"
+    cat > pre-delta <<EOF
+#!/bin/bash
+
+echo You bozo, you forgot to cstyle \$BK_FILE
+echo I am letting slide just this once.
+exit 0
+EOF
+    bk citool
+    echo OK
+fi
+
+echo $N Test that a pre-delta trigger will work from command line ...$NL
+cd "$HERE"
+cp -rp delta aaron
+cd "$HERE/aaron/BitKeeper/triggers"
+cat > pre-delta <<EOF
+#!/bin/bash
+
+echo You bozo, you forgot to cstyle \$BK_FILE
+echo I am letting slide just this once.
+exit 0
+EOF
+cd "$HERE/aaron/src"
+bk get $Q -e foo.c
+echo bad form, dude >> foo.c
+bk ci -p -ywhatever foo.c > OUT 2>&1
+bk _test -f SCCS/p.foo.c && fail -f OUT failed to do the delta
+grep -q 'bad form, dude' OUT || fail -f OUT bad diffs
+echo OK
+
+echo $N Test that a pre-delta trigger can delta the file ............$NL
+cd "$HERE/delta/BitKeeper/triggers"
+cat > pre-delta <<EOF
+#!/bin/bash
+
+bk delta -y'I am the trigger' \$BK_FILE
+exit 2
+EOF
+chmod +x pre-delta
+cd "$HERE/delta/src"
+bk get $Q -e foo.c
+echo bad form, dude >> foo.c
+echo Bad comment | bk cfile save foo.c
+bk delta foo.c >OUT 2>&1 < /dev/null || fail -f OUT should not have errored
+test 'I am the trigger' = "`bk prs -hr+ -d:C: foo.c`" || {
+	bk prs foo.c > ERR
+	cat OUT >> ERR
+	fail -f ERR set the wrong comment
+}
+echo OK
+
+cd "$HERE"
+rm -rf delta
+
+echo $N Commit w/trivial triggers ...................................$NL
+cd "$HERE/project/src"
+bk get $Q -e foo.c
+echo 3 >> foo.c
+bk delta $Q -y2 foo.c
+bk commit $Q -y2 > /dev/null 2>&1 || fail
+echo OK
+
+if [ X$BK_TESTGUI != X ]; then
+    echo $N citool w/trivial triggers ...................................$NL
+    cd "$HERE/project/src"
+    bk get $Q -e foo.c
+    echo delta three >> foo.c
+    bk delta $Q -y2 foo.c
+    bk citool
+    echo OK
+fi
+
+echo $N Pull w/trivial triggers .....................................$NL
+cd "$HERE/copy"
+bk pull >pull.out 2>&1 || fail
+grep -q "project/.*BitKeeper/triggers/pre-outgoing: trigger fired" pull.out
+if [ $? -ne 0 ]; then fail -f pull.out failed 3; fi
+# XXX - There can be spurious errors here depending on how the output gets
+# mixed together.
+# I saw: 
+# /build/.regression-lm/project 
+# /build/.regression-lm/project/B2.76X expansion
+#                                ^^^^^^^^^^^^^^^
+# which is the bkd trigger output mixed with takepatch output.
+grep -q "project/.*BitKeeper/triggers/post-outgoing: trigger fired" pull.out
+if [ $? -ne 0 ]; then fail -f pull.out failed 4; fi
+grep -q "copy/.*BitKeeper/triggers/pre-incoming: trigger fired" pull.out
+if [ $? -ne 0 ]; then fail -f pull.out failed 5; fi
+grep -q "/copy/.*BitKeeper/triggers/post-incoming: trigger fired" pull.out
+if [ $? -ne 0 ]; then fail -f pull.out failed 6; fi
+echo OK
+
+echo $N Push w/trivial triggers .....................................$NL
+cd "$HERE/copy/src"
+bk get $Q -e foo.c
+echo 4 >> foo.c
+bk delta $Q -y2 foo.c
+bk commit $Q -y"cset comment for 1.4" > /dev/null 2>&1
+bk push >push.out 2>&1 || fail -f push.out
+echo OK
+
+cd "$HERE/project/BitKeeper/triggers"
+echo "#! /bin/sh" > pre-outgoing.quiet
+echo "exit 1" >> pre-outgoing.quiet
+chmod +x pre-outgoing.quiet
+
+echo $N Clone w/quiet failure, should report exit status ............$NL
+cd "$HERE"
+bk clone -q "$HERE/project" "$HERE/dontcopy" 2>ERR && fail -f ERR
+test -d "$HERE/dontcopy" && fail created dontcopy
+cat > WANT <<EOF
+------------------------- Remote trigger message --------------------------
+>> Trigger "pre-outgoing.quiet" (exit status was 1)
+---------------------------------------------------------------------------
+EOF
+cmpfiles WANT ERR
+cd "$HERE/project"
+echo OK
+
+cd "$HERE/project/BitKeeper/triggers"
+rm -f pre-outgoing.quiet
+echo "#! /bin/sh" > bad
+echo "echo This repo is locked for backups." >> bad
+echo "echo Please check back later." >> bad
+echo "exit 123" >> bad
+chmod +x bad
+for y in commit incoming outgoing;do
+	cp -f bad pre-$y
+done
+
+echo $N Clone w/failure triggers ....................................$NL
+cd "$HERE"
+bk clone -q "$HERE/project" "$HERE/dontcopy" 2>ERR && fail -f ERR
+test -d "$HERE/dontcopy" && fail created dontcopy
+cat > WANT <<EOF
+------------------------- Remote trigger message --------------------------
+>> Trigger "pre-outgoing" (exit status was 123)
+This repo is locked for backups.
+Please check back later.
+---------------------------------------------------------------------------
+EOF
+cmpfiles WANT ERR
+cd "$HERE/project"
+echo OK
+
+echo $N Commit w/failure triggers ...................................$NL
+cd "$HERE/project/src"
+bk get $Q -e foo.c
+echo delta four >> foo.c
+bk delta $Q -y2 foo.c
+bk commit $Q -y2 2>ERR && fail -f ERR
+echo OK
+
+#if [ X$BK_TESTGUI != X ]; then
+#    echo $N citool w/failure triggers ...................................$NL
+#    cd "$HERE/project/src"
+#    bk get $Q -e foo.c
+#    echo delta five >> foo.c
+#    bk delta $Q -y2 foo.c
+#    bk citool
+#    echo OK
+#fi
+
+echo $N Pull w/failure triggers .....................................$NL
+rm -f "$HERE/project/BitKeeper/triggers/"*-commit
+rm -rf "$HERE/copy/BitKeeper/triggers"
+cd "$HERE/project/src"
+bk get $Q -e foo.c
+echo 5 >> foo.c
+bk delta $Q -y2 foo.c
+bk commit $Q -y2 
+
+cd "$HERE/copy"
+bk pull -c0 $Q 2>ERR && fail -f ERR
+bk lock -s || fail
+
+# clean up
+cd "$HERE/project/src"
+bk undo -qfr+
+echo OK
+
+cd "$HERE/copy"
+echo $N Push w/failure triggers .....................................$NL
+cd "$HERE/copy/src"
+bk get $Q -e foo.c
+echo delta two >> foo.c
+bk delta $Q -y2 foo.c
+bk commit $Q -y2 || fail
+bk push -c0 $Q 2>ERR && fail -f ERR
+bk lock -s || fail
+echo OK
+
+echo $N Make sure undo triggers can fail an undo ....................$NL
+cd "$HERE"
+bk clone $Q copy undo
+cd undo
+mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/pre-undo << EOF
+#!/bin/sh
+
+exit 1
+EOF
+chmod +x BitKeeper/triggers/pre-undo
+TIP=`bk changes -r+ -nd:I:`
+bk undo -fsr+ > OUT 2>&1 && fail should have failed
+test $TIP = `bk changes -r+ -nd:I:` || {
+	fail -f OUT should not have removed top cset $TIP
+}
+echo OK
+
+echo $N Make sure pre-undo triggers can see the changeset list ......$NL
+cat > BitKeeper/triggers/pre-undo << EOF
+#!/bin/sh
+
+cat \$BK_CSETLIST > LIST
+exit 1
+EOF
+chmod +x BitKeeper/triggers/pre-undo
+bk tag $Q TIP
+TIP=`bk changes -r+ -nd:I:`
+bk undo -fsa1.1 > OUT 2>&1 && fail should have failed
+test $TIP = `bk changes -r+ -nd:I:` || fail should not have removed top cset
+bk changes -afnd:KEY: -r1.1.. > WANT
+cmpfiles WANT LIST
+echo OK
+
+echo $N Make sure post-undo triggers are run ........................$NL
+rm BitKeeper/triggers/pre-undo
+cat > BitKeeper/triggers/post-undo << EOF
+#!/bin/sh
+
+bk changes -nd:I: -r+ > POST-UNDO
+EOF
+chmod +x BitKeeper/triggers/post-undo
+bk undo -fsa1.1 > OUT 2>&1 || fail should not have failed
+test -f POST-UNDO || fail failed to run trigger
+test 1.1 = `bk changes -r+ -nd:I:` || fail undo failed
+echo OK
+
+echo $N Make sure clone does not run undo triggers ..................$NL
+cat > BitKeeper/triggers/pre-undo << EOF
+#!/bin/sh
+
+echo PRE-UNDO >> UNDO
+exit 1
+EOF
+chmod +x BitKeeper/triggers/pre-undo
+cat > BitKeeper/triggers/post-undo << EOF
+#!/bin/sh
+
+echo POST-UNDO >> UNDO
+bk changes -nd:I: -r+ > POST-UNDO
+EOF
+chmod +x BitKeeper/triggers/post-undo
+bk new $Q BitKeeper/triggers/pre-undo BitKeeper/triggers/post-undo
+bk commit $Q -y"undo triggers"
+TIP=`bk changes -r+ -nd:I:`
+touch somefile
+bk new $Q somefile
+bk commit $Q -ysomefile
+cd ..
+bk clone $Q -r$TIP undo undo-clone || fail
+test -f undo_clone/UNDO && fail
+echo OK
+
+echo $N auto-mirroring ..............................................$NL
+cd "$HERE/project/BitKeeper/triggers"
+rm -f *
+while ! bk lock -ls
+do	#echo waiting for the repository to become unlocked
+	sleep 1
+done
+bk clone $Q "$HERE/project" "$HERE/backup" || fail
+cd "$HERE/project/BitKeeper/triggers"
+cat > post-incoming <<EOF
+#!/bin/bash
+bk push $Q "$HERE/backup" || echo Failed to mirror the repository
+EOF
+chmod +x post-incoming
+cd "$HERE/copy/src"
+echo data > car.c
+bk new $Q car.c
+bk commit $Q -y3  
+bk push $Q "$HERE/project" || fail
+cd "$HERE/backup"
+TRY=0
+while [ $TRY -lt 10 ] 
+do
+	if bk _test -f "$HERE/backup/src/SCCS/s.car.c"; then break; fi
+	sleep 1
+	TRY=`expr $TRY + 1`
+done
+if bk _test ! -f "$HERE/backup/src/SCCS/s.car.c"; then fail; fi
+echo OK
+
+echo $N Make sure we run triggers on a merge commit .................$NL
+cd "$HERE/project/BitKeeper/triggers"
+rm -f *
+while ! bk lock -ls
+do	#echo waiting for the repository to become unlocked
+	sleep 1
+done
+bk clone $Q "$HERE/project" "$HERE/merge" || fail
+cat > post-commit <<EOF
+#!/bin/bash
+set | grep ^BK > "$HERE/merge-commit"
+EOF
+chmod +x post-commit
+cd "$HERE/project"
+echo foo > foo
+bk new $Q foo
+bk commit $Q -ywhatever
+rm -f "$HERE/merge-commit"
+cd "$HERE/merge"
+echo bar > bar
+bk new $Q bar
+bk commit $Q -ywhatever
+cd "$HERE/project"
+bk pull $Q "$HERE/merge" || fail should have succeeded
+test -f "$HERE/merge-commit" || fail failed to run trigger
+echo OK
+
+echo $N Modify comment in pre-commit trigger ........................$NL
+cd "$HERE"
+commercial comment-chk
+trig=BitKeeper/triggers
+mkdir -p $trig
+cat > $trig/pre-commit.comments <<'EOF'
+#!/bin/sh
+tr '[a-z]' '[A-Z]' > "$BK_TMP/comment$$" < "$BK_COMMENTFILE"
+mv "$BK_TMP/comment$$" "$BK_COMMENTFILE"
+EOF
+chmod +x $trig/*
+touch foo
+bk new $Q foo
+bk commit $Q -y'upper case' || fail
+bk prs -r+ -hnd:COMMENTS: ChangeSet | grep -q "UPPER CASE" || fail
+echo OK
+
+echo $N Check commit w perl trigger .................................$NL
+cd "$HERE"
+commercial proj2
+bk edit $Q BitKeeper/etc/config
+echo "checkout: get" >> BitKeeper/etc/config
+bk delta $Q -ycheckout BitKeeper/etc/config
+bk commit $Q -ycheckout
+mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/pre-commit <<EOF
+#! $PERL -w
+print "I am in perl";
+EOF
+chmod +x BitKeeper/triggers/pre-commit
+echo h > h.h
+bk ci $Q -i h.h
+bk commit -yCset 2> "$HERE/out"
+grep -q "I am in perl" "$HERE/out" || fail -f "$HERE/out"
+echo OK
+
+if [ "$PLATFORM" = "WIN32" ]
+then
+echo $N Check commit w Windows Batch file trigger ...................$NL
+cat > BitKeeper/triggers/pre-commit.bat <<EOF
+@ECHO OFF
+REM This is a remark
+echo "I am a Windows BATCH file"
+EOF
+bk edit $Q h.h
+echo "h2" > h.h
+bk delta $Q -yh2 h.h
+bk commit -yCset_bat 2> "$HERE/out"
+grep -q "I am a Windows BATCH file" "$HERE/out" || fail
+echo OK
+
+echo $N Check commit w bogus shell ..................................$NL
+cat > BitKeeper/triggers/pre-commit <<EOF
+#!c:/bogus.exe
+exit 0
+EOF
+bk edit $Q h.h
+echo "h2" >> h.h
+bk delta $Q -yh3 h.h
+bk commit $S -yCset_h3 2> "$HERE/out"
+grep -q "Cannot expand shell path" "$HERE/out" || fail
+echo OK
+fi
+
+echo $N Check that delta does NOT work in repo with trigger .........$NL
+# create a pre-delta trigger that should prevent delta from working and 
+# initial sanity check
+cd "$HERE"
+commercial proj3
+echo foo >foo
+bk new $Q foo
+cd "$HERE/proj3"
+mkdir BitKeeper/triggers
+cat >BitKeeper/triggers/pre-delta <<EOF
+#!/bin/bash
+exit 1
+EOF
+chmod +x BitKeeper/triggers/*
+cd "$HERE/proj3"
+bk edit $Q foo 
+bk delta $Q -f -yfoo foo 2>ERR && fail
+echo OK
+
+echo $N Check delta does NOT work with trigger NOT checked out ......$NL
+cd "$HERE/proj3"
+# we have to ignore the pre-delta trigger (since it exit 1) when
+# checking in the pre-delta trigger...
+BK_NO_TRIGGERS=1 bk new $Q BitKeeper/triggers/pre-delta || fail
+bk edit $Q foo 
+bk delta $Q -f -ybar foo 2>/dev/null && fail "failed (bug 2005-04-13-001)"
+echo OK

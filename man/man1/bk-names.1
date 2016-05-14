@@ -1,0 +1,18 @@
+.so ../bk-macros
+.TH "bk names" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk names \- put \*(BK files where they should be
+.SH SYNOPSIS
+.B bk names [\-q]
+.BKARGS
+.SH DESCRIPTION
+Each \*(BK s.file
+records its path relative to the root of the repository.  This
+command examines each of the listed files and moves them into their 
+recorded location if they are not there already.
+.SH OPTIONS
+.TP
+.B \-q
+Quiet mode.
+.SH CATEGORY
+.B Utility

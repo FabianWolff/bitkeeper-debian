@@ -1,0 +1,128 @@
+# Copyright 2000,2005-2006,2008,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Make sure that if we have a repository with bad local data, we pull,
+# it detects the bad data and restores, and the new files pulled in 
+# are not left behind.
+
+
+if [ X$Q = X ]
+then	L=-l
+else	L=
+fi
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Create some data, clone, create more data, pull .............$NL
+echo 1 > A
+bk new $Q A
+if bk _test ! -f SCCS/s.A; then echo failed to create history; exit 1; fi
+bk commit $S -y"This is a \"Change Set\""
+cd "$HERE"
+bk clone $Q project clone
+cd project
+echo 2 > B
+echo 3 > C
+echo 4 > D
+echo 5 > E
+bk new $Q B C D E
+bk commit $S -y"This is a \"Change Set\""
+cd "$HERE/clone"
+bk _mv SCCS/s.A SCCS/s.WRONG_PLACE
+BK_CONFIG='partial_check:off!;autofix:off!' bk pull $Q > OUT 2>&1
+if [ $? -eq 0 ]
+then	echo failed to exit non-zero
+	exit 1
+fi
+for i in B C D E
+do	if [ -f $i ]
+	then	echo failed to clean up $i
+		exit 1
+	fi
+done
+grep -q 'check: SCCS/s.WRONG_PLACE should be SCCS/s.A' OUT || {
+	echo bad error message from pull:
+	cat OUT
+	exit 1
+}
+echo OK
+cores
+
+echo $N Create data in subdir, pull, make sure it removes dir .......$NL
+cd "$HERE/project"
+mkdir subdir
+cd subdir
+echo Nasty boy > personality
+bk new $Q personality
+bk commit $Q -ynasty
+cd "$HERE/clone"
+bk abort -f
+BK_CONFIG='partial_check:off!;autofix:off!' bk pull -q > OUT 2>&1
+if [ $? -eq 0 ]
+then	echo failed to exit non-zero
+	exit 1
+fi
+for i in B C D E
+do	if [ -f $i ]
+	then	echo failed to clean up $i
+		exit 1
+	fi
+done
+if [ -d subdir ]
+then	echo failed to remove subdir
+	cat OUT
+	exit 1
+fi
+grep -q 'check: SCCS/s.WRONG_PLACE should be SCCS/s.A' OUT || {
+	echo bad error message from pull:
+	cat OUT
+	exit 1
+}
+echo OK
+cores
+
+echo $N Create a new subdir, pull it, dir inode should not change ...$NL
+cd "$HERE/project"
+mkdir directory
+cd directory
+echo Cindy > TheBest
+bk new $Q TheBest
+bk commit $Q -ywhoohooo
+cd "$HERE"
+bk clone $Q project test2
+cd project/directory
+bk edit $Q TheBest
+echo Beth > TheBest
+bk delta $Q -y"Larry gets a clue" TheBest
+bk commit $Q -ywhatever
+cd "$HERE/test2"
+ls -lid directory | awk '{print $1}' > START
+bk pull $Q || {
+	echo pull failed
+	exit 1
+}
+ls -lid directory | awk '{print $1}' > FINISH
+cmp -s START FINISH || {
+	echo Directory was changed
+	diff START FINISH
+	exit 1
+}
+echo OK
+cores

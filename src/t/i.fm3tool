@@ -1,0 +1,205 @@
+# Copyright 2004-2006,2009,2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+export BK_LICENSE=ACCEPTED
+
+echo $N Create some data ............................................$NL
+commercial project
+mkdir "$HERE/project/src"
+cd "$HERE/project/src"
+perl -e '
+for ($i = 1; $i <= 400; $i++) {
+    printf "%3s: this is part of the original file\n", $i;
+}' > file1
+bk ci $Q -i file1 || exit 1
+bk commit $Q -y"initial checkin"
+# create clones
+cd "$HERE"
+bk clone $Q "$HERE/project" "$HERE/remote"
+bk clone $Q "$HERE/project" "$HERE/local"
+# introduce conflicts
+cd "$HERE/remote/src"
+bk get $Q -e file1
+# There's no science here; I just played around until I got a jumbled mess
+sed '4s/this.*/expect to see a conflict through line 10/;
+5,10s/this.*$/this was changed in the remote/;
+29s/this.*/expect to see a conflict through line 45/;
+30,45s/this.*$/this was changed in the remote/;
+70s/this.*/this is a single line change in the remote/;
+75s/this.*/this was changed in the remote/;
+76s/this.*/this was changed in the remote/;
+77i\
+     this was added in the remote\
+     this was added in the remote\
+     this was added in the remote\
+     this was added in the remote\
+     this was added in the remote\
+     this was added in the remote\
+     this was added in the remote;
+99s/this.*/expect to see a conflict through line 175/;
+100,175s/this.*$/this was changed in the remote/;
+300,310s/this.*$/this was changed in the remote/;
+' file1 > tmp
+mv tmp file1
+bk ci $Q -y"introduced conflicts" file1
+bk commit $Q -y"introduced conflicts in file1"
+cd "$HERE/local/src"
+bk get $Q -e file1
+sed '4s/this.*/expect to see a conflict through line 10/;
+5,6s/this.*$/this was changed in the local/;
+10s/this.*$/this was changed in the local/;
+29s/this.*/expect to see a conflict through line 45/;
+30,45s/this.*$/this was changed in the local/;
+70s/this.*/this is a single line change in the local/;
+75s/this.*/this was changed in the local/;
+76i\
+     this was added in the local\
+     this was added in the local\
+     this was added in the local\
+     this was added in the local\
+     this was added in the local\
+ 76: this is part of the original file\
+     this was added in the local;
+77i\
+     this was added in the local\
+     this was added in the local\
+     this was added in the local\
+     this was added in the local;
+76s/this.*/this was changed in the local/;
+99s/this.*/expect to see a conflict through line 175/;
+100,175s/this.*$/this was changed in the local/' file1 > tmp
+mv tmp file1
+bk ci $Q -y"introduced conflicts" file1
+bk commit $Q -y"introduced conflicts in file1"
+# pushing remote changes to parent
+cd "$HERE/remote"
+bk push $Q
+# pulling changes to local
+cd "$HERE/local"
+ bk pull $Q -s 2>pull.err
+if [ ! -d RESYNC ]; then echo failed to create RESYNC directory; exit 1; fi
+echo OK
+
+echo $N "Starting fm3tool with bad file name, should stop itself .....$NL"
+cd "$HERE/local/RESYNC"
+bk fm3tool -geometry 800x600 \
+    -o merge.raw -f -l1.1.1.1 -r1.2 src/no-such-file 2> GOT && {
+	echo failed: fm3tool passed
+	exit 1
+}
+grep -q "ERROR: couldn't find 1.1.1.1 in src/no-such-file" GOT || {
+    echo "failed wrong msg"
+    cat GOT
+    exit 1
+}
+echo OK
+
+echo $N "Starting fm3tool interactively; you must quit manually.......$NL"
+cd "$HERE/local/RESYNC"
+bk fm3tool -geometry 800x600 -o merge.raw -f -l1.1.1.1 -r1.2 src/file1
+echo OK
+
+echo $N Boundary bug - left click on left block, then type s.........$NL
+# Need a license to get smerge to do its thing
+cd "$HERE"
+cat <<EOF > c
+logging: none
+description: BitKeeper Test repository
+email: nobody@nowhere.bk
+license: $BKL_PRO
+licsign1: $BKL_P1
+licsign2: $BKL_P2
+licsign3: $BKL_P3
+EOF
+bk setup -f -cc boundary
+cd boundary
+# 1.1 of foo
+cat <<'EOF' > foo
+orig line
+EOF
+bk new $Q foo
+# 1.2
+bk edit $Q foo
+cat <<'EOF' > foo
+left click on this line, then type s
+orig line
+EOF
+bk delta $Q -y1.2 foo
+# 1.1.1.1 - simple replace line
+bk _get $Q -er1.1 foo
+cat <<'EOF' > foo
+replaced line
+EOF
+bk delta $Q -y1.1.1.1 foo
+# 1.3 - same patch as 1.1.1.1
+bk edit $Q foo
+cat <<'EOF' > foo
+left click on this line, then type s
+replaced line
+EOF
+bk delta $Q -y1.3 foo
+# "merge" and run fm3tool - fails in bk-3.2.4
+bk edit $Q -M1.1.1.1 foo
+bk fm3tool -f -l1.3 -r1.1.1.1 foo
+bk get $Q foo
+cat <<'EOF' > WANT
+left click on this line, then type s
+replaced line
+EOF
+bk undos < foo > GOT
+checkfiles WANT GOT
+echo OK
+
+echo $N Testing Japanese, click on left line, then type s............$NL
+cd "$HERE/project"
+cat >jp.txt <<EOF
+私は　日本語が　分かります
+そうですか？
+はい、そうですよう！
+EOF
+bk new $Q jp.txt
+bk commit $Q -y"added jp.txt"
+cd "$HERE"
+bk clone $Q project copy
+cd project
+bk edit $Q jp.txt
+cat >jp.txt <<EOF
+私は　日本語が　分かります
+そうですか？
+はい、本当です
+EOF
+bk ci $Q -y"modified one line"
+bk commit $Q -y"changed jp.txt"
+cd "$HERE/copy"
+bk edit $Q jp.txt
+cat >jp.txt <<EOF
+私は　日本語が　分かります
+そうですか？
+本当です、どうもう　ありがとう　ございます
+EOF
+cp jp.txt save.txt
+bk ci $Q -y"modified last line"
+bk commit $Q -y"changed jp.txt"
+bk pull -R $Q >OUT 2>&1 || fail -f OUT
+cd RESYNC
+bk edit $Q -M1.1.1.1 jp.txt
+echo "encoding system utf-8" > "`bk dotbk`/config-gui"
+echo en_US.UTF-8 > "`bk dotbk`/LANG"
+bk fm3tool -f -r1.2 -l1.1.1.1 jp.txt
+bk get $Q -S jp.txt
+cmpfiles jp.txt ../save.txt
+echo OK

@@ -1,0 +1,210 @@
+# Copyright 2006-2011,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repositories .................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+cd "$HERE"
+bk clone $Q project clone
+bk clone $Q project clone2
+echo OK
+
+echo $N Test bk -@ with one parent ..................................$NL
+cd project
+bk pwd > "$HERE"/WANT
+cd "$HERE"/clone
+bk -q -@ pwd > "$HERE"/GOT || fail
+checkfiles "$HERE"/WANT "$HERE"/GOT
+echo OK
+
+echo $N Test bk -@ with no parent ...................................$NL
+bk parent -rq
+bk -q -@ pwd 2> ERR && fail
+grep -q "repository has no parent" ERR || fail
+echo OK
+
+echo $N Test bk -@ with specified parent ............................$NL
+cd "$HERE"/clone2
+bk -q -@"$HERE"/project pwd > "$HERE"/GOT || fail
+checkfiles "$HERE"/WANT "$HERE"/GOT
+echo OK
+
+echo $N Test bk -@ with specified parent outside of any repository ..$NL
+cd "$HERE"
+bk -q -@"$HERE"/project pwd > "$HERE"/GOT || fail
+checkfiles "$HERE"/WANT "$HERE"/GOT
+echo OK
+
+echo $N Test bk -@ with multiple parents ............................$NL
+cd "$HERE"/clone2
+bk parent $Q -ai "$HERE"/clone
+cd "$HERE"/clone
+bk pwd > "$HERE"/WANT
+cd "$HERE"/project
+bk pwd >> "$HERE"/WANT
+cd "$HERE"/clone2
+bk -q -@ pwd > "$HERE"/GOT || fail
+checkfiles "$HERE"/WANT "$HERE"/GOT
+echo OK
+
+echo $N Test bk -@ with multiple parents listed in a file ...........$NL
+cd "$HERE"
+for i in clone project clone2
+do	echo "$HERE/$i" >> LIST
+done
+rm WANT
+for i in clone project clone2
+do	cd "$HERE"/$i
+	bk pwd >> "$HERE"/WANT
+done
+cd "$HERE"
+bk -q -@@LIST pwd > GOT
+checkfiles "$HERE"/WANT "$HERE"/GOT
+echo OK
+
+echo $N Test bk -@ -r ...............................................$NL
+cd "$HERE"/project
+mkdir src
+cd src
+for i in foo bar blech
+do	echo $i > $i
+	bk new $Q $i
+done
+bk commit $Q -ywhatever
+cd ..
+bk -gr > "$HERE"/ALL
+bk -grsrc > "$HERE"/SRC
+cd "$HERE"/clone
+bk -q -@"$HERE"/project -gr > "$HERE"/GOT
+checkfiles "$HERE"/ALL "$HERE"/GOT
+echo OK
+
+echo $N Test bk -@ -r with a subdirectory ...........................$NL
+bk -q -@"$HERE"/project -grsrc 2>ERR && fail -f ERR should fail
+echo "bk: --cd not allowed with -@<URL>" > WANT
+cmpfiles ERR WANT
+echo OK
+
+echo $N Test input fed on stdin .....................................$NL
+cd "$HERE"
+rm LIST
+for i in clone project clone2
+do	cd "$HERE"/$i
+	bk pwd >> "$HERE"/LIST
+	bk changes -r+ >> "$HERE"/CHANGES
+done
+cd "$HERE"
+echo + | bk -q -@@"$HERE"/LIST changes - > GOT
+checkfiles "$HERE"/CHANGES "$HERE"/GOT
+echo OK
+
+echo $N Test that a long running bkd will not allow remote calls ....$NL
+cd "$HERE"/project
+bk bkd -q -d -aPORT -ikill > "$HERE"/BKD 2>&1 || fail
+P=`cat PORT`
+cd "$HERE"/clone
+bk -@bk://localhost:$P pwd > OUT 2>&1
+grep -q "$HERE"/project OUT && {
+	echo should not have "$HERE"/project in output
+	cat OUT
+	exit 1
+}
+grep -q 'remote commands are not enabled.' OUT || {
+	echo should have told us there are no remote commands 
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Test that individual commands can be enabled ................$NL
+bk -@bk://localhost:$P -q _debugargs 1 2 > GOT || fail
+cat <<EOF > WANT
+0: _debugargs
+1: 1
+2: 2
+cwd: $HERE/project
+start_cwd: $HERE/project
+EOF
+cmpfiles WANT GOT
+echo OK
+
+bk _kill bk://localhost:$P || fail
+
+echo $N Test that we can enable remote calls with -U ................$NL
+cd "$HERE"/project
+bk pwd > "$HERE"/PWD
+bk bkd -U -q -d -aPORT -ikill > "$HERE"/BKD 2>&1 || fail
+P=`cat PORT`
+trap "bk _kill bk://localhost:$P" 0
+cd "$HERE"/clone
+bk -q -@bk://localhost:$P pwd > OUT 2>&1
+cmpfiles "$HERE"/PWD OUT
+echo OK
+
+test X$PREFER_RSH = XYES -a "$PLATFORM" != "WIN32" && {
+echo $N Test that rsh:// enables them automatically .................$NL
+cd "$HERE"/clone
+bk -q -@rsh://localhost//"$HERE"/project pwd > OUT 2>&1
+cmpfiles "$HERE"/PWD OUT
+echo OK
+}
+
+echo $N Test expected argument parsing ..............................$NL
+mkdir me@foo
+bk -q@. -r _debugargs 1 2 '2 2' -q 'jj e' -@jj > GOT || fail
+cat <<EOF > WANT
+0: _debugargs
+1: 1
+2: 2
+3: "2 2"
+4: -q
+5: "jj e"
+6: -@jj
+7: -
+cwd: $HERE/clone
+start_cwd: $HERE/clone
+stdin:
+ChangeSet
+... 5 more lines ...
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Make sure bk cleans locks when client dies ..................$NL
+cd "$HERE"/project
+perl -e 'print("bam" x 200000)' > bam
+bk new -b $Q bam || fail
+KEY=`bk log -r+ -nd':BAMHASH: :KEY: :MD5KEY|1.0:' bam`
+# allow bk client process to die while bkd side is still running
+echo $KEY | \
+     _BK_SIGPIPE=1 bk -q@bk://localhost:$P -zo0 -Lr -Bstdin sfio -qBo - | \
+     true
+bk -Lw30 version > /dev/null || fail didn\'t release lock
+echo OK
+
+echo $N Make sure bk -@ pull fails ..................................$NL
+bk -@foo pull >ERR 2>&1 && fail -f ERR should have failed
+grep -q "Cannot run interactive commands on a remote" ERR || fail -f wrong error
+echo OK
+
+echo $N Make sure bk -@ push fails ..................................$NL
+bk -@foo push >ERR 2>&1 && fail -f ERR should have failed
+grep -q "Cannot run interactive commands on a remote" ERR || fail -f wrong error
+echo OK
+
+echo $N Make sure bk -@ resolve fails ...............................$NL
+bk -@foo resolve >ERR 2>&1 && fail -f ERR should have failed
+grep -q "Cannot run interactive commands on a remote" ERR || fail -f wrong error
+echo OK

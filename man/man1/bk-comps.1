@@ -1,0 +1,41 @@
+.if \n[NESTED] \{\
+.so ../bk-macros
+.TH "bk comps" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk comps \- list the components belonging to a product
+.SH SYNOPSIS
+.B bk comps
+.[B] \-hmk
+.[OPTreq] \-s alias
+.SH DESCRIPTION
+The 
+.B bk comps
+command is used to list all repositories that are attached
+to the product.
+.LP
+The normal output is all components attached to the product, whether
+present or not.
+The options can be used to restrict the output depending on if the
+components are currently populated or not.
+.SH OPTIONS
+.TP "\-s\*<alias\*>"
+.B \-h
+Only list components currently populated, or "here".
+.tp
+.B \-k
+Instead of the default relative paths from the product root, list
+the root keys for each component.
+.tp
+.B \-m
+Only list components not currently populated, or "missing".
+.tp
+.OPTreq \-s alias
+List all components that belong to 
+.ARG alias .
+.SH "SEE ALSO"
+.SA alias
+.SA attach
+.SA here
+.SH CATEGORY
+.B Nested
+.\}

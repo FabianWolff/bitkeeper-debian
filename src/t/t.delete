@@ -1,0 +1,107 @@
+# Copyright 1999-2000,2003,2005-2006,2008,2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+echo $N Create some data ............................................$NL
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i foo.c bar.c h.h
+if bk _test ! -f SCCS/s.foo.c; then echo failed to create history; exit 1; fi
+echo OK
+echo $N Create a change set .........................................$NL
+bk commit $S -y"This is a \"Change Set\""
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo failed to clear pending list; bk pending; exit 1; fi
+echo OK
+cores
+echo $N Create a copy of the project with clone .....................$NL
+cd "$HERE"
+bk clone $Q project clone
+if [ ! -d clone ]; then echo failed to make top level directory; exit 1; fi
+cd clone
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+if [ ! -f BitKeeper/log/parent ]; then echo failed to record parent; exit 1; fi
+checkLocks
+echo OK
+echo $N Move a file manually and resync a change to it ..............$NL
+cd src
+bk _mv SCCS/s.bar.c SCCS/s.moved.c
+cd "$HERE/project/src"
+bk get $Q -e bar.c
+bk delta -fywhatever $Q bar.c
+bk commit $Q -ywhatever
+cd "$HERE/clone"
+bk pull $Q 2>ERROR && {
+   echo ok to fail with bad repo
+   cat ERROR
+   exit 1
+}
+grep -q "takepatch: can't find key.*bar.c" ERROR || {
+     echo wrong error
+     cat ERROR
+     exit 1
+}
+echo OK
+
+echo $N Test by-hand resolve after resolve -a fails .................$NL
+# This tests the following: Suppose we have one file moved in one place,
+# and another file with a conflict.  resolve -a will give up because
+# of the conflict, but it will resolve the moved file.  A subsequent
+# by-hand resolve needs to pick that up.
+# what we did above
+cd "$HERE/clone/src"
+bk _mv SCCS/s.moved.c SCCS/s.bar.c
+# set up this scenario
+cd "$HERE/project/src"
+bk rm foo.c
+bk edit $Q h.h
+echo i > h.h
+bk ci -yi $Q h.h || fail
+bk commit $Q -ycset1 || fail
+cd "$HERE/clone/src"
+bk edit $Q h.h
+echo j > h.h
+bk ci -yj $Q h.h || fail
+bk commit $Q -ycset2 || fail
+cd "$HERE/clone"
+_BK_PREVENT_RESOLVE_RERUN=1 bk pull $Q >resync.log 2>&1
+if [ $? -ne 1 ]; then echo failed; cat resync.log; exit 1; fi
+#cd clone
+if [ ! -d RESYNC ]; then echo failed: resolved already; exit 1; fi
+bk resolve -l -F <<EOF >resolve.out 2>&1
+m
+Whatever dude.
+.
+u
+EOF
+if [ $? -ne 0 ]
+then	echo failed
+	cat resolve.out
+	bk _logging
+	cd RESYNC
+	bk _logging
+	exit 1
+fi
+checkLocks
+echo OK

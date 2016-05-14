@@ -1,0 +1,255 @@
+# Copyright 2000-2006,2009-2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+IDCACHE=BitKeeper/log/x.id_cache
+
+mkBINs
+
+echo $N Create initial repository ...................................$NL
+commercial project
+bk admin -Z
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Create some data ............................................$NL
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i foo.c bar.c h.h
+if bk _test ! -f SCCS/s.foo.c; then echo failed to create history; exit 1; fi
+echo OK
+
+echo $N Check basic park/unpark cycle ...............................$NL
+bk edit $Q foo.c bar.c
+echo foo-new > foo.c
+echo bar-new >> bar.c
+echo "This a comment for bar.c" > c.bar.c
+bk _mv c.bar.c SCCS/c.bar.c
+echo "This a cset comment" > c.ChangeSet
+bk _mv c.ChangeSet "$HERE/project/SCCS/c.ChangeSet"
+bk _cp SCCS/c.bar.c "$HERE/c.ref"
+bk _cp "$HERE/project/SCCS/c.ChangeSet" "$HERE/cc.ref"
+cp foo.c "$HERE/foo.sav"
+cp bar.c "$HERE/bar.sav"
+bk park -y 2> /dev/null || fail
+NUM=`bk sfiles -c | wc -l`
+if [ $NUM -ne 0 ]; then echo failed; exit 1; fi;
+if bk _test -f SCCS/c.bar.c; then echo failed; exit 1; fi
+if bk _test -f "$HERE/project/SCCS/c.ChangeSet"; then echo failed; exit 1; fi
+bk edit $Q bar.c
+bk unpark 2> /dev/null 1>&2 || fail
+cmp -s foo.c "$HERE/foo.sav"
+if [ $? -ne 0 ]; then echo failed 1; exit 1; fi
+cmp -s bar.c "$HERE/bar.sav" 
+if [ $? -ne 0 ]; then echo failed 2; od -c bar.c; od -c bar.sav; exit 1; fi
+if bk _test ! -f SCCS/c.bar.c; then echo failed; exit 1; fi
+bk _cp SCCS/c.bar.c c.bar.c
+cmp -s c.bar.c "$HERE/c.ref"
+if [ $? -ne 0 ]; then echo failed 3; exit 1; fi
+rm -f c.bar.c
+if bk _test ! -f "$HERE/project/SCCS/c.ChangeSet"; then echo failed; exit 1; fi
+bk _cp "$HERE/project/SCCS/c.ChangeSet" c.ChangeSet
+cmp -s c.ChangeSet "$HERE/cc.ref"
+if [ $? -ne 0 ]; then echo failed 3; exit 1; fi
+rm -f c.ChangeSet
+echo OK
+
+echo $N Check basic park/unpark via stdin ...........................$NL
+bk park -y"hi mom" 2> /dev/null || fail
+mv "$HERE/project/BitKeeper/tmp/parkfile_1.sfio" "$HERE/parkfile"$$
+bk unpark - < "$HERE/parkfile"$$ 2>/dev/null 1>&2 || fail
+cmp -s foo.c "$HERE/foo.sav"
+if [ $? -ne 0 ]; then echo failed 1; exit 1; fi
+echo OK
+rm -f "$HERE/parkfile"$$ 
+
+echo $N Check basic park/unpark with reject file ....................$NL
+bk unedit bar.c
+bk edit $Q foo.c
+echo foo-new2 > foo.c
+bk park <<EOF 2> /dev/null
+hi mom
+hi dad
+.
+EOF
+cp "$HERE/project/BitKeeper/tmp/parkfile_1.sfio" "$HERE/parkfile"$$
+NUM=`bk sfiles -c | wc -l`
+if [ $NUM -ne 0 ]; then echo failed; exit 1; fi;
+bk edit $Q foo.c
+echo foo-new3 > foo.c
+bk ci $Q -y foo.c
+bk unpark 2> /dev/null 1>&2
+# make sure unpark does not delete the parkfile
+if [ ! -f "$HERE/project/BitKeeper/tmp/parkfile_1.sfio" ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Check unpark -f with reject file ............................$NL
+bk park -c  2>/dev/null 1>&2
+bk unpark -f  2>/dev/null 1>&2
+if [ ! -f foo.c.rej ]; then echo failed; exit 1; fi
+if bk _test -f SCCS/t.foo.c.rej; then echo failedXXX; exit 1; fi
+echo OK
+bk unedit foo.c
+cp "$HERE/parkfile"$$ "$HERE/project/BitKeeper/tmp/parkfile_1.sfio"
+
+echo $N Check park/unpark with offset diff ..........................$NL
+bk clean foo.c
+bk fix $Q foo.c || fail
+echo foo-new4 > foo.c
+bk get $Q -p -r1.1 foo.c >> foo.c
+bk unpark -c 2>/dev/null 1>&2 || fail
+bk undos > CMP2 <<EOF
+foo-new4
+foo-new2
+EOF
+cmp -s foo.c CMP2
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Check unpark with renamed and edited file ...................$NL
+bk undos > move_me <<EOF
+111
+222
+333
+EOF
+bk new $Q -l move_me
+echo "444" >> move_me
+bk park -y 2> /dev/null
+bk edit $Q move_me
+bk _cp "$HERE/project/$IDCACHE" x.id_cache
+bk mv move_me new_me
+bk _mv x.id_cache "$HERE/project/$IDCACHE"
+sed -e "s/111/000/" new_me > new_me.tmp
+mv new_me.tmp new_me
+bk unpark 2>/dev/null 1>&2
+bk undos > new_me.ref <<EOF
+000
+222
+333
+444
+EOF
+cmp -s new_me new_me.ref || { echo failed; exit 1; }
+echo OK
+
+echo $N Should not unpark binary over changed file ..................$NL
+cp "$BIN1" binary
+bk new $Q -lb binary
+cp "$BIN2" binary
+echo "I am a extra file" > extra
+cp extra "$HERE/extra.ref"
+bk park -y -a 2> /dev/null
+if [ -f extra ]; then echo failed 0; exit 1; fi
+bk edit $Q binary
+cp "$BIN3" binary
+bk unpark 2> unpark.out 1>&2
+grep -q "unsafe to unpark over changed binary file" unpark.out || {
+							echo failed 1; exit 1; }
+echo OK
+bk park -c
+echo $N Check unpark with moved binary file .........................$NL
+rm -f binary
+bk mv binary binary_moved || fail
+bk unpark  2>/dev/null 1>&2 || fail
+if [ -f binary ]; then echo failed; exit 1; fi
+cmp -s "$BIN2" binary_moved || { echo failed; exit 1; }
+if [ ! -f extra ]; then echo failed; exit 1; fi
+cmp -s extra "$HERE/extra.ref" || { echo failed 3; exit 1; }
+echo OK
+
+echo $N Should failed unpark binary changed delta ...................$NL
+bk park -y -a 2> /dev/null || fail
+bk edit $Q binary_moved
+cp "$BIN3" binary_moved
+bk delta  $Q -uy"new" binary_moved || fail
+if [ ! -f binary_moved ]; then echo failed; exit 1; fi
+bk unpark 2> unpark.out 1>&2
+grep -q "unsafe to unpark over changed binary file" unpark.out || {
+							echo failed; exit 1; }
+echo OK
+
+echo $N Unpark \-f should overide local changed delta  ................$NL
+bk unpark -cf 2> /dev/null 1>&2
+test -f binary_moved || fail
+cmp -s "$BIN2" binary_moved || fail
+echo OK
+
+if [ "$PLATFORM" = "WIN32" ]
+then #--------------------------------------------------------------------
+echo $N Check park/unpark with mix Unix Dos EOLN ....................$NL
+bk admin $Q -fEOLN_NATIVE bar.c
+bk edit $Q bar.c
+# This test assume echo output in binary mode
+echo -e "new-new\r" >> bar.c
+bk edit $Q foo.c
+echo "666" >> foo.c
+cp bar.c bar.ref
+cp foo.c foo.ref
+bk park -y 2> /dev/null
+if [ -f bar.c ]; then echo failed; exit 1; fi
+if [ -f foo.c ]; then echo failed; exit 1; fi
+bk unpark 2> /dev/null 1>&2
+cmp -s bar.c bar.ref || { echo failed; exit 1; }
+cmp -s foo.c foo.ref || { echo failed; exit 1; }
+echo OK
+
+fi   #--------------------------------------------------------------------
+
+if [ "$PLATFORM" = "UNIX" ]
+then  #--------------------------------------------------------------------
+echo $N Make sure park/unpark ignore symlink ........................$NL
+bk unedit foo.c bar.c new_me
+bk edit $Q foo.c bar.c new_me
+sed -e "s/111/000/" new_me > new_me.tmp
+mv new_me.tmp new_me
+bk undos > new_me.ref <<EOF
+000
+222
+333
+EOF
+ln -s bar.c sym
+bk delta $Q -i sym
+bk edit $Q sym
+rm -f sym
+ln -s foo.c sym
+bk park -y 2> park.out 1>&2
+grep -q "sym.*not parked" park.out || { echo failed; exit 1; }
+if [ ! -e sym ]; then echo failed; exit 1; fi
+bk unpark 2> /dev/null 1>&2
+cmp -s new_me new_me.ref || { echo failed; exit 1; }
+echo OK
+
+echo $N Make sure park -a handle symlink ............................$NL
+bk park -y -a 2> /dev/null
+if [ -h "sym" ]; then echo failed; exit 1; fi
+bk unpark 2> /dev/null 1>&2
+if [ ! -h "sym" ]; then echo failed; exit 1; fi
+ls -l sym | grep -q "\-> foo.c" || { echo failed; exit 1; }
+echo OK
+
+echo $N Make sure park -a handle symlink as extra file ..............$NL
+bk unedit $Q sym
+ln -s foo.c extra_sym
+bk park -y -a 2> /dev/null
+if [ -e extra_sym ]; then echo failed; exit 1; fi
+bk unpark 2> /dev/null 1>&2
+if [ ! -h "extra_sym" ]; then echo failed; exit 1; fi
+ls -l extra_sym | grep -q "\-> foo.c" || { echo failed; exit 1; }
+echo OK
+
+fi   #--------------------------------------------------------------------

@@ -1,0 +1,244 @@
+# Copyright 1999-2002,2005,2008-2009,2013-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+commercial whatever
+echo some text >X
+echo other text >Y
+bk delta $Q -i X Y
+echo $N Remove all unmodified files .................................$NL
+bk get $Q X
+bk get $Q -e Y
+bk clean
+if [ -f X ] || [ -f Y ]; then	echo failed; exit 1; fi
+echo OK
+
+echo $N Remove only files on command line ...........................$NL
+bk get $Q X Y
+bk clean X
+if [ -f X ] || [ ! -f Y ]; then	echo failed; exit 1; fi
+echo OK
+
+echo $N unedit should remove even modified files ....................$NL
+bk get $Q -e X
+echo more text >>X
+bk unedit X
+if [ -f X ]; then echo failed; exit 1; fi
+if bk _test -f SCCS/p.X; then echo failed - still locked; exit 1; fi
+echo OK
+
+echo $N unedit should not autoexpand file names .....................$NL
+for i in R S T U V
+do	ls > $i
+	bk new $Q $i
+    	bk edit $Q $i
+	echo "sl-pG-- $i"
+done > WANT
+bk sfiles -vlg > A
+cmpfiles WANT A
+bk unedit 2>/dev/null
+bk sfiles -vlg > B
+cmpfiles A B
+echo OK
+
+echo $N clean should autoexpand file names ..........................$NL
+bk clean 2>/dev/null
+for i in R S T U V
+do	if bk _test -f SCCS/p.$i -o -w $i
+	then	echo failed on $i; exit 1
+	fi
+done
+echo OK
+
+bk _rm -f CMP1 CMP2 X Y SCCS/s.X SCCS/s.Y
+
+# Test internal compare for RCS, SCCS, EXPAND1, nonewline, binary, longline
+# and hash data.  Uses clean to test diffs (in some cases uses sfiles -c
+fail=no
+echo $N No change to a regular file .................................$NL
+echo reg > reg
+bk ci $Q -i reg
+bk get $Q -e reg
+bk clean $Q reg
+if [ $? -ne 0 ] ; then echo failed; fail=yes; else echo OK; fi
+echo $N No change to a no newline ending file .......................$NL
+echo $N nonl$NL > nonl
+bk ci $Q -i nonl
+bk get $Q -e nonl
+bk clean $Q nonl
+if [ $? -ne 0 ] ; then echo failed; fail=yes; else echo OK; fi
+echo $N No change to a longline file ................................$NL
+str=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+str=${str}${str}${str}${str}${str}${str}${str}${str}${str}${str}${str}${str}
+str=${str}${str}${str}${str}${str}${str}${str}${str}${str}${str}${str}${str}
+echo $str > long
+bk ci $Q -i long
+bk get $Q -e long
+bk clean $Q long
+if [ $? -ne 0 ] ; then echo failed; fail=yes; else echo OK; fi
+
+echo $N No change to SCCS expand file .. check sfiles -c ............$NL
+echo %""K% > sccsexp
+bk ci $Q -i sccsexp
+bk get $Q sccsexp
+mv sccsexp sccsexp.expn
+bk get $Q -e sccsexp
+rm -f sccsexp
+mv sccsexp.expn sccsexp
+chmod +w sccsexp
+result=`bk sfiles -c sccsexp | wc -l`
+if [ $result -ne 1 ] ; then echo failed; fail=yes; else echo OK; fi
+
+echo $N No change to SCCS expand file .. check clean ................$NL
+bk clean sccsexp 2>ERR && fail
+echo OK
+
+echo $N No change to RCS expand file ....check sfiles -c ............$NL
+echo '$Revision$' > rcsexp
+bk ci $Q -i rcsexp
+bk admin -fRCS rcsexp
+bk get $Q rcsexp
+mv rcsexp rcsexp.expn
+bk get $Q -e rcsexp
+rm -f rcsexp
+mv rcsexp.expn rcsexp
+chmod +w rcsexp
+result=`bk sfiles -c rcsexp | wc -l`
+if [ $result -ne 1 ] ; then echo failed; fail=yes; else echo OK; fi
+
+echo $N No change to RCS expand file ....check clean ................$NL
+bk unedit rcsexp
+bk edit $Q rcsexp
+bk clean $Q rcsexp
+if [ $? -ne 0 ] ; then echo failed; fail=yes; else echo OK; fi
+
+echo $N No change to expand first keyword only .. check sfiles -c ...$NL
+echo %""@% > exp1 
+echo %""K% >> exp1 
+bk ci $Q -i exp1
+bk get $Q exp1
+mv exp1 exp1.expn
+bk get $Q -e exp1
+rm -f exp1
+mv exp1.expn exp1
+chmod +w exp1
+result=`bk sfiles -c exp1 | wc -l`
+if [ $result -ne 1 ] ; then echo failed; fail=yes; else echo OK; fi
+
+echo $N No change to expand first keyword only .. check clean .......$NL
+bk clean $Q exp1 && fail
+echo OK
+
+echo $N Removing the newline from a file which used to have one .....$NL
+echo hadnl > hadnl
+bk ci $Q -i hadnl
+bk get $Q -e hadnl
+echo $NX hadnl$NXL > hadnl
+bk clean $Q hadnl
+if [ $? -eq 0 ] ; then echo failed; fail=yes; else echo OK; fi
+echo $N Adding a newline to a file which did not have one ...........$NL
+echo $N nothadnl$NL > nothadnl
+bk ci $Q -i nothadnl
+bk get $Q -e nothadnl
+echo nothadnl > nothadnl
+bk clean $Q nothadnl
+if [ $? -eq 0 ] ; then echo failed; fail=yes; else echo OK; fi
+echo $N No change to a file which initially had no newline ..........$NL
+echo $N initnonl$NL > initnonl
+bk ci $Q -i initnonl
+bk get $Q -e initnonl
+echo initnonl > initnonl
+bk delta $Q -yinitnonl initnonl
+bk get $Q -e initnonl
+bk clean $Q initnonl
+if [ $? -ne 0 ] ; then echo failed; fail=yes; else echo OK; fi
+echo $N Initially had no newline, then deleted last line ............$NL
+echo first > initdel
+echo $N initdel$NL >> initdel
+bk ci $Q -i initdel
+bk get $Q -e initdel
+echo first > initdel
+bk delta $Q -yinitdel initdel
+bk get $Q -e initdel
+bk clean $Q initdel
+if [ $? -ne 0 ] ; then echo failed; fail=yes; else echo OK; fi
+
+echo $N Check cleaning of a chmod +w sccs keywords file .............$NL
+bk unedit sccsexp || fail
+bk get $Q sccsexp || fail
+chmod +w sccsexp
+bk clean sccsexp || fail failed to clean sccsexp
+test -f sccsexp && fail failed to clean sccsexp
+echo OK
+
+echo $N Check cleaning of a chmod +w sccs keywords file with changes.$NL
+bk clean sccsexp || fail
+bk get $Q sccsexp
+chmod +w sccsexp
+echo foo >> sccsexp
+bk clean sccsexp 2>/dev/null && {
+	echo should not have cleaned sccsexp
+	exit 1
+}
+test -f sccsexp || {
+	echo should not have cleaned sccsexp
+	exit 1
+}
+echo OK
+
+echo $N Check cleaning of a chmod +w rcs keywords file ..............$NL
+bk clean rcsexp || fail
+bk get $Q rcsexp
+chmod +w rcsexp
+bk clean rcsexp || {
+	echo failed to clean rcsexp
+	exit 1
+}
+test -f rcsexp && {
+	echo failed to clean rcsexp
+	exit 1
+}
+echo OK
+
+echo $N Check cleaning of a chmod +w rcs keywords file with changes .$NL
+bk clean rcsexp || fail
+bk get $Q rcsexp
+chmod +w rcsexp
+echo foo >> rcsexp
+bk clean rcsexp 2>/dev/null && {
+	echo should not have cleaned rcsexp
+	exit 1
+}
+test -f rcsexp || {
+	echo should not have cleaned rcsexp
+	exit 1
+}
+echo OK
+
+test "$PLATFORM" != "WIN32" && {
+echo $N Check cleaning of a changed symlink .........................$NL
+ln -s some_dir symlink
+bk new $Q symlink
+ln -s some__other_dir symlink
+bk clean -v symlink 2>/dev/null && {
+	echo should not have cleaned symlink
+	exit 1
+}
+test -h symlink || {
+	echo should not have removed symlink
+	exit 1
+}
+echo OK
+}
+
+exit 0

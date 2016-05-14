@@ -1,0 +1,170 @@
+# Copyright 2000-2002,2005-2006,2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+commercial project
+echo $N check text file /w leading and trailing cntl-A \(append\)......$NL
+echo -e "\001\001\001\001" > data 
+echo "hi mom" >> data
+echo "hi dad" >> data
+cp data data.ref_new
+bk new $Q data
+bk get $Q data
+cmp -s data data.ref_new
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+bk edit $Q data
+echo -e "\001this is a line with one leading cntl-A" >> data
+echo -e "\001\001this is a line with two leading cntl-A" >> data
+echo -e "this is a line with trailing cntl-A\001" >> data
+echo -e "\001\001\001this is another line with three leading cntl-A" >> data
+cp data data.ref_inst
+bk ci $Q -ycntl-A data
+bk get $Q -e data
+cmp -s data data.ref_inst
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+bk clean data
+bk get data 2> get.out 1>&2
+grep -q "bad delta cksum"  get.out
+if [ $? -eq 0 ]; then echo failed; exit 1; fi
+cmp -s data data.ref_inst
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+bk admin -hhh data
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+echo $N check text file /w leading and trailing cntl-A \(change\)......$NL
+bk edit $Q -g data
+#echo "hi mom" > data
+echo -e "\001this is new changed line with one leading cntl-A" >> data
+echo "hi dad" >> data
+cp data data.ref_chg
+bk delta $Q -yinsert data
+bk edit $Q data
+cmp -s data data.ref_chg
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+echo $N check cnt-A in compress mode ................................$NL
+bk admin -Zgzip data
+bk edit $Q data
+echo "hi mom" > data
+echo -e "\001this is new cntl-A line" >> data
+echo -e "more new stuff for compress mode" >> data
+cp data data.ref_chg
+bk delta $Q -yinsert data
+bk edit $Q data
+cmp -s data data.ref_chg
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+bk admin -hhh data
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+echo $N check cnt-A when generating diff ............................$NL
+bk clean $Q data
+echo -e "\001\001" > pattern
+bk get -D data | grep -q `cat pattern`
+if [ $? -eq 0 ]; then echo failed; exit 1; fi
+bk get -DD data | grep -q `cat pattern`
+if [ $? -eq 0 ]; then echo failed; exit 1; fi
+echo OK
+echo $N check cnt-A when checking diff ..............................$NL
+bk edit $Q data
+bk sfiles -c data | grep -q SCCS/s.data
+if [ $? -eq 0 ]; then echo failed; exit 1; fi
+echo OK
+echo $N check cnt-A when pushing stuff ..............................$NL
+cd "$HERE"
+bk clone $Q project copy || fail
+cd "$HERE/project"
+echo foo > foo
+bk new $Q foo
+bk edit $Q foo
+echo -e "\001" >> foo
+bk delta $Q -ynew foo
+bk commit $Q -ynew
+bk push $Q "$HERE/copy" || { echo failed; exit 1; }
+echo OK
+
+echo $N check cnt-A on delta command line ...........................$NL
+bk edit $Q foo || fail
+A=`cat foo`
+bk delta $Q -y"$A odd comment" foo 2> "$HERE/out"
+grep -q "Non-printable" "$HERE/out" || { echo failed; exit 1; }
+echo OK
+
+# XX TODO need to get diff to produce 'i' command, and check
+# the processing of this case.
+
+echo $N more cnt-A tests ............................................$NL
+echo -e "\001" > test2
+echo -e "sdf" >> test2
+echo -e "sss" >> test2
+echo -e "\001" >> test2
+bk ci -i -y1 $Q test2 || fail
+bk edit $Q test2 2> get.out || fail
+cat get.out
+grep -q "bad delta cksum" get.out && fail
+echo -e "\001" > test2
+echo -e "sdf" >> test2
+echo -e "sss2" >> test2
+echo -e "\001" >> test2
+bk ci -y2 $Q test2 || fail
+bk edit $Q test2 2> get.out || fail
+cat get.out
+grep -q "bad delta cksum" get.out && fail
+echo -e "sdf" > test2
+echo -e "sss2" >> test2
+echo -e "\001" >> test2
+bk ci -y3 $Q test2 || fail
+bk edit $Q test2 2> get.out || fail
+cat get.out
+grep -q "bad delta cksum" get.out && fail
+echo -e "sdf" > test2
+echo -e "sss2" >> test2
+echo -e "\001a" >> test2
+bk ci -y4 $Q test2 || fail
+bk edit $Q test2 2> get.out || fail
+cat get.out
+grep -q "bad delta cksum" get.out && fail
+echo OK
+
+echo $N check cnt-A in just the right place in a long line ..........$NL
+# in checkin, fgets buf is 2048, so 2047 chars and a null.
+# if 2048 char is a ^A, another ^A will be added during the checkin
+# which won't be removed on a get, so the checksum will be one off.
+printf "+++++++++++++++++++++++++++++++\001" > A
+for i in 1 2 3; do
+	cat A A A A > B
+	mv B A
+done
+bk new $Q A
+bk checksum -r+ A || fail
+echo OK
+
+echo $N check carraige return in just the right place ...............$NL
+# in checkin, fgets buf is 2048, so 2047 chars and a null.
+# \r are stripped only if they occur before \n, which could be multiple
+# buffers away.  Test that the code tracks that.
+printf "\015\015\015\015\015\015\015\015" > C
+for i in 1 2 3 4; do
+	cat C C C C > B
+	mv B C
+done
+echo $NX x$NXL > x
+echo > y
+cat C x C C y C > B
+# last line of \r is replaced by a \n
+cat C x y y > WANT
+mv B C
+bk new $Q C
+bk admin -fEOLN_UNIX C
+bk get $Q C
+checkfiles WANT C
+echo OK

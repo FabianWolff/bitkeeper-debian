@@ -1,0 +1,519 @@
+# Copyright 2002-2003,2006-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Tests for  clone.
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+mkdir src
+cd src
+echo foo > 'F!O#O$ B%A^R&RR(R)RR'
+echo bar > beam.c
+echo h > CHANGESET
+bk ci $Q -i 'F!O#O$ B%A^R&RR(R)RR' beam.c CHANGESET
+bk mv beam.c bar.c
+if bk _test ! -f SCCS/s.'F!O#O$ B%A^R&RR(R)RR'; then echo failed to create history; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 18 ]; then echo wrong pending result $P; bk pending; exit 1; fi
+# setup for a later clone -r test
+cat > INITX <<EOF
+D 1.1 97/05/28 23:49:57 joe_user@joes_hostname 0 0 0/0/0
+c This is revision 1.1
+P src/oldfile
+------------------------------------------------
+EOF
+ls > oldfile
+bk delta $Q -i -IINITX oldfile
+bk get $Q -T oldfile
+bk mtime oldfile > "$HERE/MTIME"  # used in a later test
+echo OK
+
+echo $N Clone with all pending deltas................................$NL
+cd "$HERE"
+bk clone $Q project copy || fail
+# the entire src directory should be gone
+[ -d copy/src ] && fail
+echo OK
+
+echo $N Test clone to illegal directory .............................$NL
+touch "$HERE/file"
+bk clone $Q project "$HERE/file/XXX.cannotwrite/foo" 2> OUT && {
+	echo clone should have failed
+	cat OUT
+	exit 1
+}
+test -d RESYNC && {
+	echo should not have created RESYNC
+	cat OUT
+	exit 1
+}
+rm -f "$HERE/file"
+echo OK
+
+echo $N Test clone to existing directory ............................$NL
+bk clone -q project copy 2>ERR && fail -f ERR should have failed
+test $? = 2 || fail
+cat <<EOF > WANT
+clone: $HERE/copy exists and is not empty
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N Test clone from bogus directory .............................$NL
+bk clone -q project33 copy2 2>ERR && fail -f ERR should have failed
+test $? = 6 || fail
+cat <<EOF > WANT
+clone: can't find repository
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N Test clone from bogus URL ...................................$NL
+bk clone -q bk://bad.bitkeeper.com:1/foo copy2 2>ERR && \
+   fail -f ERR should have failed
+test $? = 5 || fail -f ERR
+cat <<EOF > WANT
+Unable to connect to host 'bad.bitkeeper.com'.
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N Test clone to directory with spaces in its name..............$NL
+unset TMPDIR
+mkdir "Silly directory with spaces"
+bk clone $Q project "Silly directory with spaces/project" 2> OUT || {
+	echo clone should have worked
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Test clone from directory with spaces........................$NL
+cd "Silly directory with spaces"
+bk clone $Q project project2 2> OUT || {
+	echo clone should have worked
+	cat OUT
+	exit 1
+}
+cat OUT
+echo OK
+
+test "$PLATFORM" = "WIN32" || {
+
+echo $N Test clone from source which is a symlink ...................$NL
+ln -s project symlink
+bk bkd -q -aPORT -ikill || fail
+P=`cat PORT`
+mkdir dest
+cd dest
+bk clone $Q bk://localhost:$P/symlink || {
+	echo clone should have worked
+	bk _kill http://localhost:$P
+	exit 1
+}
+test -d project && {
+	echo failed, I wanted symlink not project
+	exit 1
+}
+test -d symlink || {
+	echo failed, I dunno what I got but it is not symlink
+	ls
+	exit 1
+}
+echo OK
+
+echo $N Test clone from symlink source w/BK_CLONE_FOLLOW_LINK .......$NL
+rm -fr symlink
+BK_CLONE_FOLLOW_LINK=1 bk clone $Q bk://localhost:$P/symlink || {
+	echo clone should have worked
+	bk _kill http://localhost:$P
+	exit 1
+}
+bk _kill http://localhost:$P
+test -d project || {
+	echo failed, I wanted symlink not project
+	exit 1
+}
+test -d symlink && {
+	echo failed, I dunno what I got but it is not symlink
+	ls
+	exit 1
+}
+echo OK
+
+# End of "not windows" tests
+}
+
+echo $N Test null clonemod ..........................................$NL
+cd "$HERE"/project
+bk commit $Q -ystuff
+cd ..
+bk lclone $Q project cmbase
+bk clone $Q -@cmbase "$HERE/project" nullclonemod || fail
+cd nullclonemod
+bk parent -l > GOT
+bk parent $Q ../project
+bk parent -l > WANT
+cmpfiles WANT GOT
+bk changes -qLR > CHANGES
+test -s CHANGES && fail
+cd ..
+echo OK
+
+echo $N Test clonemod with remote cset ..............................$NL
+cd project
+bk edit $Q src/bar.c
+bk delta $Q -fybar src/bar.c
+bk commit $Q -ybar
+cd ..
+bk clone $Q -@cmbase "$HERE/project" remotecset || fail
+cd remotecset
+bk parent -l > GOT
+bk parent $Q ../project
+bk parent -l > WANT
+cmpfiles WANT GOT
+bk changes -qLR > CHANGES
+test -s CHANGES && fail
+cd ..
+echo OK
+
+echo $N Test clonemod with remote and local cset ....................$NL
+cd cmbase
+bk edit $Q src/bar.c
+bk delta $Q -fybar src/bar.c
+bk commit $Q -ybar
+cd ..
+bk clone $Q -@cmbase "$HERE/project" localcset || fail
+cd localcset
+bk parent -l > GOT
+bk parent $Q ../project
+bk parent -l > WANT
+cmpfiles WANT GOT
+bk changes -qLR > CHANGES
+test -s CHANGES && fail -f CHANGES
+cd ..
+echo OK
+
+echo $N Test clonemod with multinode gca ............................$NL
+cd nullclonemod
+bk edit $Q src/bar.c
+bk delta $Q -fybar src/bar.c
+bk commit $Q -ybar
+cd ../project
+bk pull $Q ../cmbase
+bk pull $Q ../nullclonemod || fail
+cd ../cmbase
+bk pull $Q ../nullclonemod
+cd ..
+bk clone $Q -@cmbase "$HERE/project" multinode || fail
+cd multinode
+bk parent -l > GOT
+bk parent $Q ../project
+bk parent -l > WANT
+cmpfiles WANT GOT
+bk changes -qLR > CHANGES
+test -s CHANGES && fail
+cd ..
+echo OK
+
+echo $N Test clonemod with adding a local tag .......................$NL
+bk clone $Q project tagbase
+cd tagbase
+# two local tags to show need for -f added to changes
+bk tag $Q TAGLOCAL1
+bk tag $Q TAGLOCAL2
+bk edit $Q src/bar.c
+bk delta $Q -fybar src/bar.c
+bk commit $Q -ybar
+cd ../project
+bk edit $Q src/CHANGESET
+bk delta $Q -fybar src/CHANGESET
+bk commit $Q -yCHANGESET
+bk tag $Q TAGPROJECT
+cd ../tagbase
+# create a tag on a cset which will be undone, leaving 2 tips in tag graph
+# such that we want to keep the newer tip
+bk tag $Q TAGLOCAL3
+bk pull $Q ../project
+cd ..
+bk clone $Q -@tagbase "$HERE/project" localtag || fail
+cd localtag
+bk parent -l > GOT
+bk parent $Q ../project
+bk parent -l > WANT
+cmpfiles WANT GOT
+bk changes -qLR > CHANGES
+test -s CHANGES && fail
+cd ..
+echo OK
+
+echo $N Test clonemod without a remote basename .....................$NL
+cd "$HERE"
+bk bkd -q -aPORT -ikill || fail
+P=`cat PORT`
+trap "bk _kill bk://localhost:$P" 0
+mkdir foo
+cd foo
+bk clone $Q -@../localcset bk://localhost:$P/project || fail
+test -d project || fail
+echo OK
+
+echo $N Test clone with 1 arg and trailing slash ....................$NL
+mkdir foo
+cd foo
+bk clone $Q "$HERE"/project/ || fail
+echo OK
+
+echo $N Test clone into an existing directory........................$NL
+cd "$HERE"
+mkdir existing || fail
+cd existing
+bk clone "$HERE/project" . >"$HERE"/OUT 2>&1 || {
+	echo failed
+	cat "$HERE"/OUT
+	exit 1
+}
+echo OK
+
+echo $N Test clone to . inside a project.............................$NL
+cd "$HERE"
+rm -rf existing
+commercial aproject
+mkdir existing
+cd existing
+bk clone "$HERE/project" . >"$HERE"/OUT 2>&1 || {
+	echo failed
+	cat "$HERE"/OUT
+	exit 1
+}
+echo OK
+
+echo $N Test clone will emit cannot resolve message even with -q ....$NL
+cd "$HERE"
+rm -rf foo
+bk clone -q bk://doesntexist/foo 2> ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q 'Cannot resolve' ERR || {
+	echo failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Test clone with 1 arg and trailing slash ....................$NL
+mkdir foo
+cd foo
+bk clone $Q "$HERE"/project/ || fail
+echo OK
+
+echo $N Test clone -r in partial_check / checkout:edit mode .........$NL
+cd project
+bk -r check -ac || fail
+cd ..
+BK_CONFIG='checkout:edit!;partial_check:yes!' \
+	bk clone -r1.5 $Q project checkout || fail
+cd checkout
+test -w src/bar.c || fail
+test -w src/CHANGESET || fail
+echo OK
+
+echo $N Test clone -r retains timestamps ............................$NL
+cd "$HERE/project"
+bk edit $Q src/oldfile
+bk delta $Q -fytouch src/oldfile
+bk commit $Q -f
+cd ..
+BK_CONFIG='checkout:edit!;partial_check:yes!' \
+	bk clone -r1.5 $Q project checkout2 || fail
+cd checkout2
+bk mtime src/oldfile > GOT
+cmpfiles "$HERE/MTIME" GOT
+echo OK
+
+echo $N Show that a partial_check clone transfers id_cache ..........$NL
+cd "$HERE"
+test -f "project/BitKeeper/log/x.id_cache" || fail no id_cache
+BK_CONFIG='partial_check:yes!' bk clone $Q --sccs-compat project noremap || fail
+
+# not bk _test
+test -f "noremap/BitKeeper/etc/SCCS/x.id_cache" || fail no id_cache
+
+BK_CONFIG='partial_check:yes!' \
+	bk clone $Q --no-sccs-compat noremap remap || fail
+# not bk _test
+test -f "remap/BitKeeper/log/x.id_cache" || fail no id_cache
+echo OK
+
+echo $N Test clone with @ in filename ...............................$NL
+bk clone $Q "$HERE/project" test@dir || fail
+echo OK
+
+echo $N Show that we can clone --compat -rREV .......................$NL
+cd "$HERE"
+# we need to clone back to a point where a graph collapse happens.
+# Two branches: 1.2.1.1 and 1.2.2.1 -- keep the latter, collapse the former
+# Test is about heap files, which don't exist in ASCII, so make ASCII
+bk clone $Q -r1.2.2.1 --no-bk-sfile project compat-undo || fail
+cd compat-undo || fail
+bk _test -f SCCS/1.ChangeSet && fail 1.ChangeSet exists
+bk _test -f SCCS/2.ChangeSet && fail 2.ChangeSet exists
+echo OK
+
+echo $N Show that we can clone --upgrade -rREV ......................$NL
+cd "$HERE"
+# Test is about heap files, which don't exist in ASCII, so make ASCII
+bk clone $Q --no-bk-sfile project compat || fail
+bk clone $Q -r1.2.2.1 --upgrade compat upgrade-undo || fail
+cd upgrade-undo || fail
+bk _test -f SCCS/1.ChangeSet || fail 1.ChangeSet not there
+bk _test -f SCCS/2.ChangeSet && fail 2.ChangeSet exists
+echo OK
+
+echo $N Show that a rclone blocks partial check altering remote .....$NL
+cd "$HERE"
+rm -f project/BitKeeper/log/checked
+BK_CONFIG='partial_check:yes!' \
+    bk clone $Q project bk://localhost:$P/checked.rclone || fail
+test -f project/BitKeeper/log/checked && fail 
+echo OK
+
+echo $N Show that a bkd allows partial_check altering remote ........$NL
+cd "$HERE"
+rm -f project/BitKeeper/log/checked
+BK_CONFIG='partial_check:yes!' \
+    bk clone $Q bk://localhost:$P/project checked.bkd || fail
+test -f project/BitKeeper/log/checked || fail 
+echo OK
+
+echo $N Show that a partial_check clone creates checked file ........$NL
+cd "$HERE"
+rm -f project/BitKeeper/log/checked
+BK_CONFIG='partial_check:yes!' bk clone $Q project checked1 || fail
+test -f project/BitKeeper/log/checked || fail 
+echo OK
+
+echo $N Show that a partial_check clone updates old checked file ....$NL
+cd "$HERE"
+echo 100000 > WANT
+cp WANT project/BitKeeper/log/checked
+# Do at least a test with no hardlinks in case code path different
+BK_CONFIG='partial_check:yes!' \
+    bk clone $Q --no-hardlinks project checked2 || fail
+cmp -s WANT project/BitKeeper/log/checked && fail
+echo OK
+
+echo $N Show that a partial_check clone -r does not do so ...........$NL
+cd "$HERE"
+rm -f project/BitKeeper/log/checked
+BK_CONFIG='partial_check:yes!' bk clone $Q -r1.2 project checked3 || fail
+test -f project/BitKeeper/log/checked && fail 
+echo OK
+
+echo $N Show that a partial_check clone -r does not update ..........$NL
+cd "$HERE"
+cp WANT project/BitKeeper/log/checked
+BK_CONFIG='partial_check:yes!' bk clone $Q -r1.2 project checked4 || fail
+cmpfiles WANT project/BitKeeper/log/checked
+echo OK
+
+echo $N Show that a partial_check pull does not create checked ......$NL
+cd "$HERE"
+rm -f project/BitKeeper/log/checked
+rm -f checked3/BitKeeper/log/checked
+cd checked3
+BK_CONFIG='partial_check:yes!' bk pull $Q || fail
+cd "$HERE"
+test -f "project/BitKeeper/log/checked" && fail 
+echo OK
+
+echo $N Show that a partial_check pull does not update checked ......$NL
+cd "$HERE"
+cp WANT project/BitKeeper/log/checked
+rm -f checked4/BitKeeper/log/checked
+cd checked4
+BK_CONFIG='partial_check:yes!' bk pull $Q || fail
+cd "$HERE"
+cmpfiles WANT project/BitKeeper/log/checked
+echo OK
+
+echo $N clone -r uses final config file for checkout ................$NL
+cd project
+TIP=`bk changes -nd:MD5KEY: -r+`
+bk edit $Q BitKeeper/etc/config || fail
+echo checkout:edit >> BitKeeper/etc/config
+bk ci $Q -yedit BitKeeper/etc/config || fail
+bk commit $Q -yedit || fail
+bk clone $Q -r$TIP . ../new-noedit || fail
+cd ../new-noedit
+test -f src/bar.c && fail
+echo OK
+
+echo $N Show clone -r won\'t mark a bad tree as checked ..............$NL
+cd ../project
+bk stripdel $Q -Cr+ BitKeeper/etc/config || fail
+bk repocheck $Q 2>ERR && fail -f ERR should fail
+# a check failure removes checked file
+test -f BitKeeper/log/checked && fail
+cd ..
+# clone before the problem will work
+bk clone $Q -r$TIP project nomark || fail
+# will check clean
+test -f nomark/BitKeeper/log/checked || fail
+# remote not marked
+test -f project/BitKeeper/log/checked && fail shouldnt be good
+echo OK
+
+echo $N Show that we can clone a repo and with it\'s parents .........$NL
+cd "$HERE"
+commercial parent
+bk parent $Q -r
+bk parent $Q bk://some-server
+bk parent > ../WANT
+cd ..
+bk clone $Q --parents parent parents
+cd parents 
+bk parent > ../GOT
+cd ..
+cmpfiles WANT GOT
+echo OK
+
+echo $N Same thing with multiple parents ............................$NL
+cd "$HERE/parent"
+bk parent $Q -r
+bk parent $Q bk://some-server
+bk parent $Q -ai bk://some-server/incoming
+bk parent $Q -ao bk://some-server/outgoing
+bk parent > ../WANT
+cd ..
+rm -rf parents
+bk clone $Q --parents parent parents
+cd parents 
+bk parent > ../GOT
+cd ..
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test clone -p for no-parents ................................$NL
+#bk clone $Q -p --parents parents no-parents 2>ERR && fail both should fail
+bk clone $Q -p parents no-parents || fail
+bk --cd=no-parents parent > GOT && fail
+echo "This repository has no parent." > WANT
+cmpfiles WANT GOT
+echo OK
+

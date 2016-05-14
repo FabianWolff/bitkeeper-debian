@@ -1,0 +1,57 @@
+.so ../bk-macros
+.TH "bk help" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk help \- get help for \*(BK commands
+.SH SYNOPSIS
+.B bk help 
+.[B] \-akp
+.[OPTreq] \-f filename
+.ARG specific-topic
+.br
+.B bk help topics
+.SH DESCRIPTION
+The 
+.B bk help
+command displays the online help for the specified command or topic.
+Output gets displayed in the current command shell window.
+See 
+.B bk helptool
+for information about the graphical interface for help.
+.LP
+A quick reference guide can be found in
+.DS
+\`bk bin\`/bk_refcard.pdf
+.DE
+.LP
+To get a list of all bk help topics use
+.DS
+.B bk help topics
+.DE
+.SH OPTIONS
+.TP \-f\*<file\*>
+.B \-a
+Just search the docs for the string
+.ARG topic .
+This matches substrings and prints the topic followed by the matching
+line.
+.tp
+.OPTreq \-f file
+Use
+.ARG file
+as the helptext file.
+.tp
+.B \-k
+Similar to
+.QR \-a ,
+but only matches whole words.
+.tp
+.B \-p
+disable the use of any pager just send the output to stdout.
+.SH "FUTURE DIRECTIONS"
+We will be adding a
+.B bk man
+command to format the man pages on the fly.
+.SH "SEE ALSO"
+.SA helptool
+.SH CATEGORY
+.B Common

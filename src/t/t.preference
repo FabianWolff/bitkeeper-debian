@@ -1,0 +1,820 @@
+# Copyright 2001-2011,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+fresh_commercial --compat project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Create some data ............................................$NL
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+perl -e 'printf "a\000b\n"' > bam
+bk ci $Q -i foo.c bar.c h.h bam
+bk co -q # checkout:get is added later
+echo OK
+
+echo $N clone with checkout:get and BAM_checkout:none ...............$NL
+cd "$HERE"
+cp -rp project source
+cd source
+bk commit -ywhatever $Q
+cd ..
+BK_CONFIG='BAM_checkout:none!;checkout:get!' bk clone $Q source checkout
+cd checkout/src
+test -f foo.c -a -f bar.c -a -f h.h || {
+	echo failed on text checkout
+	exit 1
+}
+test -f bam && {
+	echo failed on bam non-checkout
+	exit 1
+}
+echo OK
+
+echo $N rclone with checkout:get and BAM_checkout:none ..............$NL
+cd "$HERE"
+BK_CONFIG='BAM_checkout:none!;checkout:get!' bk bkd -d -aPORT -ikill || fail
+P=`cat PORT`
+rm -rf checkout
+bk clone $Q source bk://localhost:$P/checkout
+bk _kill bk://localhost:$P
+cd checkout/src
+bk parent -q "$HERE/source"
+test -f foo.c -a -f bar.c -a -f h.h || {
+	echo failed on text checkout
+	exit 1
+}
+test -f bam && {
+	echo failed on bam non-checkout
+	exit 1
+}
+echo OK
+
+echo $N pull with checkout:get and BAM_checkout:none ................$NL
+cd "$HERE/source/src"
+bk edit $Q bam
+echo foo >> bam
+bk delta -ywhatever $Q bam
+bk commit -ywhatever $Q
+cd "$HERE/checkout/src"
+bk clean bam
+BK_CONFIG='BAM_checkout:none!;checkout:get!' bk pull $Q
+test -f bam && {
+	echo failed on bam non-checkout
+	exit 1
+}
+echo OK
+
+echo $N push with checkout:get and BAM_checkout:none ................$NL
+bk edit $Q bam
+echo foo >> bam
+bk delta -ywhatever $Q bam
+bk commit -ywhatever $Q
+bk clean "$HERE/source/src/bam"
+BK_CONFIG='BAM_checkout:none!;checkout:get!' bk push $Q
+cd "$HERE/source/src"
+test -f bam && {
+	echo failed on bam non-checkout
+	exit 1
+}
+echo OK
+
+echo $N clone with checkout:get and BAM_checkout:last ...............$NL
+cd "$HERE"
+rm -rf source checkout
+cp -rp project source
+cd source
+bk commit -ywhatever $Q
+cd ..
+BK_CONFIG='BAM_checkout:last!;checkout:get!' bk clone $Q source checkout
+cd checkout/src
+test -f foo.c -a -f bar.c -a -f h.h || {
+	echo failed on text checkout
+	exit 1
+}
+test -f bam && {
+	echo failed on bam non-checkout
+	exit 1
+}
+echo OK
+
+echo $N rclone with checkout:get and BAM_checkout:last ..............$NL
+cd "$HERE"
+BK_CONFIG='BAM_checkout:last!;checkout:get!' bk bkd -d -aPORT -ikill || fail
+P=`cat PORT`
+rm -rf checkout
+bk clone $Q source bk://localhost:$P/checkout
+bk _kill bk://localhost:$P
+cd checkout/src
+bk parent -q "$HERE/source"
+test -f foo.c -a -f bar.c -a -f h.h || {
+	echo failed on text checkout
+	exit 1
+}
+test -f bam && {
+	echo failed on bam non-checkout
+	exit 1
+}
+echo OK
+
+echo $N pull with checkout:get and BAM_checkout:last ................$NL
+cd "$HERE/source/src"
+bk edit $Q bam
+echo foo >> bam
+bk delta -ywhatever $Q bam
+bk commit -ywhatever $Q
+cd "$HERE/checkout/src"
+bk clean bam
+BK_CONFIG='BAM_checkout:last!;checkout:get!' bk pull $Q
+test -f bam && {
+	echo failed on bam non-checkout
+	exit 1
+}
+echo OK
+
+echo $N push with checkout:get and BAM_checkout:last ................$NL
+bk edit $Q bam
+echo foo >> bam
+bk delta -ywhatever $Q bam
+bk commit -ywhatever $Q
+bk clean "$HERE/source/src/bam"
+BK_CONFIG='BAM_checkout:last!;checkout:get!' bk push $Q
+cd "$HERE/source/src"
+test -f bam && {
+	echo failed on bam non-checkout
+	exit 1
+}
+echo OK
+
+echo $N delta with BAM_checkout:last ................................$NL
+bk edit $Q bam
+echo foo >> bam
+bk delta -ywhatever $Q bam
+test -f bam -a -w bam && {
+	echo failed on bam checkout
+	exit 1
+}
+echo OK
+
+echo $N checkout:GET w admin ........................................$NL
+cd "$HERE/project/src"
+bk edit $Q "$HERE/project/BitKeeper/etc/config"
+echo "checkout:GET!" >> "$HERE/project/BitKeeper/etc/config"
+bk get $Q foo.c
+bk admin -fRCS foo.c
+bk commit $Q -ynew_stuff
+if [ ! -f foo.c ]; then echo failed; exit 1; fi
+if [ -w foo.c ]; then echo failed; exit 1; fi
+if bk _test -f SCCS/p.foo.c; then echo failed; exit 1; fi
+gdate=`bk _stat foo.c | awk -F\| '{ print $10 }'`
+sdate=`bk _stat SCCS/s.foo.c | awk -F\| '{ print $10 }'`
+if [ $gdate -lt $sdate ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w admin .......................................$NL
+bk unedit "$HERE/project/BitKeeper/etc/config"
+bk edit $Q "$HERE/project/BitKeeper/etc/config"
+echo "checkout:EDIT!" >> "$HERE/project/BitKeeper/etc/config"
+bk edit $Q foo.c
+bk admin -FRCS foo.c
+bk commit $Q -ynew_stuff
+if [ ! -f foo.c ]; then echo failed; exit 1; fi
+if [ ! -w foo.c ]; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/p.foo.c; then echo failed; exit 1; fi
+gdate=`bk _stat foo.c | awk -F\| '{ print $10 }'`
+sdate=`bk _stat SCCS/s.foo.c | awk -F\| '{ print $10 }'`
+if [ $gdate -lt $sdate ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w delta .......................................$NL
+bk edit $Q bam
+echo new >> foo.c
+echo new >> bam
+bk delta $Q -ynew foo.c bam
+bk commit $Q -ynew_stuff
+test -f bam -a -w bam || { echo failed bam; exit 1; }
+if [ ! -f foo.c ]; then echo failed; exit 1; fi
+if [ ! -w foo.c ]; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/p.foo.c; then echo failed; exit 1; fi
+gdate=`bk _stat foo.c | awk -F\| '{ print $10 }'`
+sdate=`bk _stat SCCS/s.foo.c | awk -F\| '{ print $10 }'`
+if [ $gdate -lt $sdate ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:edit w no-nl file with sfiles -c ...................$NL
+printf "line\nno nl" > nonl
+bk new $Q nonl || fail
+test `bk sfiles -c | wc -l` -ne 0 && {
+     echo failure
+     exit 1
+}
+echo OK
+
+echo $N BAM_checkout:get w delta ....................................$NL
+bk edit $Q bam
+echo new >> foo.c
+echo new >> bam
+bk delta $Q -ynew foo.c 
+BK_CONFIG='BAM_checkout:get!' bk delta $Q -ynew bam
+test -f bam || { echo failed bam; exit 1; }
+test -w bam && { echo failed bam ro; exit 1; }
+BK_CONFIG='BAM_checkout:get!' bk commit $Q -ynew_stuff
+test -f bam || { echo failed bam; exit 1; }
+test -w bam && { echo failed bam ro; exit 1; }
+if [ ! -f foo.c ]; then echo failed; exit 1; fi
+if [ ! -w foo.c ]; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/p.foo.c; then echo failed; exit 1; fi
+gdate=`bk _stat foo.c | awk -F\| '{ print $10 }'`
+sdate=`bk _stat SCCS/s.foo.c | awk -F\| '{ print $10 }'`
+if [ $gdate -lt $sdate ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w collapse ....................................$NL
+echo junk >> foo.c
+bk admin -fRCS foo.c || fail
+bk collapse -e || fail
+if [ ! -f foo.c ]; then echo failed; exit 1; fi
+if [ ! -w foo.c ]; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/p.foo.c; then echo failed; exit 1; fi
+test -f ChangeSet && fail
+bk _test -f SCCS/p.ChangeSet && fail
+echo OK
+
+echo $N checkout:GET w delta and keywords ...........................$NL
+bk unedit "$HERE/project/BitKeeper/etc/config"
+if [ ! -w "$HERE/project/BitKeeper/etc/config" ]; then echo failed; exit 1; fi
+echo "checkout:GET!" >> "$HERE/project/BitKeeper/etc/config"
+bk admin -FSCCS foo.c
+echo new2 >> foo.c
+bk delta $Q -ynew foo.c || fail
+if [ -w foo.c ]; then echo failed; exit 1; fi
+bk commit $Q -ynew_stuff || fail
+if [ ! -f foo.c ]; then echo failed; exit 1; fi
+if [ -w foo.c ]; then echo failed; exit 1; fi
+if bk _test -f SCCS/p.foo.c; then echo failed; exit 1; fi
+gdate=`bk _stat foo.c | awk -F\| '{ print $10 }'`
+sdate=`bk _stat SCCS/s.foo.c | awk -F\| '{ print $10 }'`
+if [ $gdate -lt $sdate ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:GET w delta and no keywords ........................$NL
+bk admin -FRCS foo.c || fail
+bk edit $Q foo.c || fail
+echo new2 >> foo.c
+bk delta $Q -ynew foo.c || fail
+if [ -w foo.c ]; then echo failed; exit 1; fi
+bk commit $Q -ynew_stuff || fail
+if [ ! -f foo.c ]; then echo failed; exit 1; fi
+if [ -w foo.c ]; then echo failed; exit 1; fi
+if bk _test -f SCCS/p.foo.c; then echo failed; exit 1; fi
+gdate=`bk _stat foo.c | awk -F\| '{ print $10 }'`
+sdate=`bk _stat SCCS/s.foo.c | awk -F\| '{ print $10 }'`
+if [ $gdate -lt $sdate ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:GET w clone ........................................$NL
+bk delta $Q -ycheckout_GET "$HERE/project/BitKeeper/etc/config"
+bk commit $Q -ycheckout_GET
+bk clone $Q "$HERE/project" "$HERE/copy"
+if [ ! -f "$HERE/copy/src/foo.c" ]; then echo failed; exit 1; fi
+if [ -w "$HERE/copy/src/foo.c" ]; then echo failed; exit 1; fi
+if bk _test -f "$HERE/copy/src/SCCS/p.foo.c"; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:GET w chmod ........................................$NL
+test -x foo.c && { echo failed; exit 1; }
+bk chmod 775 foo.c || fail
+if [ ! -f foo.c ]; then echo failed; exit 1; fi
+if [ -w foo.c ]; then echo failed; exit 1; fi
+if bk _test -f SCCS/p.foo.c; then echo failed; exit 1; fi
+test `bk prs -hr+ -nd:RWXMODE: foo.c` = "-rwxrwxr-x" || {
+	echo failed
+	bk prs -hr+ -nd:RWXMODE: foo.c
+	exit 1
+}
+test "$PLATFORM" != "WIN32" && {
+	test -x foo.c || { echo failed; exit 1; }
+}
+gdate=`bk _stat foo.c | awk -F\| '{ print $10 }'`
+sdate=`bk _stat SCCS/s.foo.c | awk -F\| '{ print $10 }'`
+if [ $gdate -lt $sdate ]; then echo failed; exit 1; fi
+bk stripdel $Q -r+ foo.c
+echo OK
+
+echo $N checkout:GET w bk admin -fSCCS ..............................$NL
+bk edit $Q foo.c
+echo '%M%' > foo.c
+bk ci $Q -y'add keyword' foo.c || fail
+bk admin -fSCCS foo.c || fail
+f=`cat foo.c`
+if [ X$f != Xfoo.c ]
+then	echo 'failed (bug 2002-10-31-003)'
+else	echo 'bug 2002-10-31-003 fixed! update test.'
+	exit 1
+fi
+
+echo $N checkout:EDIT w clone .......................................$NL
+bk undo -sqfr+ || fail
+bk unedit "$HERE/project/BitKeeper/etc/config"
+bk edit $Q "$HERE/project/BitKeeper/etc/config"
+echo "checkout:EDIT!" >> "$HERE/project/BitKeeper/etc/config"
+bk -Ur edit $Q
+bk delta $Q -ycheckout_EDIT "$HERE/project/BitKeeper/etc/config"
+bk commit $Q -ycheckout_EDIT
+bk clone $Q "$HERE/project" "$HERE/copy2"
+if [ ! -f "$HERE/copy2/src/foo.c" ]; then echo failed 1; exit 1; fi
+if [ ! -w "$HERE/copy2/src/foo.c" ]; then echo failed 2; exit 1; fi
+if bk _test ! -f "$HERE/copy2/src/SCCS/p.foo.c"; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w clone -r+....................................$NL
+bk clone $Q -r+ "$HERE/project" "$HERE/copy3" || fail
+if [ ! -f "$HERE/copy3/src/foo.c" ]; then echo failed 1; exit 1; fi
+if [ ! -w "$HERE/copy3/src/foo.c" ]; then echo failed 2; exit 1; fi
+if bk _test ! -f "$HERE/copy3/src/SCCS/p.foo.c"; then echo failed; exit 1; fi
+rm -rf "$HERE/copy3"
+echo OK
+
+echo $N checkout:EDIT w chmod .......................................$NL
+# 'unedit' will actually get the file to be check out edit (plocked)
+bk unedit foo.c
+test -w foo.c || { echo failed; exit 1; }
+test -x foo.c && { echo failed; exit 1; }
+bk chmod 775 foo.c || fail
+if [ ! -f foo.c ]; then echo failed; exit 1; fi
+if [ ! -w foo.c ]; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/p.foo.c; then echo failed; exit 1; fi
+test `bk prs -hr+ -nd:RWXMODE: foo.c` = "-rwxrwxr-x" || {
+	echo failed
+	bk prs -hr+ -nd:RWXMODE: foo.c
+	exit 1
+}
+test "$PLATFORM" != "WIN32" && {
+	test -x foo.c || { echo failed; exit 1; }
+}
+gdate=`bk _stat foo.c | awk -F\| '{ print $10 }'`
+sdate=`bk _stat SCCS/s.foo.c | awk -F\| '{ print $10 }'`
+if [ $gdate -lt $sdate ]; then echo failed; exit 1; fi
+bk chmod 400 foo.c 2> CHMOD_WARN || {
+	echo failed
+	echo chmod 400 stderr:
+	cat CHMOD_WARN
+	exit 1
+}
+if [ ! -f foo.c ]; then echo failed; exit 1; fi
+if [ ! -w foo.c ]; then echo failed; exit 1; fi
+if bk _test ! -f SCCS/p.foo.c; then echo failed; exit 1; fi
+test -x foo.c && { echo failed; exit 1; }
+gdate=`bk _stat foo.c | awk -F\| '{ print $10 }'`
+sdate=`bk _stat SCCS/s.foo.c | awk -F\| '{ print $10 }'`
+if [ $gdate -lt $sdate ]; then echo failed; exit 1; fi
+echo OK
+
+
+echo $N checkout:EDIT w resolve simple content change ...............$NL
+cd "$HERE/project"
+bk unedit BitKeeper/etc/config
+bk edit $Q BitKeeper/etc/config
+echo "checkout:EDIT!" >> BitKeeper/etc/config
+bk delta $Q -yEDIT BitKeeper/etc/config
+bk commit $Q -yEDIT 
+cd "$HERE"
+bk clone $Q project edit_1
+bk clone $Q project edit_2
+cd "$HERE/edit_1/src"
+echo new2 >> foo.c
+bk delta $Q -ynew2 foo.c
+bk commit $Q -ynew2
+cd "$HERE/edit_2/src"
+if [ ! -f "$HERE/edit_2/src/foo.c" ]; then echo failed 1; exit 1; fi
+bk pull $Q "$HERE/edit_1" || fail
+if [ ! -f "$HERE/edit_2/src/foo.c" ]; then echo failed 1; exit 1; fi
+if [ ! -w "$HERE/edit_2/src/foo.c" ]; then echo failed 2; exit 1; fi
+if bk _test ! -f "$HERE/edit_2/src/SCCS/p.foo.c"; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w simple file create ..........................$NL
+cd "$HERE/edit_1/src"
+date > file_create
+bk new $Q file_create
+bk commit $Q -ycreate
+cd "$HERE/edit_2"
+bk pull $Q "$HERE/edit_1"
+test -f src/file_create || {
+	echo failed to check out file
+	exit 1
+}
+echo OK
+
+echo $N checkout:EDIT w resolve simple flag change ..................$NL
+cd "$HERE/edit_1/src"
+bk admin $Q -fEXPAND1 foo.c
+bk commit $Q -yflags_chg
+cd "$HERE/edit_2/src"
+bk pull $Q "$HERE/edit_1"
+if [ ! -f "$HERE/edit_2/src/foo.c" ]; then echo failed 1; exit 1; fi
+if [ ! -w "$HERE/edit_2/src/foo.c" ]; then echo failed 2; exit 1; fi
+if bk _test ! -f "$HERE/edit_2/src/SCCS/p.foo.c"; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w resolve simple rename change ................$NL
+cd "$HERE/edit_1/src"
+bk mv foo.c foo1.c
+bk commit $Q -yrename
+cd "$HERE/edit_2/src"
+bk pull $Q "$HERE/edit_1"
+if [ ! -f "$HERE/edit_2/src/foo1.c" ]; then echo failed 1; exit 1; fi
+if [ ! -w "$HERE/edit_2/src/foo1.c" ]; then echo failed 2; exit 1; fi
+if bk _test ! -f "$HERE/edit_2/src/SCCS/p.foo1.c"; then echo failed; exit 1; fi
+echo OK
+
+cd "$HERE"
+# We want to arrange the order of the files in the SFIO so that
+# all SCCS files are written before the gfiles when the sfio is
+# unpacked.
+# This keeps the timestamp checker in sccs_init happy.
+# When unpacking, also need to use the _BK_FSLAYER_SKIP env var.
+# Note: tar does not work in a crank because of too long of pathname.
+find edit_1 edit_2 -type f > L
+grep SCCS L > L1
+grep -v SCCS L >> L1
+_BK_FSLAYER_SKIP=1 bk sfio --raw -qom <L1 > SFIO
+echo $N checkout:EDIT w resolve automerge and autorename change .....$NL
+cd "$HERE/edit_1/src"
+echo new3 >> foo1.c
+bk delta $Q -ynew2 foo1.c
+bk mv foo1.c renamed.c
+bk commit $Q -ynew2
+cd "$HERE/edit_2/src"
+grep -v "^new$" foo1.c > foo.tmp
+cp foo.tmp foo1.c
+bk delta $Q -ydelete_line_1 foo1.c
+bk commit $Q -ydelete_line_1
+bk pull $Q "$HERE/edit_1"
+if [ -f "$HERE/edit_2/src/foo1.c" ]; then echo failed 1; exit 1; fi
+if [ ! -f "$HERE/edit_2/src/renamed.c" ]; then echo failed 1; exit 1; fi
+if [ ! -w "$HERE/edit_2/src/renamed.c" ]; then echo failed 2; exit 1; fi
+if bk _test ! -f "$HERE/edit_2/src/SCCS/p.renamed.c"; then echo failed; exit 1; fi
+echo OK
+
+cd "$HERE"
+rm -rf edit_1 edit_2
+_BK_FSLAYER_SKIP=1 bk sfio --raw -qim <SFIO
+
+echo $N checkout:EDIT w resolve automerge content change ............$NL
+cd "$HERE/edit_1/src"
+echo new3 >> foo1.c
+bk delta $Q -ynew2 foo1.c
+bk commit $Q -ynew2
+cd "$HERE/edit_2/src"
+grep -v "^new$" foo1.c > foo.tmp
+cp foo.tmp foo1.c
+bk delta $Q -ydelete_line_1 foo1.c
+bk commit $Q -ydelete_line_1
+bk pull $Q "$HERE/edit_1"
+if [ ! -f "$HERE/edit_2/src/foo1.c" ]; then echo failed 1; exit 1; fi
+if [ ! -w "$HERE/edit_2/src/foo1.c" ]; then echo failed 2; exit 1; fi
+if bk _test ! -f "$HERE/edit_2/src/SCCS/p.foo1.c"; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w resolve automerge flag change ...............$NL
+cd "$HERE/edit_1/src"
+bk admin $Q -FEXPAND1 foo1.c
+bk commit $Q -yflags_chg
+cd "$HERE/edit_2/src"
+bk admin -fEOLN_NATIVE foo1.c
+bk commit $Q -yflags_chg
+bk pull $Q "$HERE/edit_1"
+if [ ! -f "$HERE/edit_2/src/foo1.c" ]; then echo failed 1; exit 1; fi
+if [ ! -w "$HERE/edit_2/src/foo1.c" ]; then echo failed 2; exit 1; fi
+if bk _test ! -f "$HERE/edit_2/src/SCCS/p.foo1.c"; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w resolve rename conflict .....................$NL
+# remove some csets to bring it below limit in the regression env
+cd "$HERE/edit_1"
+bk undo $Q -sfa1.2 || fail
+cd "$HERE/edit_2"
+bk undo $Q -sfa1.2 || fail
+cd "$HERE/edit_1/src"
+bk mv foo.c foo2.c
+bk commit $Q -yrename
+cd "$HERE/edit_2"
+bk unedit BitKeeper/etc/config
+bk edit $Q BitKeeper/etc/config
+echo "checkout:EDIT" >> BitKeeper/etc/config
+cd src
+bk mv foo.c foo3.c
+bk commit $Q -yrename
+bk pull $Q "$HERE/edit_1" 2> /dev/null <<EOF
+r
+EOF
+if [ ! -f "$HERE/edit_2/src/foo2.c" ]; then echo failed 1; exit 1; fi
+if [ ! -w "$HERE/edit_2/src/foo2.c" ]; then echo failed 2; exit 1; fi
+if bk _test ! -f "$HERE/edit_2/src/SCCS/p.foo2.c"; then echo failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w undo ........................................$NL
+cd "$HERE/project"
+echo hi > hi
+bk new $Q hi || fail
+if bk _test ! \( -w hi -a -f SCCS/p.hi \); then echo checkout failed; exit 1; fi
+bk commit $Q -yaddhi || fail
+echo bye >> hi
+echo new >> src/foo.c
+bk delta $Q -ybye hi src/foo.c || fail
+if bk _test ! \( -w hi -a -f SCCS/p.hi \); then echo checkout failed; exit 1; fi
+bk commit $Q -yappendhi || fail
+bk undo $Q -fr+ || fail
+if bk _test ! \( -w hi -a -f SCCS/p.hi \); then echo checkout failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w names .......................................$NL
+bk clean $Q hi
+bk _mv SCCS/s.hi SCCS/s.junk
+bk edit $Q junk	# names keeps checkouts
+bk -r names $Q
+if bk _test ! \( -w hi -a -f SCCS/p.hi \); then echo checkout failed; exit 1; fi
+echo OK
+
+echo $N checkout:EDIT w pull ........................................$NL
+cd "$HERE/copy2"
+bk pull $Q || fail
+if [ ! -w hi ]
+then	echo 'failed (bug 2002-05-10-002)'
+	exit 1
+fi
+echo OK
+
+echo $N checkout:EDIT w pull failure ................................$NL
+cd "$HERE/project/src"
+bk -Uur edit $Q
+echo ss >> bar.c
+echo dd >> foo.c
+bk ci $Q -yy bar.c foo.c || fail
+bk commit $Q -ydf || fail
+cd "$HERE/copy2/src"
+echo fff >> bar.c
+bk pull $Q 2>OUT
+if [ ! -w foo.c ]
+then	echo 'failed (bug 2002-05-10-002)'
+	exit 1
+fi
+bk abort -f 2> OUT
+echo OK
+
+echo $N checkout:EDIT w pull again ..................................$NL
+bk unedit bar.c
+bk pull $Q
+if [ ! -w foo.c ]
+then	echo failed
+	exit 1
+fi
+if [ ! -w bar.c ]
+then	echo failed
+	exit 1
+fi
+echo OK
+
+echo $N checkout:EDIT w fix -c ......................................$NL
+bk fix -c 2> ERR || fail
+test -s ERR && {
+	echo ERR should be empty
+	exit 1
+}
+x=`bk sfiles -c`
+test "X$x" = "XSCCS/s.bar.c SCCS/s.foo.c" && {
+	echo files not edited
+	exit 1
+}
+bk _test -f ../SCCS/p.ChangeSet && {
+	echo ChangeSet file shouldn\'t be locked
+	exit 1
+}
+bk sfiles -c | bk delta $Q -c -
+bk commit -c $Q || fail
+echo OK
+
+echo $N checkout:EDIT w bk cset -x ..................................$NL
+bk cset $Q -x+ || fail
+bk _test -w foo.c -a -f SCCS/p.foo.c || {
+	echo checkout of foo.c failed
+	exit 1
+}
+echo OK
+
+echo $N checkout:EDIT w bk unrm .....................................$NL
+bk rm foo.c || fail
+bk unrm -f foo.c > /dev/null || fail
+bk _test -w foo.c -a -f SCCS/p.foo.c || {
+	echo checkout of foo.c failed
+	exit 1
+}
+echo OK
+
+echo $N checkout:none w pull ........................................$NL
+cd "$HERE"
+commercial pp
+cd "$HERE"
+bk clone $Q pp cc || fail
+cd "$HERE/pp"
+echo hi > file1
+echo bye > file2
+bk new $Q file1 file2
+bk commit $Q -yy || fail
+cd "$HERE/cc"
+bk pull $Q || fail
+if [ -f file1 -o -f file2 ]
+then	echo files should not be fetched
+	exit 1
+fi
+cd "$HERE/pp"
+bk edit $Q file1
+echo junk >> file1
+bk ci $Q -yy file1
+bk commit $Q -yy || fail
+cd "$HERE/cc"
+bk pull $Q || fail
+if [ -f file1 -o -f file2 ]
+then	echo files should not be fetched
+	exit 1
+fi
+echo OK
+
+echo $N verify BK_CONFIG overrides ..................................$NL
+BK_CONFIG='foo:bar; foo2  : bar2 ; checkout : delete! '
+export BK_CONFIG
+test X`bk config foo`X != XbarX && {
+	echo override failed
+	exit 1
+}
+test X`bk config foo2`X != Xbar2X && {
+	echo override failed
+	exit 1
+}
+test X`bk config checkout`X != XdeleteX && {
+	echo override failed
+	exit 1
+}
+unset BK_CONFIG
+echo OK
+
+echo $N check that config overriding and bk config -v work ..........$NL
+
+bk edit $Q BitKeeper/etc/config || fail
+perl -e '@a=("", "!", "foo", "foo!"); for $i (0..3) { for $j (0..3) { print "t$i$j:$a[$i]\n" } }' >> BitKeeper/etc/config
+perl -e '@a=("", "!", "bar", "bar!"); for $i (0..3) { for $j (0..3) { print "t$i$j:$a[$j]\n" } }' > "`bk dotbk`/config"
+bk config -v | perl -ne 'print if /^#?\tt[0-3]/' > GOT
+
+cat <<EOF > WANT
+	t00:            
+	t01:            
+	t02:            
+#	t03:            
+	t10:            !
+	t11:            !
+	t12:            !
+#	t13:            !
+	t20:            foo
+#	t21:            foo
+	t22:            foo
+#	t23:            foo
+	t30:            foo!
+#	t31:            foo!
+	t32:            foo!
+#	t33:            foo!
+	t00:            
+	t01:            !
+#	t02:            bar
+	t03:            bar!
+	t10:            
+	t11:            !
+#	t12:            bar
+	t13:            bar!
+#	t20:            
+	t21:            !
+#	t22:            bar
+	t23:            bar!
+#	t30:            
+	t31:            !
+#	t32:            bar
+	t33:            bar!
+EOF
+cmpfiles WANT GOT
+
+bk config | grep '^t[0-3]' > GOT
+cat <<EOF > WANT
+t03: bar
+t13: bar
+t20: foo
+t22: foo
+t23: bar
+t30: foo
+t32: foo
+t33: bar
+EOF
+cmpfiles WANT GOT
+
+echo OK
+
+echo $N check again with BK_CONFIG ..................................$NL
+rm "`bk dotbk`/config"
+BK_CONFIG=`perl -e '@a=("", "!", "bar", "bar!"); for $i (0..3) { for $j (0..3) { push(@b, "t$i$j:$a[$j]") } } print join(";", @b)'`
+export BK_CONFIG
+bk config -v | perl -ne 'print if /^#?\tt[0-3]/ || /^\$/' > GOT
+
+cat <<EOF > WANT
+	t00:            
+	t01:            
+	t02:            
+#	t03:            
+	t10:            !
+	t11:            !
+	t12:            !
+#	t13:            !
+	t20:            foo
+#	t21:            foo
+	t22:            foo
+#	t23:            foo
+	t30:            foo!
+#	t31:            foo!
+	t32:            foo!
+#	t33:            foo!
+\$BK_CONFIG:
+	t00:            
+	t01:            !
+#	t02:            bar
+	t03:            bar!
+	t10:            
+	t11:            !
+#	t12:            bar
+	t13:            bar!
+#	t20:            
+	t21:            !
+#	t22:            bar
+	t23:            bar!
+#	t30:            
+	t31:            !
+#	t32:            bar
+	t33:            bar!
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N check config file merging ...................................$NL
+cat << EOF > file1
+# comments
+key3: val3!
+key1: val1
+
+overlap: old
+
+bad line
+
+EOF
+cat <<EOF > file2
+key2: val2
+key1: val1new!
+
+# new comments
+key3: junk
+
+overlap: new
+
+another bad line
+
+key0: val0!
+EOF
+bk config -m file1 file2 > GOT
+cat <<EOF > WANT
+# comments
+key3: val3!
+key1: val1
+
+overlap: old
+
+bad line
+
+key0: val0!
+key2: val2
+EOF
+cmpfiles GOT WANT
+echo OK

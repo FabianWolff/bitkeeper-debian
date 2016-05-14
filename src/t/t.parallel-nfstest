@@ -1,0 +1,75 @@
+# Copyright 2010-2012,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# No NFS stuff for windows
+test "$PLATFORM" = "WIN32" && exit 0
+
+# Remote people don't have this mounted but may have a local cache
+# Assume that it is not NFS for them.
+test -f /home/.NFS || exit 0
+
+# And if no test data then skip it
+test -d $TESTDATA/bitcluster || exit 0
+
+_BK_SHORT_OK=1
+export _BK_SHORT_OK
+
+echo $N Make sure that /build is local ..............................$NL
+test "`bk --cd=/build fstype`" != nfs || fail
+echo OK
+
+# these unix hosts don't get this right.
+# work is here because /home is local on work.
+case `bk gethost -r` in
+    *bsd*|macos*|aix*|sco*|work*) exit 0;;
+esac
+
+echo $N Make sure that test data is remote ..........................$NL
+test "`bk --cd=$TESTDATA fstype`" = nfs || fail
+echo OK
+
+test -w $TESTDATA/tmp || exit 0
+
+NFSROOT=$TESTDATA/tmp/`bk gethost -r`-`bk getuser -r`
+mkdir $NFSROOT || fail cannot make $NFSROOT
+trap "cd \"$HERE\" && rm -rf $NFSROOT" 0
+
+
+echo $N Clone repo to work:/home, should run in parallel ............$NL
+BK_CONFIG="checkout:none!"
+export BK_CONFIG
+echo y | \
+    bk clone $Q $TESTDATA/bitcluster $NFSROOT/bitcluster 2> /dev/null || fail
+SFIO=`grep 'sfio -iq --Nway --checkout = 0' $NFSROOT/bitcluster/BitKeeper/log/cmd_log|wc -l`
+test $SFIO = 8 || fail wrong number $SFIO
+rm -rf $NFSROOT/bitcluster
+echo OK
+
+echo $N Same thing with . being NFS .................................$NL
+cd $NFSROOT
+echo y | bk clone $Q $TESTDATA/bitcluster 2> /dev/null || fail
+SFIO=`grep 'sfio -iq --Nway --checkout = 0' bitcluster/BitKeeper/log/cmd_log|wc -l`
+test $SFIO = 8 || fail wrong number $SFIO
+rm -rf $NFSROOT/bitcluster
+echo OK
+
+echo $N Same thing with . being NFS and named dest ..................$NL
+export BK_CONFIG
+rm -rf $NFSROOT/bitcluster
+cd $NFSROOT
+echo y | bk clone $Q $TESTDATA/bitcluster clone 2> /dev/null || fail
+SFIO=`grep 'sfio -iq --Nway --checkout = 0' clone/BitKeeper/log/cmd_log|wc -l`
+test $SFIO = 8 || fail wrong number $SFIO
+rm -rf $NFSROOT/clone
+echo OK

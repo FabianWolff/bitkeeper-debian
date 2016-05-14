@@ -1,0 +1,166 @@
+.so ../bk-macros
+.TH "bk range" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk range \- demo program to show ranges & dates
+.SH SYNOPSIS
+.B bk range
+.[B] \-qS
+[\c
+.OPTopt \-L url ]
+[\c
+.OPTreq \-c range 
+|
+.OPTreq \-r rev ]
+.BKARGS
+.SH DESCRIPTION
+.LP
+Many commands may take as arguments date ranges or graph differences.
+The
+.B graph difference
+between revision
+.ARG B
+and revision
+.ARG A
+is the set of deltas in
+.ARG B 's
+history that are not in
+.ARG A 's
+history.
+You may specify deltas
+by revision number (1.2), delta key
+('amy@bitkeeper.com|man/man1/bk-terms.1|20020714011327|59990'), a
+symbolic name (@tag), changeset revision (@1.33), or changeset key
+(@'lm@disks.bitkeeper.com|ChangeSet|20020912140445|17593').
+The graph difference between revisions
+.ARG B
+and
+.ARG A
+is represented by the notation
+.ARGc A
+.Bc .\|.\|
+.ARG B ,
+as in:
+.DS
+bk changes -r1.1820.2.1..1.1822
+.DE
+.LP
+See \*(lqgraph difference\*(rq in
+.B bk help terms
+for more information.
+.LP
+Dates are always specified as ranges; you can specify a date range this way:
+.DS
+bk log -c1998..2002
+.DE
+.LP
+The date format is \*(lq\c
+.ARGc YYYY /
+.ARGc MM /
+.ARG DD
+.ARGc HH :
+.ARGc M :
+.ARG SS  \*(rq
+with missing fields either rounded up or rounded down.
+If you do not want to quote the date string, you can use a non-digit
+character, such as hyphen (\*(lq\-\*(rq) in its place, for example,
+\*(lq2001/07/19-12:00:00\*(rq.
+Optionally, you can append a time zone offset of the form -ZH:ZM for
+negative offsets from GMT or +ZH:ZM for positive offsets.
+Date rounding is context sensitive:
+the starting date is rounded down and the ending date is rounded up,
+so 2001..2001 is the same as 2001/01/01-00:00:00..2001/12/31-23:59:59.
+A single date is used as both endpoints so 2005/12 is the same as
+2005/12/01-00:00:00..2005/12/31-23:59:59.
+.LP
+Note: the mixing of dates and revisions is deprecated.
+.LP
+If there is only one date specified, without a revision, then a 
+very useful form of the date is to specify a recent period of time, 
+such as 
+.DS
+bk log \-c\-1d..
+.DE
+.LP
+which will display the last 24 hours worth of changes.  This works
+the same way for Years/Months/days/hours/minutes/seconds, i.e.,
+.DS
+.\" Using spaces for alignment here because the single tab was spazzing out
+In the last year:       log \-c\-1Y.. (or \-1y..)
+In the last month:      log \-c\-1M..
+In the last week:       log \-c\-1W.. (or \-1w..)
+In the last day:        log \-c\-1D.. (or \-1d..)
+In the last hour:       log \-c\-1h..
+In the last minute:     log \-c\-1m..
+In the last second:     log \-c\-1s..
+.DE
+If you leave off the multiplier, 1 is assumed.
+.LP
+While you may not build up specific dates as \-1Y2m3d, you can specify 
+fractions, i.e., to get the last 6 months worth, try
+.DS
+bk log \-c\-.5Y..
+.DE
+.\" .LP
+.\" You can mix and match revisions and date.  If you want everything in
+.\" 98, but not past revision 1.5, you would type:
+.\" .DS
+.\" bk log \-c98 \-r1.5
+.\" .DE
+.LP
+Dates can also be in the form of symbolic tags (ChangeSet file only).  
+If you tagged a changeset with Alpha and another changeset with Beta,
+you can type:
+.DS
+bk changes \-cAlpha..Beta
+bk log -r@Alpha..@Beta foo.c
+.DE
+.LP
+Ranges need not include both endpoints.  If you wanted to see everything
+from Beta forward, you could type:
+.DS
+bk changes \-cBeta..
+.DE
+.LP
+A single
+.QR \-r ,
+because it is the first revision seen, rounds down and means
+1.1.  To get the most recent delta, type
+.QR \-r+ .
+.SH OPTIONS
+.TP \-\-standalone
+.OPTreq \-c range
+Specify deltas by a date range
+.tp
+.B \-\-lattice
+Restrict the deltas to those on the lattice between the two range
+endpoints.  Unlike a range, the lower bound is included in the output.
+.tp
+.B \-\-longest
+Restrict the deltas to those on the longest line between the two range
+endpoints.  Unlike a range, the lower bound is included in the output.
+.tp
+.B \-q
+run quietly; default is to warn about all files which do not match the range
+.tp
+.OPTreq \-r rev
+Specify deltas by revision number
+.tp
+.B \-S
+.tp
+.B \-\-standalone
+Use with -L in a nested component when you want the component to act like
+a standalone repository.
+.SH "SEE ALSO"
+.SA annotate
+.SA changes
+.SA co
+.SA diffs
+.SA log
+.SA terms
+.\" help://date
+.\" help://dates
+.\" help://ranges
+.SH CATEGORY
+.B Overview
+.br
+.B File

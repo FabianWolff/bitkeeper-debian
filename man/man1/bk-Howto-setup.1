@@ -1,0 +1,39 @@
+.so ../bk-macros
+.TH "HOWTO-setup" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    =================== Quickstart Setup =======================
+.SH NAME
+bk Howto-setup \- howto: setting up a \*(BK repository
+.SH DESCRIPTION
+.LP
+Here are examples on how to setup the initial repository, import from
+plain files, a CVS repository, and/or an RCS repository. 
+.LP
+In order to do an import, the destination repository needs to exist. 
+.B bk setuptool
+is used when creating the first instance of a repository.
+.sp
+.DS
+# Setup initial repository
+cd ~/projects
+bk setuptool test_package
+
+# Import of plain files from a tar archive.  
+# In order to do an import, the destination 
+# repository needs to exist.  Notice that we put the 
+# package in subdirectory, this is useful.
+mkdir /tmp/gcc
+cd /tmp/gcc
+tar zxf /tmp/gcc-2.95.2.tgz
+bk import -tplain /tmp/gcc ~/projects/test_package
+
+# Import of a CVS tree which resides in /tmp/mycvsproject.
+bk import -tCVS /tmp/mycvsproject ~/projects/test_package
+
+# Import of a RCS tree which resides in /tmp/myrcsproject.
+bk import -tRCS /tmp/myrcsproject ~/projects/test_package
+.DE
+.SH "SEE ALSO"
+.SA Howto
+.SH CATEGORY
+.B Overview
+.\" help://qs_setup

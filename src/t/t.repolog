@@ -1,0 +1,65 @@
+# Copyright 2009-2010,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+echo bar > bar.c
+echo h > h.h
+bk new $Q bar.c h.h
+bk commit $Q -yCset
+echo OK
+
+echo $N Check that we recorded our path..............................$NL
+HOST=`bk gethost -r`
+TMP=`bk crypto -hX $HOST`
+HASH=`printf '%.2s' $TMP`
+WHERE="`bk dotbk`/repos/$HASH/$HOST/path.log"
+test -f "$WHERE" || {
+	echo no "$WHERE"
+	find "`bk dotbk`" -type f -print
+	exit 1
+}
+pwd=`bk pwd`
+grep -q "$pwd" "$WHERE" || {
+	echo "Did not find path: $pwd"
+	cat "$WHERE"
+	exit 1
+}
+echo OK
+
+echo $N Check that we do not record it twice ........................$NL
+# depending on if this test was run with others, cache is there or not.
+# so start from a known spot.
+rm -f "$WHERE"
+bk -r check -ac
+test `wc -l < "$WHERE"` -eq 1 || {
+	echo whoops
+	cat "$WHERE"
+	exit 1
+}
+echo OK
+
+echo $N Check that if we cannot make the dir, all is okay ...........$NL
+BLOCK="`bk dotbk`/repos/$HASH/$HOST"
+rm -fr "$BLOCK"
+touch "$BLOCK"
+bk -r check -ac || fail
+echo OK
+
+echo $N Check that if we cannot make the dir, all is okay ...........$NL
+BLOCK="`bk dotbk`/repos"
+rm -fr "$BLOCK"
+touch "$BLOCK"
+bk -r check -ac || fail
+echo OK

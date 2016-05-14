@@ -1,0 +1,252 @@
+# Copyright 2000-2002,2004-2006,2008-2012,2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Check undo to rev 1.2 .......................................$NL
+mkdir src
+cd "$HERE/project/src"
+echo foo > foo.c
+bk ci $Q -i foo.c
+bk commit $S -y"This is \"Change Set\" A"
+bk clone $Q "$HERE/project" "$HERE/copy1"
+bk mv foo.c new_foo.c
+echo bar >> bar.c
+# Add ChangeLog because it sorts before ChangeSet and I want to be sure
+# that we don't depend on the ChangeSet file being first.
+echo foo > ../ChangeLog
+bk ci $Q -i bar.c ../ChangeLog
+bk commit $S -y"This is a \"Change Set\" B"
+bk clone $Q "$HERE/project" "$HERE/copy2"
+cd "$HERE/copy2/src"
+bk undo -fqr1.3
+if bk _test ! -f SCCS/s.foo.c
+then
+	echo failed
+	exit 1
+fi
+if bk _test -f SCCS/s.new_foo.c
+then
+	echo failed
+	exit 1
+fi
+if bk _test -f SCCS/s.bar.c
+then
+	echo failed
+	exit 1
+fi
+bk diff -r "$HERE/copy1/src" "$HERE/copy2/src"
+if [ $? != 0 ]
+then
+	echo failed
+	exit
+fi
+echo OK
+
+echo $N Check undo with edited file .................................$NL
+bk co $Q -l foo.c
+echo new-data > foo.c
+bk undo -fr+ > undo.out 2>&1 && {
+	echo failed
+	cat undo.out
+	exit 1
+}
+grep -q "Cannot clean src/foo.c, undo aborted" undo.out || {
+	echo failed2
+	cat undo.out
+	exit 1
+}
+echo OK
+bk unedit foo.c
+
+echo $N Check undo of circular renames ..............................$NL
+echo bar > bar.c
+echo woo > woo.c
+bk ci $Q -i bar.c
+bk ci $Q -i woo.c
+bk commit $S -y"new file"
+bk mv foo.c tmp.c
+bk mv bar.c foo.c
+bk mv woo.c bar.c
+bk mv tmp.c woo.c
+bk commit $S -y"circular rename"
+bk get $Q -p bar.c | grep -q woo
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+bk undo $Q -fr+
+bk get $Q -p bar.c | grep -q bar
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Check dangling tag undo .....................................$NL
+cd "$HERE"
+commercial tag
+ls > file
+bk new $Q file
+bk commit --tag=RELEASE -ywhatever $Q
+bk edit -q file
+bk delta $Q -fywhatever file
+bk commit -ywhatever $Q
+bk tag $Q RELEASE
+bk tag $Q -r1.2 RELEASE
+bk undo $Q -fr1.3 || fail
+bk _scat SCCS/s.ChangeSet | grep -q 'R 1.2' && {
+	echo failed to remove the dangling tag
+	exit 1
+}
+echo OK
+
+echo $N Try and undo a merge changeset ..............................$NL
+cd "$HERE"
+commercial merge
+ls > file
+bk new $Q file
+bk commit -ywhatever $Q
+cd ..
+bk clone $Q merge merge-clone
+for i in merge merge-clone
+do	cd "$HERE"/$i
+	bk edit -q file
+	bk delta $Q -fy$i file
+	bk commit -y$i $Q
+done
+cd "$HERE/merge-clone"
+bk pull $Q || fail
+bk undo -sfr+ > OUT 2>&1 && {
+	echo undo should have failed
+	cat OUT
+	exit 1
+}
+bk prs -r1.4 ChangeSet > OUT || {
+	echo undo did remove 1.4
+	exit 1
+}
+echo OK
+
+echo $N Undo a rename where renumber needs to run before names ......$NL
+cd "$HERE"
+commercial rename
+echo a > a
+echo b > b
+bk new $Q a b
+bk commit --tag=c1 -yc1 $Q || fail
+cd ..
+bk clone $Q rename rename2
+cd rename
+bk edit $Q a 
+echo a >> a
+bk delta $Q -yd1 a 
+bk commit --tag=c2 -yc2 $Q
+cd ../rename2
+bk mv a t || fail
+bk mv b a || fail
+bk mv t b || fail
+bk commit --tag=c3 -yc3 $Q || fail
+bk pull $Q || fail
+bk undo $Q -f -ac3 || fail
+echo OK
+
+echo $N Undo should not touch files when it fails ...................$NL
+cd "$HERE/project/src"
+bk get $Q new_foo.c
+bk undo $Q -r1.2 >OUT && {
+	echo should have generated an error
+	exit 1
+}
+test -f new_foo.c || {
+	echo a failed undo should not have deleted any files
+	exit 1
+}
+echo OK
+
+echo $N Undo should not delete existing RESYNC directory ............$NL
+cd "$HERE/project"
+mkdir RESYNC
+bk undo $Q -sfr+ > ERROUT 2>&1 && {
+	echo should have generated an error
+	exit 1
+}
+test -s ERROUT || {
+	echo should have output explanation
+	exit 1
+}
+test -d RESYNC || {
+	echo undo deleted existing RESYNC
+	exit 1
+}
+rmdir RESYNC
+echo OK
+
+unset _BK_DEVELOPER
+echo $N checkout:get should resurrect deleted files after undo ......$NL
+cd "$HERE"
+rm -rf project
+commercial project
+bk edit $Q BitKeeper/etc/config || fail
+echo "checkout: get!" >> BitKeeper/etc/config
+echo "partial_check: yes" >> BitKeeper/etc/config
+bk ci $Q -y'Added checkout:get' BitKeeper/etc/config
+bk commit $Q -y'Added checkout:get' || fail
+echo foo > foo
+bk new $Q foo || fail
+bk commit $Q -y'Added foo' || fail
+bk rm foo || fail
+bk commit $Q -y'Removed foo' || fail
+bk clean BitKeeper/deleted || fail
+bk -r check -ac || fail
+bk undo $Q -fa1.3 || fail
+test -f foo || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Undo cset created by Cunning Plan -- 1.1 and 1.0.1.1 on 1.0 .$NL
+cd "$HERE"
+rm -fr project copy
+umask 0
+commercial project
+touch foo
+bk new $Q foo || fail
+cd ..
+cp -r project copy
+cd project
+rm BitKeeper/log/repo_id
+bk commit $Q -ytrunk
+cd ../copy
+bk parent $Q ../project || fail
+bk stripdel $Q -r+ foo || fail
+TIP=`bk log -r+ -nd:I: foo`
+test "$TIP" = 1.0 || fail
+bk chmod 666 foo || fail
+TIP=`bk log -r+ -nd:I: foo`
+test "$TIP" = 1.1 || fail
+bk commit $Q -ybranch || fail
+BK_CONFIG='fakegrafts: 1' bk pull $Q || fail
+
+# cset weave should have 4 lines for foo last one marked
+bk _heapdump ChangeSet | grep foo > L
+test `wc -l <L` -eq 4 || fail -f L
+test `grep " END" L | wc -l` -eq 1 || fail -f L
+tail -1 L | grep -q " END" || fail -f L
+
+TIP=`bk log -r+ -nd:I: foo`
+test "$TIP" = 1.2 || fail
+bk unpull $Q -f || fail
+echo OK

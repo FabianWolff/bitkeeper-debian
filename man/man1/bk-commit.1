@@ -1,0 +1,156 @@
+.so ../bk-macros
+.TH "bk commit" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    ========== Committing changes to a BitKeeper changeset =========
+.SH NAME
+bk commit \- commit deltas to a changeset
+.SH SYNOPSIS
+.B bk commit
+.[B] \-cfq
+.[OPTreq] \-l file 
+.[OPTreq] \-\-tag=tag
+.[OPTreq] \-sALIAS
+.[B] \-S
+.[OPTreq] \-Y file 
+.[B] \-
+.br
+.B bk commit
+.[B] \-cfq
+.[OPTreq] \-l file 
+.[OPTreq] \-y comment
+.[B] \-
+.SH DESCRIPTION
+.LP
+This command commits work to a changeset, creating a logical group of
+changes which can span multiple files and/or multiple deltas within 
+one or more files.
+.LP
+If the command line does not have a trailing dash then 
+.B bk commit
+will search the repository for any files which are in
+\*(lqpending\*(lq state, i.e., have deltas which do not yet belong
+to a changeset, and groups all of them into a changeset.
+If the trailing dash is present, then the command takes the list
+of files to commit from the standard input; each line of input must be of
+the format:
+.DS
+\*<sfile\*>|\*<rev\*>
+.DE
+.LP
+where
+.ARG sfile
+is an sfile name as described in
+.B bk filetypes
+and
+.ARG rev
+is a file revision number, such as 1.1 or 1.2. Example:
+.BR SCCS/s.foo|1.2 .
+This is the same format produced by
+.Q bk gfiles \-pA
+and
+.QR "bk gfiles \-pC" .
+.LP
+.B Note:
+.ARG rev
+specifies the most recent change to commit; all uncommitted changes prior to
+.ARG rev
+are also included.
+.LP
+You can see what will be added to a changeset when you commit by running:
+.DS
+$ bk pending
+.DE
+.\"Pending lists only files which have checked in deltas; files that
+.\"are not yet checked in are not shown.  Use 
+.\".B bk status
+.\"or
+.\".B bk gfiles
+.\"if you want to see both.
+.LP
+All revisions which you have checked in will become part of a
+changeset.  As part of the commit step, you will be prompted for
+comments (if none were provided on the command line).
+The comments should describe the logical change that you have made;
+these comments are what will be displayed by 
+.BR "bk changes" .
+.LP
+If no comments are provided and there is a 
+.B BitKeeper/templates/commit
+file present in the repository,
+then the default comments are the contents of that file.
+.LP
+.B Note:
+using
+.B bk citool
+is the preferred way to commit. Not only will
+.B bk citool
+help with checking in files, it will also create a changeset if you enter
+ChangeSet comments.  
+.LP
+.B Note:
+using the default comments on an import is not advisable.  The default
+comments contain information about each file and can create very large
+comment entries in the ChangeSet file.  The ChangeSet file is the center
+of activity in \*(BK, and having an unnecessarily large one will not help
+performance.
+.SH OPTIONS
+.TP "\\fB\\-\\-standalone \\fP"
+.B \-c
+Use comments saved by a previous run of citool, fix, collapse, etc.
+It is an error if there are no saved comments.
+.tp
+.B \-\-ci
+Check in any edited files as part of the commit.
+.tp
+.B \-f
+Don't run interactively; do the commit with the default comments.
+Ignores the commit template, if any.
+.tp
+.OPTreq \-l file
+Get the list of files to commit from
+.ARG file .
+Each line of this file must use the
+.B \*<sfile\*>|\*<rev\*>
+format described above.
+.tp
+.B \-q
+Run quietly.
+.tp
+.if \n[NESTED] \{\
+.B \-sALIAS
+Commit all pending files in the given aliases as well as the
+PRODUCT.
+Use
+.B \-s\^PRODUCT
+if the top level commit is not wanted.
+.tp
+.B \-S
+.tp
+.B \-\-standalone
+Commit only in the current repository.
+\}
+.tp
+\fB--tag\fR=\*<tag\*>
+Tag the tree with
+.ARG tag
+at the same time as the commit.
+.tp
+.OPTreq \-Y file
+Get check-in comment for changeset from
+.ARG file .
+.tp
+.OPTreq \-y comment
+Set check-in comment of changeset to
+.ARG  comment .
+.SH "SEE ALSO"
+.SA changes
+.SA citool
+.SA import
+.SA pending
+.SA gfiles
+.SA status
+.SA tag
+.SA templates
+.\" help://changeset
+.\" help://changesets
+.SH CATEGORY
+.B Repository

@@ -1,0 +1,97 @@
+.so ../bk-macros
+.TH "bk cmdlog" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk cmdlog \- show the log of commands executed in this repository
+.SH SYNOPSIS
+.B bk cmdlog
+.[B] \-S
+.[B] \-a
+.[B] \-v
+.[OPTreq] \-c cutoff
+[pattern]
+.br
+.B bk cmdlog
+.[B] \-r
+.[OPTreq] \-c cutoff
+[pattern]
+.SH DESCRIPTION
+List the history of repository level commands run in repository of
+current directory.
+Repository level commands are
+.BR "bk clone" ,
+.BR "bk commit" ,
+.BR "bk export" ,
+.BR "bk pull" ,
+and
+.BR "bk push" .
+.LP
+Commands are listed in least recent to most recent order.
+.SH OPTIONS
+.TP \-c\*<cutoff\*>
+.B \-a
+List history of all commands run in the repository, not just repository level
+commands.
+.tp
+.OPTreq \-c cutoff
+List commands which happened during the date range specified by
+.ARG cutoff .
+.tp
+.B \-r
+List command start and stops with relative times.  Implies \-a.
+.tp
+.B \-v
+Each line of output is
+prefixed with userid, timestamp and BK version.  Combined with
+the
+.B \-a
+option, everything is listed, including commands run by BK itself.
+.if \n[NESTED] \{
+Additionally, in a nested collection, each output line will list the
+component name in brackets, ie. [component]
+.tp
+.B \-S
+.tp
+.B \-\-standalone
+When used in a nested collection, only process the log for the
+current component.
+.\}
+.tp
+.B pattern
+Limit the output to lines matching (regexp) pattern.
+.SH EXIT STATUS
+.B bk cmdlog
+returns exit status 0.
+.SH NOTES
+The two command logs are maintained by \*(BK in the
+.B BitKeeper/log
+directory.
+.B repo_log
+contains all repository level commands ever run in that repository.
+.B cmd_log
+contains recent commands run in that repository.
+.PP
+In the cmd_log file, commands are logged at the time they start and at
+the time they finish.  By default, cmdlog output is limited to
+the latter.
+Using the
+.B \-av
+options, both the start and finish of commands is listed (as well
+as other events such as trigger launches).
+.PP
+The relative times displayed by the
+.B \-r
+option are only printed if the bk version logged those times.  Earlier
+versions of \*(BK did not log this data so it will not appear in the
+output.
+.PP
+When using the
+.B \-r
+option, the relative time is in seconds and relative to
+the first user level command (for example, the start of a
+.B bk pull
+would be 0 seconds, all the subordinate logs will be relative to that.
+The final entry will represent the run time of the pull command).
+.SH "SEE ALSO"
+.SA range
+.SH CATEGORY
+.B Repository

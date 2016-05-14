@@ -1,0 +1,165 @@
+# Copyright 2008-2012,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# These tests count system calls on a known platform.
+
+# When some tests fail for a know reason run:
+#   STRACE_CNT_SAVE=1 ./doit t.strace-cnt
+# to reset the baseline
+
+DO_CNT="`bk bin`"/t/strace-cnt.pl
+FILE="$HERE"/OUT
+
+echo $N Create initial repository ...................................$NL
+test -d $TESTDATA/perf || {
+	echo skipped
+	exit 0
+}
+bk version | grep -q " for x86-glibc23-linux" || {
+	echo skipped
+	exit 0
+}
+bk get -Sq "$DO_CNT" || fail
+export BK_CONFIG
+echo y | bk clone --hide-sccs-dirs $Q $TESTDATA/perf project > OUT 2>&1 || {
+	cat OUT
+	exit 1
+}
+cd project
+bk edit $Q BitKeeper/etc/ignore
+cat <<EOF > BitKeeper/etc/ignore
+2
+3
+EOF
+bk ci -yignore1 -u $Q BitKeeper/etc/ignore
+bk commit $Q -yignore1 || fail
+echo OK
+
+# I couldn't get Wayne's counter to work for this stuff so I went to strace(1)
+echo $N "Count the syscalls for a 'bk --obuf=0 sfiles' ..............."$NL
+rm -f "$FILE"
+strace -c -o "$FILE" -e write \
+    bk --obuf=0 sfiles "$TESTDATA"/bitcluster > /dev/null
+OBUF_0=`tail -1 < "$FILE" | awk '{print $3}'`
+echo OK
+
+echo $N "Count the syscalls for a 'bk --obuf=line sfiles' ............"$NL
+rm -f "$FILE"
+strace -c -o "$FILE" -e write \
+    bk --obuf=line sfiles "$TESTDATA"/bitcluster > /dev/null
+OBUF_LINE=`tail -1 < "$FILE" | awk '{print $3}'`
+test $OBUF_0 -gt $OBUF_LINE || fail
+echo OK
+
+echo $N "Count the syscalls for a 'bk --obuf=10240 sfiles' ..........."$NL
+rm -f "$FILE"
+strace -c -o "$FILE" -e write \
+    bk --obuf=10240 sfiles "$TESTDATA"/bitcluster > /dev/null
+OBUF_BIG=`tail -1 < "$FILE" | awk '{print $3}'`
+test $OBUF_LINE -gt $OBUF_BIG || fail
+echo OK
+
+echo $N "Count the syscalls for a 'bk clone'.........................."$NL
+rm -f "$FILE"
+BK_STRACE="$FILE" bk clone -j1 $Q ../project ../copy || fail
+"$DO_CNT" clone "$FILE" || fail
+echo OK
+
+echo $N "Count the syscalls for a 'bk commit' ........................"$NL
+echo hi > file
+bk new $Q file
+bk edit $Q BitKeeper/etc/ignore
+cat <<EOF > BitKeeper/etc/ignore
+2
+3
+4
+EOF
+bk ci -yignore2 -u $Q BitKeeper/etc/ignore
+rm -f "$FILE"
+BK_STRACE="$FILE" bk commit $Q -ycommit || fail
+"$DO_CNT" commit "$FILE" || fail
+echo OK
+
+echo $N "Count the syscalls for a 'bk changes -L' ...................."$NL
+cd ../copy
+rm -f "$FILE"
+BK_STRACE="$FILE" bk changes -L > OUT || fail
+"$DO_CNT" changes-l "$FILE" || fail
+echo OK
+
+echo $N "Count the syscalls for a 'bk changes -R' ...................."$NL
+rm -f "$FILE"
+BK_STRACE="$FILE" bk changes -R > OUT || fail
+"$DO_CNT" changes-r "$FILE" || fail
+echo OK
+
+echo $N "Count the syscalls for a 'bk pull' .........................."$NL
+bk edit $Q BitKeeper/etc/ignore
+cat <<EOF > BitKeeper/etc/ignore
+1
+2
+3
+EOF
+bk ci -yignore3 -u $Q BitKeeper/etc/ignore
+bk commit $Q -yignore1 || fail
+rm -f "$FILE"
+BK_STRACE="$FILE" bk pull $Q || fail
+"$DO_CNT" pull "$FILE" || fail
+echo OK
+
+echo $N "Count the syscalls for a 'bk unpull' ........................"$NL
+rm -f "$FILE"
+BK_STRACE="$FILE" bk unpull -f $Q || fail
+"$DO_CNT" unpull "$FILE" || fail
+echo OK
+
+echo $N "Count the syscalls for a 'bk pull -R' ......................."$NL
+bk edit $Q BitKeeper/etc/ignore
+cat <<EOF > BitKeeper/etc/ignore
+1
+2
+3
+EOF
+bk ci -yignore3 -u $Q BitKeeper/etc/ignore
+bk commit $Q -yignore1 || fail
+rm -f "$FILE"
+BK_STRACE="$FILE" bk pull -R $Q || fail
+"$DO_CNT" pull-r "$FILE" || fail
+echo OK
+
+echo $N "Count the syscalls for a 'bk resolve' ......................."$NL
+rm -f "$FILE"
+BK_STRACE="$FILE" bk resolve $Q || fail
+"$DO_CNT" resolve "$FILE" || fail
+echo OK
+
+echo $N "Count the syscalls for a 'bk push' .........................."$NL
+rm -f "$FILE"
+BK_STRACE="$FILE" bk push $Q || fail
+"$DO_CNT" push "$FILE" || fail
+echo OK
+
+echo $N Count the calls in a large sccs_init ........................$NL
+bk _cp "`bk bin`"/SCCS/s.slib.c SCCS/s.slib.c || fail
+# delta past the bk-4.1.1 version of slib.c
+BK411=47bc54abUWkbJUWx3UjQ3LB-mJ6wtQ
+bk prs  -r$BK411.. -hnd'slib.c|:REV:' slib.c > REVS || fail
+bk stripdel -Cq - < REVS || fail
+bk renumber -q slib.c
+rm -f "$FILE"
+BK_STRACE="$FILE" bk prs slib.c > OUT || fail
+grep -q '^D.* 2008/02/20 11:26:19-05:00' OUT || fail
+"$DO_CNT" mkgraph "$FILE" || fail
+bk _rm -f SCCS/s.slib.c
+echo OK

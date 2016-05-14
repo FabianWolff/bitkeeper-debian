@@ -1,0 +1,60 @@
+# Copyright 2012,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+BK_NO_HARDLINK_CLONE=1
+export BK_NO_HARDLINK_CLONE
+
+echo $N Create initial repository ...................................$NL
+commercial project
+BK="`bk bin`/bk"
+test $PLATFORM = WIN32 && BK=${BK}.exe
+DATA="$HERE"/data
+perl -e 'sysread(STDIN, $buf, 81920);
+syswrite(STDOUT, $buf, 81920);' < $BK > "$DATA"
+cp "$DATA" data
+bk new $Q data || fail
+perl -e 'printf "Hi there\x0\n";' > small
+BK_CONFIG='BAM:1k!' bk new $Q small
+test -d BitKeeper/BAM || fail
+bk commit $Q -ydata1
+echo OK
+
+echo $N bk rm the file, unlink it, gone, create a new one ...........$NL
+ROOTKEY=`bk prs -hr+ -nd:ROOTKEY:`
+cp BitKeeper/log/x.id_cache ID.pre
+bk rm data
+# I'm trying to see if bk rm fixed the idcache
+# and it does
+cmp -s BitKeeper/log/x.id_cache ID.pre && fail
+bk _rm -fr BitKeeper/deleted
+echo "$ROOTKEY" | bk gone -q -
+perl -e 'sysread(STDIN, $buf, 91920);
+syswrite(STDOUT, $buf, 91920);' < $BK > data
+bk new $Q data || fail
+echo OK
+
+# Without this we don't fail below, I'm not clear why
+# OK, yes I am.  Without this, key2path is going to say it is off in
+# BitKeeper/deleted, the exists() fails, so we don't list.  This
+# regens the idcache, now key2path puts it in the 1.1 location, we barf.
+bk repocheck -q
+
+echo $N sfiles_bam should list one file with it pending .............$NL
+test 1 = `bk _sfiles_bam | wc -l` || fail
+echo OK
+
+echo $N sfiles_bam should list one file with it committed ...........$NL
+bk commit $Q -ydata2
+test 1 = `bk _sfiles_bam | wc -l` || fail
+echo OK

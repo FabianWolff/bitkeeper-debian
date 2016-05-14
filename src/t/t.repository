@@ -1,0 +1,213 @@
+# Copyright 1999-2006,2010-2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+commercial project
+bk admin -Z
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Create some data ............................................$NL
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i foo.c bar.c h.h
+if bk _test ! -f SCCS/s.foo.c; then echo failed to create history; exit 1; fi
+echo OK
+echo $N Check pending ...............................................$NL
+P=`bk pending | wc -l`
+if [ $P -ne 15 ]; then echo wrong pending result $P; bk pending; exit 1; fi
+echo OK
+
+echo $N Try to commit an empty cset .................................$NL
+bk commit $S -yCset --tag="Hi-there-this-is-a-changeset"
+cd "$HERE/project"
+bk edit $Q ChangeSet
+bk commit $Q
+# make sure "bk commit" did not change the mode of the ChangeSet file
+writable ChangeSet || { echo failed; exit 1; }
+echo OK
+
+echo $N Try to commit via stdin .....................................$NL
+cd "$HERE/project/src"
+bk co $Q -l h.h
+date > h.h
+bk ci $Q -ytest_cmt1 h.h
+date > t.c
+bk ci $Q -ytest_cmt2 -i t.c
+bk -R sfiles -pC | bk commit $Q -ycmt3 -
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo wrong pending result $P; bk pending; exit 1; fi
+H2=`bk prs -hnd:MD5KEY: -r1.2 h.h`
+H1=`bk prs -hnd:MD5KEY: -r1.1 h.h`
+T1=`bk prs -hnd:MD5KEY: -r1.1 t.c`
+cat > X <<EOF
+ChangeSet${BK_FS}ChangeSet${BK_FS}1.2${BK_FS}ChangeSet${BK_FS}1.3
+src/h.h${BK_FS}src/h.h${BK_FS}$H1${BK_FS}src/h.h${BK_FS}$H2
+src/t.c${BK_FS}src/t.c${BK_FS}1.0${BK_FS}src/t.c${BK_FS}$T1
+EOF
+bk undos X > CMP1
+bk -R rset -hr1.2,1.3 > CMP2
+cmpfiles CMP1 CMP2
+echo OK
+
+echo $N Try to commit via -l ........................................$NL
+cd "$HERE/project/src"
+bk co $Q -l h.h
+echo new-stuff > h.h
+bk ci $Q -ytest_cmt1 h.h
+date > q.c
+bk ci $Q -ytest_cmt2 -i q.c
+bk -R sfiles -pC > "$HERE/flist"
+bk commit $Q -ycmt4 -l"$HERE/flist" 
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo wrong pending result $P; bk pending; exit 1; fi
+H3=`bk prs -hnd:MD5KEY: -r1.3 h.h`
+Q1=`bk prs -hnd:MD5KEY: -r1.1 q.c`
+cat > X <<EOF
+ChangeSet${BK_FS}ChangeSet${BK_FS}1.3${BK_FS}ChangeSet${BK_FS}1.4
+src/h.h${BK_FS}src/h.h${BK_FS}$H2${BK_FS}src/h.h${BK_FS}$H3
+src/q.c${BK_FS}src/q.c${BK_FS}1.0${BK_FS}src/q.c${BK_FS}$Q1
+EOF
+bk undos X > CMP1
+bk -R rset -hr1.3,1.4 > CMP2
+cmpfiles CMP1 CMP2
+echo OK
+
+echo $N Check that missing edited gfile does not abort takepatch ....$NL
+cd "$HERE/project"
+echo "foo" > aaa
+bk new $Q aaa
+bk commit $Q -y'add aaa' aaa
+bk clone $Q "$HERE/project" "$HERE/proj_takepatch"
+bk edit $Q aaa
+echo "bar" >> aaa
+bk ci $Q -y'add bar' aaa
+bk commit $Q -y'add bar to aaa' aaa
+bk makepatch $Q -r+ > "$HERE/patch"
+cd "$HERE/proj_takepatch"
+bk edit $Q aaa
+rm aaa
+bk takepatch -a < "$HERE/patch" || { echo takepatch failed >&2; exit 1; }
+echo OK
+
+#echo $N Test for path conflict ......................................$NL
+#cd "$HERE/proj_log"
+#bk undo $Q -f -r1.2.1.1,1.3
+#cd "$HERE/copy1/src"
+#date >  new.c
+#bk new $Q -ycopy1-new new.c
+#bk commit $Q -ycopy1-new
+#bk push $Q -e "$HERE/proj_log"
+#cd "$HERE/copy2/src"
+#date >  new.c
+#bk new $Q -ycopy2-new new.c
+#bk commit $Q -ycopy2-new
+#bk makepatch $Q -e.. > "$HERE/patch"
+#cd "$HERE/proj_log"
+#bk takepatch $Q < "$HERE/patch"
+#bk resolve -d -c
+#echo SKIPPED
+
+echo $N Try to resolve into a tree with no write permission .........$NL
+cd "$HERE"
+rm -rf copy
+bk clone $Q project copy
+cd project/src
+touch NEWFILE
+bk new $Q NEWFILE
+bk commit $Q -yNEWFILE 
+cd "$HERE/copy"
+chmod 555 src
+bk pull $Q > OUT 2>&1
+grep -q 'No write permission: src' OUT || {
+	echo bad error message from pull
+	cat OUT
+	chmod +w src
+	exit 1
+}
+chmod +w src
+echo OK
+
+echo $N Try a commit -Yfile .........................................$NL
+cd "$HERE/project"
+echo arg > foo
+bk new $Q foo || fail
+echo line1 > comment
+echo line2 >> comment
+bk commit $Q -Ycomment || fail
+if [ ! -f comment ]; then echo dont delete file; exit 1; fi
+bk prs -r+ -hd:COMMENTS: ChangeSet > C1
+bk undos > C2 <<EOF
+C line1
+C line2
+EOF
+cmp -s C1 C2
+if [ $? -ne 0 ]; then echo Failed to set correct comments.; exit 1; fi
+echo OK
+
+echo $N Try a commit -Ymissingfile ..................................$NL
+cd "$HERE/project"
+bk edit $Q foo || exit
+echo arg2 >> foo
+bk delta $Q -yjunk foo || fail
+bk commit $Q -Ynocomment 2> /dev/null
+if [ $? -eq 0 ]; then echo failed; exit 1; fi
+bk pending > C
+grep 'foo@1.2' C > /dev/null || fail
+echo OK
+
+cleanf() {
+	cd F:/
+	rm -fr OUT ERR project SCCS BitKeeper
+	cd "$HERE"
+}
+
+echo $N Test for a repo in the root and at the root of a USB drive ..$NL
+if [ "X$PLATFORM" = "XWIN32" -a -d f:/tmp ]; then
+	cleanf
+	cd F:/
+	commercial project
+	bk root > OUT || {
+		echo failed good root
+		cleanf
+		exit 1
+	}
+	grep -q "F:/project" OUT || {
+		echo failed good grep
+		cleanf
+		exit 1
+	}
+	mv BitKeeper SCCS ..
+	cd ..
+	bk root 2> ERR && {
+		echo passed root at root
+		cleanf
+		exit 1
+	}
+	grep -q "cannot find package root" ERR || {
+		echo failed bad grep
+		cleanf
+		exit 1
+	}
+	cleanf
+	echo OK
+else
+	echo skipped
+fi

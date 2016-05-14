@@ -1,0 +1,31 @@
+.so ../bk-macros
+.TH "bk status" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    =============== Getting BitKeeper status ===============
+.SH NAME
+bk status \- show repository status
+.SH SYNOPSIS
+.B bk status
+.[OPT] \-\-compat
+.[ARG] repository
+.SH DESCRIPTION
+.LP
+The
+.B bk status
+command gives a quick overview of the current (or specified) repository.
+.SH OUTPUT
+The default output looks something like:
+.DS
+Repo: hobbes.bitkeeper.com:/home/lm/bk/dev
+Nested: 22/22 components present
+Push/pull parent: bk://work.bitkeeper.com/dev
+	13 csets to be pulled
+4 locally modified files
+Repo attributes: level=3, GATE, PORTAL
+BK version: bk-7.0.1 (repository requires bk-7.0 or later)
+.DE
+.SH NOTE
+The current output format is preliminary and may change in the future.
+.SH SEE ALSO
+.SA gfiles
+.SH CATEGORY
+.B Repository

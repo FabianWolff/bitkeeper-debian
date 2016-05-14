@@ -1,0 +1,63 @@
+.so ../bk-macros
+.TH "bk superset" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk superset \- check to see if the parent is ahead of the current repository
+.SH SYNOPSIS
+.B bk superset
+.[B] \-q
+.[ARG] parent
+.SH DESCRIPTION
+.LP
+.B bk superset
+does checks to see if removing the current repository is a lossless
+event. 
+.LP
+It checks that:
+.LP
+.li
+there are no local only changesets and/or tags
+.li
+there are no pending deltas
+.li
+there are no modified files
+.li
+there are no extra files
+.\" .li
+.\" there are no parked files
+.li
+there are no pending patches from aborted pulls
+.li
+there are no unresolved pulls
+.li
+there are no saved patches from a
+.B bk collapse
+operation
+.li
+there are no saved patches from an undo/unpull operation
+.li
+if there are sub-repositories and 
+.B no parent was specified 
+in the call to 
+.BR "bk superset" ,
+then the sub-repositories are also similarly checked against their parent
+.LP
+Unless the
+.Q \-q
+option is present,
+.B bk superset
+lists all things that are not in the parent.
+.SH OPTIONS
+.TP
+.B \-q
+Be quiet
+.SH "EXIT STATUS"
+.B bk superset
+returns exit status
+.TP
+0
+if the parent is a superset
+.tp
+1
+if the parent is not a superset
+.SH CATEGORY
+.B Repository

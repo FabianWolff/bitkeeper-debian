@@ -1,0 +1,131 @@
+.so ../bk-macros
+.TH "bk files" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk files \- demo program to show file name expansion
+.SH SYNOPSIS
+.B bk files
+.BKARGS
+.SH DESCRIPTION
+.LP
+Most \*(BK commands are designed to operate on a set of files.
+This command demonstrates how to specify the set of files.
+.LP
+File names can be implied, be specified as arguments, be implied with
+a directory name argument, or be specified as a list on stdin.
+.TP "\fBAll files  \fP"
+\fBImplied\fP (nothing specified)
+If no files are specified, the default list is every version
+controlled file in the current working directory.
+.tp
+.B Listed
+If the command invocation includes a list of files at the end then those 
+files and only those files are operated upon by the command.
+If any of the specified files are a directory then the list is expanded
+to include all revision controlled files associated with the specified
+directory.
+.tp
+.B All files
+A common thing to want to do is to run a command against all files under
+revision control.
+There is an easy way to do this:
+.DS
+bk -A \*<command\*>
+.DE
+.tp
+.B All user files
+The previous form will list all files, including deleted files and 
+metadata files.  
+A more useful form is one that only lists files that are user files
+and are not deleted:
+.DS
+bk -U co
+.DE
+.tp
+.B STDIN
+If the command invocation has as its last argument a \*(lq\-\*(rq
+then the command reads the standard input stream for a list of
+files, one per line, on which to operate.
+If the list is in the form
+.DS
+file.c|1.5
+header.h|1.8
+manpage|1.8..1.20
+.DE
+then the receiving command will operate on the supplied revision[s].
+.tp
+.B WILDCARDS
+It is possible to restrict the command to a specified set of files using
+what are called wild cards (or globs in Unix terminology).
+If a name specified includes a glob pattern then only files matching
+that pattern are processed.
+Only the basename of the file is compared against the glob, not the 
+full path name.
+The patterns are standard Unix glob patterns (see
+.QR "bk help glob" )
+with one exception for convenience: a \*(lq=\*(rq may be used in
+place of a \*(lq*\*(rq to match any pattern.
+In order for the \*(lq=\*(rq alias to work, an environment
+variable
+.V BK_GLOB_EQUAL
+must be set to the value \s-1YES\s0.
+To match all header files both of the following do the same thing:
+.DS
+export BK_GLOB_EQUAL=YES
+bk diffs =.h
+bk diffs '*.h'
+.DE
+If you have a file with an \*(lq=\*(rq or other glob characters in
+its name you will need to either quote those characters with a
+proceeding backslash (i.e., \*(lq\\*.h\*(rq matches a file named
+\*(lq*.h\*(rq), or if the file name specified contains a
+\*(lq/\*(rq then no glob expansion is applied.
+This makes it possible to do things like
+.DS
+bk diffs './*.h'
+.DE
+and have that match the file named \*(lq*.h\*(rq.
+.SH EXCEPTIONS
+Certain commands do not autoexpand directories because the commands are 
+destructive.
+An example is
+.BR "bk unedit" ,
+this command throws away any changes made to files
+and it refuses to autoexpand to all files, the files must be specified.
+.SH EXAMPLES
+See changes in the current directory:
+.DS
+bk diffs
+.DE
+See all changes in the repository:
+.DS
+bk -U diffs
+.DE
+See all changes to header files in the repository:
+.DS
+bk -U diffs '*.h'
+.DE
+List all C or header files containing the phrase \*(lqproc\*(rq in their name:
+.DS
+bk -A files '*proc*.[ch]'
+.DE
+See all modified user files:
+.DS
+bk -cU
+.DE
+See all extra files:
+.DS
+bk -xA
+.DE
+.SH EXIT STATUS
+.LP
+.B bk files
+returns exit status 0.
+.SH SEE ALSO
+.SA bk
+.SA diffs
+.SA glob
+.SA gfiles
+.SH CATEGORY
+.B File
+.br
+.B Repository

@@ -1,0 +1,771 @@
+# Copyright 2012-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Poly - nested style -- component cset is in more than one product cset.
+# See the wiki page "Poly" which describes 5 cases of poly.
+
+# There are 2 choke points in the code for detection: pull and check
+# They are active in 3 cases:
+# 1. pull in the component where the product believes there's a merge
+# 2. resolve runs bk -r check -acR before doing resolve
+# 3. commit -R (the product merge cset) runs bk -r check -cR - < list
+# The 'check' tests only run if there are 2 open tips in the ChangeSet file
+
+# All the tests here port in from a 'standalone' component whose tagged
+# graph looks like:
+
+# ROOT---SHARED--TRUNK---------------------MERGE
+#	       \			    /
+#		-------BRANCHBASE--BRANCH--+
+
+# There is a set of tests run on 3 different setups.
+# In each setup there is a local and a remote and local always starts out:
+# product	1.2------------------------1.3----------1.4
+# comp		ROOT --- (SHARED) ------BRANCHBASE----BRANCH
+
+# That is, SHARED doesn't have a D_CSET but is part of 1.3
+
+# XXX: This requires _BK_DEVELOPER to run because push (propagation
+# of cset marks), changes, r2c and maybe more are broken.
+
+# Before each set of tests (look for ###) is an explanation of the
+# setup for that block.
+
+set -e
+
+node() {
+	bk edit $Q foo
+	# to play around with content conflict, add -g to above and:
+	# echo $1 > foo
+	bk delta $Q -fynode-$1 foo
+	bk commit $Q --tag=$1 -f
+}
+
+sanitize() {
+	# filter out the file name from the key
+	perl -i.old -pe 'last if /^-/; s? bk/[^|]*\|([^|]*)\S+\d\b? <$1>?' $1
+	rm -f $1.old
+}
+
+cleanup() {
+	cd "$HERE/local"
+	bk portal $Q -r
+	_BK_DEVELOPER= bk undo $Q -sfaLOCAL || fail
+	bk portal $Q .
+	bk repocheck $Q
+	cd ../remote
+	bk portal $Q -r
+	_BK_DEVELOPER= bk undo $Q -sfaREMOTE || fail
+	bk portal $Q .
+	bk repocheck $Q
+}
+
+echo $N Make repos to test out nested poly ..........................$NL
+commercial standalone
+touch foo
+bk new $Q foo
+node ROOT
+cd ..
+# set up a nested with one comp
+echo 'checkout: edit' > c
+bk setup -P -fcc remote
+cd remote
+bk gate $Q -r
+# XXX: the comp repo is not attached when sfio happens, so gets checkout wrong.
+bk attach $Q -C ../standalone comp
+test -f comp/foo && fail fix test as attach now works
+bk --cd=comp -Ur checkout $Q
+bk --cd=comp prs -r1.0 -hnd:RANDOM: ChangeSet > comp.rand
+# See that hex is in lower case
+grep -q '[A-F]' comp.rand && fail -f comp.rand upper case in id
+# Add in a set of triggers for bug tickling
+mkdir BitKeeper/triggers
+cd BitKeeper/triggers
+cat <<EOF > t
+#!/bin/sh
+exit 0
+EOF
+chmod +x t
+for t in pre-resolve pre-incoming post-incoming pre-apply post-commit
+do
+	cp t $t
+	bk new $Q $t
+done
+rm t
+cd ../..
+bk commit $Q -y'attach comp and add trigger'
+# set up a start off the remote repo used in all the tests
+bk clone $Q . ../local
+bk portal $Q .
+bk tag $Q REMOTE
+cd ..
+# set up the standalone histories for all the tests
+cd standalone
+node SHARED
+bk clone $Q . ../branch
+node TRUNK
+cd ../branch
+node BRANCHBASE
+node BRANCH
+cd ../standalone
+bk pull $Q ../branch
+bk tag $Q MERGE
+# create the version of local that starts out each group of tests
+cd ../local/comp
+bk portal $Q .
+bk port $Q -rBRANCHBASE ../../standalone
+bk --cd=.. tag $Q LOCALBASE
+bk port $Q -rBRANCH ../../standalone
+cd ..
+bk tag $Q LOCAL
+echo OK
+
+###
+# The 'comp' in remote has less than local, but has a cset mark.
+# local comp before pull: ROOT (SHARED) BRANCH - where () mean no D_CSET
+# remote comp before pull: ROOT SHARED
+# 
+echo "----- Case 3: nothing to pull but cset marks"
+echo $N pull, poly: off .............................................$NL
+# Create the remote having SHARED
+cd "$HERE"/remote/comp
+bk port $Q -rSHARED ../../standalone
+# Pull into local where SHARED is unmarked
+cd "$HERE"/local
+bk pull -q 2> GOT && fail -f GOT
+# Test the error message with trailing instructions once:
+perl -i.old -pe 's? bk/[^|]*\|([^|]*)\S+\d\b? <$1>?' GOT
+cat <<EOF > WANT
+pull: poly on key <comp/ChangeSet> marked in remote
+-----------------------------------------------------------------
+The pull includes component csets that are already in your
+repository as part of a different product cset.
+
+This can happen when more than one portal is used to port from
+other projects.
+
+The BitKeeper support team recommends that you only use one portal to
+avoid this error.  Please write support@bitkeeper.com for assistance.
+-----------------------------------------------------------------
+EOF
+cmpfiles WANT GOT
+# failure means no RESYNC in prod or comp - no manual merges happened
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories after failed pull
+echo OK
+
+echo $N pull -R, poly: on ...........................................$NL
+bk --config=poly:on pull $Q -R || fail
+test -d RESYNC -a -d comp/RESYNC || fail RESYNC directories missing after pull
+echo OK
+
+echo $N Resolve with blocked change to poly file ....................$NL
+test -d RESYNC/BitKeeper/etc/poly || fail no poly file
+bk _rm -fr RESYNC/BitKeeper/etc/poly
+bk resolve -q 2>ERR && fail -f ERR
+grep -q 'check: poly not captured in .* for comp/ChangeSet' ERR || fail -f ERR
+bk abort -q -f 2> ERR || fail -f ERR
+bk repocheck $Q || fail
+echo 'comp/ChangeSet: adding and/or removing missing csetmarks' > WANT
+cmpfiles WANT ERR
+echo OK
+
+echo $N Now a resolve, poly: off -- it is not blocked ...............$NL
+bk --config=poly:on pull $Q -R || fail
+bk resolve $Q || fail
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories missing
+grep -q POLY BitKeeper/log/features || fail
+bk repocheck $Q || fail
+echo OK
+
+echo $N clone with old --downgrade, check warning message ...........$NL
+bk clone $COMPAT4 . ../downgrade >OUT 2>&1 || fail
+grep -q "compatible with bk-6.x and later" OUT || fail -f OUT wrong message
+grep -q 'POLY$' OUT || fail -f OUT wrong message
+echo OK
+
+echo $N unpull and see cset marked was cleaned up ...................$NL
+bk portal $Q -r
+# XXX: unpull doesn't do the right thing with checkout
+bk --config=checkout:none unpull -q -sf 2>GOT || fail -f GOT
+bk -U checkout $Q || true
+# msg via _BK_DEVELOPER is how we know something happened.
+echo "comp/ChangeSet: adding and/or removing missing csetmarks" > WANT
+cmpfiles WANT GOT
+bk portal $Q .
+bk repocheck $Q
+grep -q POLY BitKeeper/log/features && fail
+echo OK
+
+echo $N pull -R, resolve -S comp, resolve, poly: off -- works .......$NL
+bk --config=poly:on pull $Q -R || fail
+# The component check can not see the poly and will complete
+bk --cd=comp resolve $Q -S || fail
+bk resolve $Q || fail
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories present
+echo OK
+
+echo $N unpull again and all is okay ................................$NL
+bk portal $Q -r
+_BK_DEVELOPER= bk unpull $Q -sf || fail
+bk portal $Q .
+bk repocheck $Q
+echo OK
+
+echo $N re-pull, poly: on ...........................................$NL
+bk --config=poly:on pull $Q || fail
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories present
+echo OK
+
+echo $N bk changes -V shows handling of poly SHARED .................$NL
+bk changes -rREMOTE.. -Vnd':INDENT::GFILE:|:REV:\t:TAG:' > GOT
+# 2 things to note:
+# - the product 1.3 (LOCAL) cset includes component 1.3 (SHARED)
+# - The component cset BRANCH is replicated in the product 1.4 merge,
+#   but does not show up below.  That is because the range A..A is empty.
+#   so even though it is listed, nothing happens.
+cat <<EOF > WANT
+ChangeSet|1.5	
+ChangeSet|1.2.1.1	
+  comp/ChangeSet|1.3	SHARED
+ChangeSet|1.4	LOCAL
+  comp/ChangeSet|1.5	BRANCH
+ChangeSet|1.3	LOCALBASE
+  comp/ChangeSet|1.4	BRANCHBASE
+  comp/ChangeSet|1.3	SHARED
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk r2c on the component tip gives right answer ..............$NL
+REV=`bk --cd=comp r2c -r1.4 ChangeSet`
+test $REV = 1.3 || fail wrong rev -- wanted 1.3 and got $REV
+# comp 1.3 is included in both prod 1.3 and 1.2.1.1, and shows ...
+REV=`bk --cd=comp r2c -r1.3 ChangeSet`
+test $REV = 1.2.1.1,1.3 || fail wrong rev -- wanted 1.2.1.1,1.3 and got $REV
+echo OK
+
+echo $N Make sure r2c with ranges gives the right answer.............$NL
+REV=`bk --cd=comp r2c -r1.1..1.3 ChangeSet`
+test $REV = 1.2.1.1,1.3,1.2 || {
+	fail wrong rev -- wanted 1.2.1.1,1.3,1.2 and got $REV
+}
+REV=`bk --cd=comp r2c -r1.2,1.4 ChangeSet`
+test $REV = 1.3,1.2 || fail wrong rev -- wanted 1.3,1.2 and got $REV
+echo OK
+
+echo $N make sure a pull where one side contains poly is okay .......$NL
+cd "$HERE"/remote/comp
+touch bar
+bk new $Q
+bk commit $Q -f
+cd "$HERE"/local
+bk pull $Q || fail
+echo OK
+
+echo $N cleanup and restore stable to original state ................$NL
+cleanup || fail
+echo OK
+
+###
+# The 'comp' in remote has same as local (dup), but has an extra cset mark.
+# local comp before pull: ROOT (SHARED) BRANCH - where () mean no D_CSET
+# remote comp before pull: ROOT SHARED (TRUNK) BRANCH MERGE
+#
+# The difference between this and previous set of tests:
+# + This shows the duplicate key error message ('both' or Duplicate). 
+# + This is an update only pull; last one did no pull.
+# 
+echo "----- Case 1: pull from remote has duplicate keys"
+echo $N pull, poly: off .............................................$NL
+cd "$HERE"/remote/comp
+bk port $Q -rSHARED ../../standalone
+bk port $Q -rBRANCH ../../standalone
+bk port $Q -rMERGE ../../standalone
+cd "$HERE"/local
+bk pull -q 2> GOT && fail -f GOT
+sanitize GOT
+cat <<EOF > WANT
+pull: poly on key <comp/ChangeSet> marked in both
+EOF
+cmpfiles WANT GOT
+# failure means no RESYNC in prod or comp - no manual merges happened
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories after failed pull
+echo OK
+
+echo $N pull -R, poly: on, resolve poly off .........................$NL
+# remote and local have same comp tip in different prod csets
+bk --config=poly:on pull $Q -R || fail
+test -d RESYNC -a -d comp/RESYNC || fail RESYNC directories missing after pull
+echo OK
+
+echo $N Now a resolve, poly: off -- works because pull had is on ....$NL
+bk resolve $Q || fail
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories missing
+bk repocheck $Q || fail
+echo OK
+
+echo $N unpull and see cset marked was cleaned up ...................$NL
+bk portal $Q -r
+# XXX: unpull doesn't do the right thing with checkout
+bk --config=checkout:none unpull -q -sf 2>GOT || fail -f GOT
+bk -U checkout $Q || true
+# message from _BK_DEVELOPER showing something happened.
+echo "comp/ChangeSet: adding and/or removing missing csetmarks" > WANT
+cmpfiles WANT GOT
+bk portal $Q .
+bk repocheck $Q
+echo OK
+
+echo $N re-pull -R, resolve -S comp, resolve, poly: off .............$NL
+bk --config=poly:on pull $Q -R || fail
+# The component check can not see the poly and will complete
+bk --cd=comp resolve $Q -S || fail
+# The product check will fail as it did before .. 
+bk resolve $Q
+bk -r check -p 2> GOT && fail -f GOT
+sanitize GOT
+cat <<EOF > WANT
+Duplicate delta found in ChangeSet
+	Rev: 1.3.1.2  Key: <comp/ChangeSet>
+	Both keys in file comp/SCCS/s.ChangeSet
+	Same key found in ChangeSet:1.2.1.2,1.4
+Please write support@bitkeeper.com with the above
+error about duplicate deltas
+EOF
+cmpfiles WANT GOT
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories present
+echo OK
+
+echo $N unpull again and all is okay ................................$NL
+bk portal $Q -r
+_BK_DEVELOPER= bk unpull $Q -sf || fail
+bk portal $Q .
+bk repocheck $Q
+echo OK
+
+echo $N re-pull, poly: on ...........................................$NL
+bk --config=poly:on pull $Q || fail
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories present
+echo OK
+
+echo $N bk changes -V shows poly handling of SHARED .................$NL
+bk changes -rREMOTE.. -Vnd':INDENT::GFILE:|:REV:\t:TAG:' > GOT
+# 2 things to note:
+# - the product 1.3 (LOCAL) cset includes component 1.3 (SHARED)
+# - The MERGE comp cset is not replicated in the product merge tip even
+#   though it is bookkept in the merge by the update only comp pull.
+cat <<EOF > WANT
+ChangeSet|1.5	
+ChangeSet|1.2.1.3	
+  comp/ChangeSet|1.5	MERGE
+  comp/ChangeSet|1.4	TRUNK
+ChangeSet|1.2.1.2	
+  comp/ChangeSet|1.3.1.2	BRANCH
+  comp/ChangeSet|1.3.1.1	BRANCHBASE
+ChangeSet|1.2.1.1	
+  comp/ChangeSet|1.3	SHARED
+ChangeSet|1.4	LOCAL
+  comp/ChangeSet|1.3.1.2	BRANCH
+ChangeSet|1.3	LOCALBASE
+  comp/ChangeSet|1.3.1.1	BRANCHBASE
+  comp/ChangeSet|1.3	SHARED
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk r2c on the component tip gives right answer ..............$NL
+REV=`bk --cd=comp r2c -r1.4 ChangeSet`
+test $REV = 1.2.1.3 || fail wrong rev -- wanted 1.2.1.3 and got $REV
+# comp 1.3 is included in both prod 1.3 and 1.2.1.1, and shows ...
+REV=`bk --cd=comp r2c -r1.3 ChangeSet`
+test $REV = 1.2.1.1,1.3 || fail wrong rev -- wanted 1.2.1.1,1.3 and got $REV
+echo OK
+
+echo $N bk r2c with ranges gives the right answer....................$NL
+REV=`bk --cd=comp r2c -r1.1..1.5 ChangeSet`
+test $REV = 1.2.1.3,1.2.1.2,1.2.1.1,1.4,1.3,1.2 || {
+	fail wrong rev -- wanted 1.2.1.3,1.2.1.2,1.2.1.1,1.3,1.2 and got $REV
+}
+REV=`bk --cd=comp r2c -r1.3.1.1,1.5 ChangeSet`
+test $REV = 1.2.1.3,1.2.1.2,1.3 || {
+	fail wrong rev -- wanted 1.2.1.3,1.2.1.2,1.3 and got $REV
+}
+echo OK
+
+echo $N make sure a pull where one side contains poly is okay .......$NL
+cd "$HERE"/remote/comp
+touch bar
+bk new $Q
+bk commit $Q -f
+cd "$HERE"/local
+bk pull $Q || fail
+echo OK
+
+echo $N cleanup and restore stable to original state ................$NL
+cleanup || fail
+echo OK
+
+###
+# Unlike the previous 2, the GCA is unmarked.
+# local comp before pull: ROOT (SHARED) BRANCH - where () mean no D_CSET
+# remote comp before pull: ROOT (SHARED) TRUNK
+#
+# The difference between this and previous set of tests:
+# + The poly is more detectable because the D_CSET are still 1 to 1
+# + This is an normal merge in the comp RESYNC; no fixups are needed
+# 
+echo "----- Case 4: poly in un-csetmarked node"
+echo $N pull, poly: off .............................................$NL
+cd "$HERE"/remote/comp
+bk port $Q -rTRUNK ../../standalone
+cd "$HERE"/local
+bk pull -q 2> GOT && fail -f GOT
+sanitize GOT
+cat <<EOF > WANT
+pull: poly on unmarked key <comp/ChangeSet>
+EOF
+cmpfiles WANT GOT
+# failure means no RESYNC in prod or comp - no manual merges happened
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories after failed pull
+echo OK
+
+echo $N pull -R, poly: on ...........................................$NL
+# remote and local have same comp tip in different prod csets
+bk --config=poly:on pull $Q -R || fail
+test -d RESYNC -a -d comp/RESYNC || fail RESYNC directories missing after pull
+echo OK
+
+echo $N Now a resolve, poly: off ....................................$NL
+bk resolve $Q
+bk -r check -p 2> GOT && fail -f GOT
+sanitize GOT
+cat <<EOF > WANT
+check: poly on key <comp/ChangeSet>
+Please write support@bitkeeper.com with the above
+information about poly on key
+EOF
+cmpfiles WANT GOT
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories missing
+bk repocheck $Q || fail
+echo OK
+
+echo $N unpull and see cset marked was cleaned up ...................$NL
+bk portal $Q -r
+# XXX: unpull doesn't do the right thing with checkout
+bk --config=checkout:none unpull $Q -sf || fail
+bk -U checkout $Q || true
+# message from _BK_DEVELOPER showing something happened.
+bk portal $Q .
+bk repocheck $Q
+echo OK
+
+echo $N re-pull -R, resolve -S comp, poly: off ......................$NL
+bk --config=poly:on pull $Q -R || fail
+# The component check now passes because the check doesn't run checkKeys()
+# on the main cset, so this partial poly check isn't run.  As seen in
+# the next steps, that's okay, because in reality, the previous pull would
+# have caught it, and if it gets to here, the product checks will get it.
+bk --cd=comp/RESYNC -r check -R -p
+echo OK
+
+echo $N resolve -S comp, poly: on ...................................$NL
+bk --cd=comp --config=poly:on resolve $Q -S || fail
+test -d RESYNC -a ! -d comp/RESYNC || fail RESYNC directories wrong
+echo OK
+
+echo $N product resolve, poly: off ..................................$NL
+bk resolve $Q
+bk -r check -p 2> GOT && fail -f GOT
+sanitize GOT
+cat <<EOF > WANT
+check: poly on key <comp/ChangeSet>
+Please write support@bitkeeper.com with the above
+information about poly on key
+EOF
+cmpfiles WANT GOT
+bk repocheck $Q
+echo OK
+
+echo $N unpull again and all is okay ................................$NL
+bk portal $Q -r
+_BK_DEVELOPER= bk unpull $Q -sf || fail
+bk portal $Q .
+bk repocheck $Q
+echo OK
+
+echo $N re-pull, poly: on ...........................................$NL
+bk --config=poly:on pull $Q || fail
+test -d RESYNC -o -d comp/RESYNC && fail RESYNC directories present
+echo OK
+
+echo $N bk changes -V shows the poly SHARED .........................$NL
+bk changes -rREMOTE.. -Vnd':INDENT::GFILE:|:REV:\t:TAG:' > GOT
+# This used to work (D_CSET) and still does because the shared node
+# was not D_CSET marked.
+cat <<EOF > WANT
+ChangeSet|1.5	
+  comp/ChangeSet|1.5	
+ChangeSet|1.2.1.1	
+  comp/ChangeSet|1.4	TRUNK
+  comp/ChangeSet|1.3	SHARED
+ChangeSet|1.4	LOCAL
+  comp/ChangeSet|1.3.1.2	BRANCH
+ChangeSet|1.3	LOCALBASE
+  comp/ChangeSet|1.3.1.1	BRANCHBASE
+  comp/ChangeSet|1.3	SHARED
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk r2c on the component tip gives a list ....................$NL
+# comp 1.3 is included in both prod 1.3 and 1.2.1.1, so which is it?
+# The newest
+REV=`bk --cd=comp r2c -r1.3 ChangeSet`
+test $REV = 1.2.1.1,1.3 || fail wrong rev -- wanted 1.2.1.1,1.3 and got $REV
+echo OK
+
+echo $N make sure a pull where one side contains poly is okay .......$NL
+cd "$HERE"/remote/comp
+touch bar
+bk new $Q
+bk commit $Q -f
+cd "$HERE"/local
+bk pull $Q || fail
+echo OK
+
+echo $N cleanup and restore stable to original state ................$NL
+cleanup || fail
+echo OK
+
+echo "----- Test poly db"
+echo $N Test out poly attach ........................................$NL
+cd "$HERE"
+commercial solo
+touch foo
+bk new $Q foo
+node ROOT
+cd ..
+# set up a nested with one comp
+echo 'checkout: edit' > c
+bk setup -P -fcc remmy
+cd remmy
+bk clone $Q . ../rcopy
+bk gate $Q -r
+bk attach $Q ../solo comp
+_BK_DEVELOPER= bk --cd=comp -r check
+cd ../rcopy
+bk portal $Q .
+bk attach $Q ../solo comp
+_BK_DEVELOPER= bk --cd=comp -r check
+bk _heapdump -e ChangeSet | grep comp > GOT.ORIG
+test `wc -l < GOT.ORIG` -eq 1 || fail -f GOT.ORIG not one line long
+bk --config=poly:on pull $Q
+bk _heapdump -e ChangeSet | grep comp > GOT.PULL
+test `wc -l < GOT.PULL` -eq 1 || fail -f GOT.PULL not one line long
+cmp -s GOT.ORIG GOT.PULL && fail -f GOT.PULL should have changed
+bk changes -Vr1.1..+ -nd'$unless(:GFILE:=~*BitKeeper/*){:I:\t:GFILE:}' > GOT
+cat <<EOF > WANT
+1.3	ChangeSet
+1.1.1.1	ChangeSet
+1.2	comp/ChangeSet
+1.1	comp/ChangeSet
+1.0	comp/ChangeSet
+1.2	ChangeSet
+1.2	comp/ChangeSet
+1.1	comp/ChangeSet
+1.0	comp/ChangeSet
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test out unpull of poly attach ..............................$NL
+bk portal $Q -r
+bk unpull $Q -sf || fail
+bk _heapdump -e ChangeSet | grep comp > GOT.UNPULL
+test `wc -l < GOT.UNPULL` -eq 1 || fail -f GOT.UNPULL not one line long
+cmpfiles GOT.ORIG GOT.UNPULL
+echo OK
+
+echo $N Test out poly db ............................................$NL
+cd "$HERE/remmy"
+bk clone $Q . ../peer1
+bk --cd=../peer1 portal $Q .
+bk clone $Q . ../peer2
+bk --cd=../peer2 portal $Q .
+# set up a start off the remmy repo used in all the tests
+cd ../solo
+node DUP
+for repo in remmy peer1 peer2
+do
+	node UNIQ-$repo
+	bk --cd="$HERE/$repo/comp" port $Q -rDUP "$HERE/solo"
+	bk --cd="$HERE/$repo/comp" port $Q "$HERE/solo"
+done
+cd "$HERE/remmy"
+bk --config=poly:on pull $Q ../peer1
+# test a different path: call resolver afterwards
+bk --config=poly:on pull $Q -R ../peer2
+cd comp
+# Test that _poly works in main repo in the presence of a RESYNC
+bk _poly > GOT || fail
+cat <<EOF > WANT
+comp 4
+	prod 4 end 3
+	prod 6 end 3
+comp 5
+	prod 5 end 4
+comp 6
+	prod 7 end 4
+EOF
+cmpfiles WANT GOT
+# Now same thing run in the comp/RESYNC
+bk --cd=RESYNC _poly > GOT || fail
+cat <<EOF > WANT
+comp 4
+	prod 4 end 3
+	prod 6 end 3
+	prod 8 end 3
+comp 5
+	prod 5 end 4
+comp 6
+	prod 7 end 4
+comp 7
+	prod 9 end 4
+EOF
+# finish resolve
+bk resolve $Q -a
+bk -P -r check -p 2> ERR && fail -f ERR
+grep -q "Duplicate delta found in ChangeSet" ERR || fail -f ERR
+bk _poly > GOT || fail
+cmpfiles WANT GOT
+cd ..
+echo OK
+
+echo $N Pull with merge but no poly and poly not enabled in config ..$NL
+cd "$HERE"/peer2/comp
+bk delta $Q -fynull foo
+bk commit $Q -ynull
+cd "$HERE"/remmy
+bk pull $Q ../peer2
+# Even though it is not poly, it will be listed in poly db because
+# the branch also changes this same component but is in the history,
+# so becomes a fake that appears in the merge tip which can only be
+# hidden by it being in the poly db.
+bk annotate -hR+ ChangeSet > GOT
+bk prs -r+ -hnd':ROOTKEY: :KEY:' BitKeeper/etc/poly > WANT
+bk changes -Sqr+ -nd':ROOTKEY: :KEY:' ../peer2/comp >> WANT
+cmpfiles WANT GOT
+# Not in changes
+bk changes -Vr+ -nd:GFILE:-:I: > GOT
+echo ChangeSet-1.7 > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N More r2c to see that it works ...............................$NL
+bk --cd=comp r2c -r=2 ChangeSet > GOT
+echo "1.2" > WANT
+cmpfiles WANT GOT
+bk --cd=comp r2c -r=4 ChangeSet > GOT
+echo "1.2.2.1,1.2.1.1,1.3" > WANT
+cmpfiles WANT GOT
+bk --cd=comp r2c -r=5 ChangeSet > GOT
+echo "1.2.2.2,1.2.1.2,1.4" > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Propagate a db file with a patch ............................$NL
+bk portal $Q -r
+bk unpull $Q -f
+bk portal $Q .
+# create a db file remotely
+bk --cd=../peer2 --config=poly:on pull $Q ../peer1
+bk --cd=../peer2 tag $Q A
+bk --cd=../peer2/comp _poly > "$HERE/WANT.A"
+# create a db file locally
+bk tag $Q B
+bk --cd=comp _poly > "$HERE/WANT.B"
+bk --config=poly:on pull $Q ../peer2 || fail
+echo OK
+
+echo $N Undo and thanks to Cunning Plan, it works ...................$NL
+# The 1.0 is dupped, so undo/stripdel should delete it.
+# But the 1.0 is kept due to Cunning Plan.
+bk sfiles BitKeeper/etc | grep -q poly || fail poly file not found
+bk clone $Q -rA . ../A
+bk clone $Q -rB . ../B
+bk --cd=../A/comp _poly > GOT.A
+cmpfiles "$HERE/WANT.A" GOT.A
+bk --cd=../B/comp _poly > GOT.B
+cmpfiles "$HERE/WANT.B" GOT.B
+echo OK
+
+echo $N Undo in a populate such that cset marks need to be fixed ....$NL
+cd "$HERE/B"
+GCA=`bk repogca ../peer1`
+bk clone $Q -sPRODUCT -r$GCA . ../pop-comp
+cd ../pop-comp
+# Test undo running in a newly populated component
+bk here add -q -@"$HERE/B" comp 2> GOT || fail
+# Message created by running with _BK_DEVELOPER set; customers don't see it
+echo "comp/ChangeSet: adding and/or removing missing csetmarks" > "$HERE/WANT"
+cmpfiles "$HERE/WANT" GOT
+echo OK
+
+echo $N Undo to a point where check needs to fix cset marks .........$NL
+cd "$HERE/B"
+bk undo -qsf -a$GCA 2> GOT
+bk sfiles BitKeeper/etc | grep -q poly && fail poly file found
+# Message created by running with _BK_DEVELOPER set; customers don't see it
+cmpfiles "$HERE/WANT" GOT
+echo OK
+
+echo "----- nested r2c"
+echo $N Check r2c in non-poly but looks like poly case ..............$NL
+cd "$HERE/local"
+bk portal $Q -r
+bk undo $Q -sfaLOCAL
+bk portal $Q .
+cd comp
+bk port $Q "$HERE/standalone"
+# 1.3 is the gca but is not cset marked.
+# _And_ it is not poly because there's no merge in the product.
+GCA=`bk changes -Sr+ -nd'${1=:GCA2:}$1-$unless(:CSETKEY|$1:){un}marked'`
+test "$GCA" = 1.3-unmarked || fail got "'$GCA'"
+# R2C is not a list - even though it looks like 1.3 is in two, it is in one
+R2C=`bk r2c -r1.3 ChangeSet`
+test "$R2C" = 1.3 || fail got "'$R2C'"
+# Show that each is in one
+bk changes -eVnd':GFILE:|:REV:' > GOT
+cat <<EOF > WANT
+ChangeSet|1.5
+comp/ChangeSet|1.5
+comp/ChangeSet|1.4
+ChangeSet|1.4
+comp/ChangeSet|1.3.1.2
+ChangeSet|1.3
+comp/ChangeSet|1.3.1.1
+comp/ChangeSet|1.3
+ChangeSet|1.2
+comp/ChangeSet|1.2
+comp/ChangeSet|1.1
+comp/ChangeSet|1.0
+ChangeSet|1.1
+ChangeSet|1.0
+EOF
+cmpfiles WANT GOT
+# and just a santity check that undo work.
+bk portal $Q -r
+bk undo $Q -sfr+ || fail
+bk repocheck $Q
+echo OK

@@ -1,0 +1,218 @@
+.so ../bk-macros
+.TH "bk resolving" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk resolving \- help on resolving conflicts
+.SH DESCRIPTION
+.LP
+This section documents the merge process started by the resolve command.
+See 
+.B bk resolve
+for details on using resolve.
+.LP
+While in resolve, you can press
+.SB ENTER
+to see a summary of
+the commands.
+.LP
+The 
+.B bk resolve
+command prompts you on each file that has conflicts.
+A conflict is defined as two deltas made in parallel in different
+repositories.  If the conflict does not have any overlapping lines,
+then it may have been automerged, depending if
+.B bk resolve
+was run with the 
+.Q \-a
+option.
+.LP
+There are other sorts of conflicts besides the typical file content
+conflicts.  \*(BK manages file names, permissions, flags, and
+symbolic tags in the same way as it manages file contents.
+That means that you can have a permissions conflict if, for example, one
+person changed the file to 0755 mode and another changed it to 0777 mode.
+.LP
+The resolve process for all conflicts is fairly similar.  For each
+type of conflict on each file, you will be prompted for an action.
+To view a brief summary of the conflict and a list of available
+actions, press
+.SB ENTER
+(or
+.B ?
+or
+.BR help ).
+The choices usually include
+a more detailed explanation of the situation; we try to consistently
+make this available as the
+.Q x
+command (as in eXplain).
+.LP
+Some of the available actions allow you to diff the files, view
+file history, and merge using graphical tools, etc.  See the command
+summary for the full list.
+.SH "MULTIPLE USERS"
+.LP
+Only one user is allowed to run the resolver at any given time.  If
+a second user attempts to run bk resolve, they will get an error message
+indicating that another user is already running the resolver.
+.LP
+It is also possible to have multiple users resolve a set of conflicts.
+A typical way to do this is to use the bk conflicts command to get a
+list of files that need manual resolving along with a list of users
+responsible for the conflicting changes.  Then each user takes turns
+invoking the resolver on the list of files for which they are
+responsible, checking in the changes as they go.  After the conflicts in
+the individual files have been resolved and checked in, the bk resolve
+command is run with no arguments in order to finish the process and
+commit a changeset.  The changes for each file will be attributed to the
+user that committed that particular file.  The changeset will be
+attributed to the user that does the final commit of the changeset.
+.LP
+In this context, as well as the single user case, it is sometimes
+desirable to quit the resolver and restart it at a later time.  When
+the resolver is re-invoked, it will not ask the user to re-merge files
+that have already been resolved and will continue where the user left
+off on the previous invocation.  This process can be repeated as many
+times as desired until all conflicts have been resolved.
+.SH "VIEW DIFFERENCES AND HISTORY"
+.LP
+To see the diffs use the
+.Q d
+command.  For side-by-side diffs, use the
+.Q sd
+command.  You can also diff one or the other branches against the
+common ancestor using
+.Q dr
+or
+.QR dl .
+Type
+.Q D
+to get a graphical, color
+coded side-by-side diff browser.
+.LP
+There are also built-in commands to show the history of the file (see
+.QR h ,
+.QR hl ,
+.QR hr ).
+In addition,
+.Q p
+starts the the graphical file
+browser which allows you to view the difference between versions by
+clicking the left button on the earlier rev and the right button on
+a later rev.  The bottom of the screen will show the diffs.  If you
+type Return at the prompt, the three revisions forming the merge are
+part of the help message.
+
+.SH "MERGING CONTENTS"
+.LP
+When in resolve, there are four different files for each merge.  They
+are:
+.TP \fBremote\fP
+.B local
+The version of the file in the local repository.
+.tp
+.B remote
+The version of the file in the other repository.
+.tp
+.B merge
+The merged file.
+.tp
+.B GCA
+A common ancestor of the local/remote versions.
+.LP
+Your goal is to generate the merge file using one of the methods below.
+.LP
+The easiest and most popular merge method is to use the
+.Q m
+command
+for cases where there are no overlapping lines. This method performs
+a three-way diff and merge and warns you when there are overlapping
+lines.  If there are overlaps, you have to edit the merged file (use
+the 
+.Q e
+command), find the conflict markers which look like \*(lq<<<<\*(rq
+or \*(lq>>>>\*(rq, and manually fix the conflicts.  This command requires
+care since non-overlapping lines does not mean that the merge makes
+semantic sense.
+.LP
+If the merge looks complicated, a good approach is to start up the
+file browser with
+.Q p
+and then start up a side-by-side filemerge with
+.QR f .
+Then walk through the diffs, picking and choosing with blocks
+of code to use.  If you get confused about who added what, you can go
+to the history tool browser (\c
+.BR "bk revtool" )
+and left click on the common
+ancestor and right click on each of the two tips of the trunk/branch
+to see who added what.
+.LP
+It is also possible to use a combination of graphical tools and the
+automatic merge.  You can type
+.Q p
+to run the file browser,
+.Q D
+to run
+difftool,
+.Q m
+to do the merge, and then
+.Q e
+to edit the merged file.
+The file browser is run in the background so you can look at the various
+changes as described above.
+.B Warning:
+if you are running your editor and the
+file merge program, then both are working on the same output file
+and whichever one writes it last, overwrites any earlier versions.
+.LP
+You may also call an external tool to merge changes.  When in the resolver,
+if you say
+.DS
+file.c>>\ \c
+.Bc !
+.ARG command
+.DE
+.ft R
+then
+.ARG command
+will be run with the following environment variables set:
+.br
+.ne 5
+.TP \fBBK_REMOTE\fP
+.V BK_LOCAL
+pathname of a temp file containing the local version
+.tp
+.V BK_GCA
+file containing the common ancestor
+.tp
+.V BK_REMOTE
+pathname of a temp file containing the remote version
+.tp
+.V BK_MERGE
+pathname where the merged content should be placed
+.SH COMMIT
+.LP
+The merge process is not complete until you commit the file with the
+.Q C
+command at the resolve prompt.  This means you can merge repeatedly
+until you are happy with the results.  Each time you merge and save,
+however, you overwrite the previous merge attempt.
+.LP
+When you are happy with your merged file, click done in filemerge,
+exit the file browser, and type
+.Q C
+at the prompt to commit
+the file and move on to the next one.
+.SH "SEE ALSO"
+.SA conflicts
+.SA fm3tool
+.SA fmtool
+.SA merge
+.SA resolve
+.SA revtool
+.SA smerge
+.\" help://merging
+.SH CATEGORY
+.B Overview
+.br
+.B Repository

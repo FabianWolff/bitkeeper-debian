@@ -1,0 +1,93 @@
+# Copyright 2004,2009,2011,2013 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+
+echo $N Sub diff highlighting to the rescue .........................$NL
+echo aohf932hrqw9fqhfn2180f qn831n128qquew2ehff293fu2i32uf2 > A
+echo aohf932hrqw9fqhfn2I80f qn831n128qquew2ehff293fu2i32uf2 > B
+bk difftool A B
+echo OK
+
+echo $N Make sure we can run diffs on a file that has a merge ptr....$NL
+commercial project
+echo foo > foo
+bk new $Q -ywhatever foo
+bk edit $Q foo
+echo foo >> foo
+bk delta $Q -ywhatever foo
+bk _get -e $Q -r1.1 foo
+echo bar >> foo
+bk delta $Q -ywhatever foo
+bk get -e $Q -M1.1.1.1 foo
+rm foo
+bk difftool -r1.1.1.1 -r+ foo > OUT 2>&1
+test -s OUT && {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+# might as well use some real-world data range with two revs
+echo $N Starting difftool in \`bk bin\`\; you must quit manually........$NL
+cd "`bk bin`"
+bk difftool -r1.2 -r1.3 t/g.difftool
+echo OK
+
+# might as well use some real-world data range with ..
+echo $N Starting difftool in \`bk bin\`\; you must quit manually........$NL
+bk difftool -r1.2..1.3 t/g.difftool
+echo OK
+
+echo $N Testing Japanese.............................................$NL
+echo "encoding system utf-8" > "`bk dotbk`/config-gui"
+cd "$HERE/project"
+cat >jp.txt <<EOF
+私は　日本語が　分かります
+私は　日本語が　分かります 私は　日本語が　分かります 私は　日本語が　分かります
+そうですか？
+ab abcd abcde ab ab abcd acbde ab ab abcd abcde ab
+はい、本当です
+EOF
+bk new $Q jp.txt
+bk edit $Q jp.txt
+cat >jp.txt <<EOF
+私は　日本語が　分かります
+私は　日本語が　分かります 私は　本日語が　分かります 私は　日本語が　分かります
+そうですか？
+ab abcd abcde ab ab abcd abcde ab ab abcd abcde ab
+本当です、どうもう　ありがとう　ございます
+EOF
+bk difftool jp.txt
+echo OK
+
+echo $N Test a file with ^M..........................................$NL
+cat <<EOF > A
+common line
+modified line in A
+common line
+only control M (should not be a diff)
+common line
+EOF
+cat <<EOF > B
+common line
+modified line in B
+common line
+only control M (should not be a diff)
+common line
+EOF
+bk difftool A B
+echo OK

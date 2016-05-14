@@ -1,0 +1,166 @@
+# Copyright 2001-2009,2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository ...................................$NL
+echo "description: BitKeeper Test repository" >> "$HERE/c"
+echo "email:		nobody@nowhere.bk" >> "$HERE/c"
+echo "keyword: rcs, expand1" >> "$HERE/c"
+echo "checkout: get" >> "$HERE/c"
+bk setup -f -c"$HERE/c" project
+cd project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Check creat flags with RCS default ..........................$NL
+echo data > data
+bk  ci $Q -i data
+FLAGS=`bk prs -hr+ -d:FLAGS: data`
+if [ X"$FLAGS" != "XBITKEEPER,RCS,EXPAND1,CSETMARKED,EOLN_NATIVE" ]
+then echo faied; exit 1;
+fi
+echo OK
+
+echo $N Check creat flags wiith SCCS default ........................$NL
+bk edit $Q BitKeeper/etc/config
+grep -v keyword BitKeeper/etc/config > X
+echo keyword: sccs >> X
+mv X BitKeeper/etc/config
+echo data2 > data2
+bk new $Q data2
+FLAGS=`bk prs -hr+ -d:FLAGS: data2`
+if [ X"$FLAGS" != "XBITKEEPER,CSETMARKED,SCCS,EOLN_NATIVE" ]
+then echo faied; exit 1;
+fi
+echo OK
+
+echo $N Check files get keywords expanded by \'bk new\' ...............$NL
+echo %F% > fff
+bk new $Q fff || fail
+if [ `cat fff` != "SCCS/s.fff" ]; then
+	echo keyword expansion failed
+	cat fff
+	exit 1
+fi
+echo OK
+
+echo $N "Check expansion of '% %Z%%M%' ...............................$NL"
+echo '% %Z%%M%' > gil
+bk new $Q gil || fail
+str=`cat gil`
+test "X$str" != 'X% @(#)gil' && {
+	echo wrong expansion
+	exit 1
+}
+echo OK
+
+
+echo $N Check RCS keyword expansion .................................$NL
+bk admin -FEXPAND1 data || fail
+mkdir src
+bk mv data src/data || fail
+bk edit $Q src/data || fail
+cat > src/data <<'EOF'
+$Date$
+# $Author$ $Author:  foofsdf$
+# $Date$ $Date: dljf4ljd $
+# $Header$
+# $Id$
+# $A$
+# $Locker$
+# $Log$
+# $Name$
+# $Revision$
+# $RCSfile$
+# $Source$
+# $State$
+#
+# garbage
+# $Mykey$
+# $Author: ljdfdsfdf
+# $Author* sldjkf$
+# $Author sdljf $Author: sldfj $
+# $Author$$Author $Author: df $
+EOF
+bk ci $Q -yjj src/data || fail
+bk get $Q src/data
+date=`head -1 src/data | sed -e 's/\$Date: //' -e 's/ \$$//' -e 's/\//\\\\\//g'`
+sed -e "s/$date/DATE/g" < src/data > CMP1
+cat > CMP2 <<'EOF'
+$Date: DATE $
+# $Author: bk@bk_regression.bk $ $Author: bk@bk_regression.bk $
+# $Date: DATE $ $Date: DATE $
+# $Header: src/data 1.4 DATE bk@bk_regression.bk $
+# $Id: data 1.4 DATE bk@bk_regression.bk $
+# $A$
+# $Locker: <Not implemented> $
+# $Log: <Not implemented> $
+# $Name: <Not implemented> $
+# $Revision: 1.4 $
+# $RCSfile: s.data $
+# $Source: src/SCCS/s.data $
+# $State: <unknown> $
+#
+# garbage
+# $Mykey$
+# $Author: ljdfdsfdf
+# $Author* sldjkf$
+# $Author sdljf $Author: bk@bk_regression.bk $
+# $Author: bk@bk_regression.bk $$Author $Author: bk@bk_regression.bk $
+EOF
+bk diff -u CMP1 CMP2 || fail
+echo OK
+
+echo $N Check RCS and SCCS keyword expansion on the same line .......$NL
+cat > src/both <<EOF
+SCCS only %I%
+RCS only \$Revision\$
+Both %I% \$Revision\$
+EOF
+bk new $Q src/both
+bk admin -fRCS -FEOLN_NATIVE src/both
+bk get $Q src/both
+cat > WANT <<EOF
+SCCS only 1.2
+RCS only \$Revision: 1.2 \$
+Both 1.2 \$Revision: 1.2 \$
+EOF
+cmp -s src/both WANT || {
+	echo failed
+	bk diff src/both WANT
+	exit 1
+}
+echo OK
+
+echo $N Check the SCCS revision field keywords ......................$NL
+bk admin -fSCCS src/data
+bk _get $Q -e -r1.3 src/data
+bk delta $Q -fy1.3.1.1 src/data
+bk _get $Q -e -r1.3 src/data
+bk delta $Q -fy1.3.2.1 src/data
+bk _get $Q -e -r1.3.2 src/data
+bk delta $Q -fy1.3.2.2 src/data
+bk _get $Q -e -r1.3.2 src/data
+bk delta $Q -fy1.3.2.3 src/data
+bk _get $Q -e -r1.3.2 src/data
+echo "%R%.%L%.%B%.%S%" > src/data
+bk delta $Q -fy1.3.2.4 src/data
+echo 1.3.2.4 > WANT
+bk get -q -pr1.3.2 src/data > GOT
+cmpfiles WANT GOT
+bk prs -r1.3.2 -hnd:I: src/data > WANT
+cmpfiles WANT GOT
+echo OK

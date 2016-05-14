@@ -1,0 +1,225 @@
+.if \n[NESTED] \{\
+.\" help://populate
+.\" help://unpopulate
+.so ../bk-macros
+.TH "bk here" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk here \- list or change the set of populated repositories
+.br
+bk populate - add one or more components to a nested collection
+.br
+bk unpopulate - remove one or more components to a nested collection
+.SH SYNOPSIS
+.B bk here [set|check]
+.[OPTreq] \-@ URL
+.[B] \-fq
+.[ARG] "alias | comp"
+.br
+.B bk populate
+.[OPTreq] \-@ URL
+.[B] \-fq
+.ARG "alias | component"
+.B ...
+.br
+.B bk unpopulate
+.[OPTreq] \-@ URL
+.[B] \-fq
+.ARG "alias | component"
+.B ...
+.SS SETTING THE SET OF POPULATED COMPONENTS AND/OR ALIASES
+.B bk here set
+.[OPTreq] \-@ URL
+.[B] \-fq
+.ARG "alias | component"
+.B ...
+.SS LISTING POPULATED ALIASES
+.B bk here 
+.[B] \-v
+.SS POPULATING COMPONENTS AND/OR ALIASES
+.B bk populate
+.[OPTreq] \-@ URL
+.[B] \-fq
+.ARG "alias | component"
+.B ...
+.SS CHECKING COMPONENT AVAILABILITY
+.B bk here check
+.[OPTreq] \-@ URL
+.[B] \-qv
+.[ARG] "alias | component"
+.B ...
+.SS UNPOPULATING COMPONENTS AND/OR ALIASES
+.B bk unpopulate
+.[OPTreq] \-@ URL
+.[B] \-fq
+.ARG "alias | component"
+.B ...
+.SS SETTING THE SET OF POPULATED COMPONENTS AND/OR ALIASES
+.B bk here set
+.[OPTreq] \-@ URL
+.[B] \-fq
+.ARG "alias | component"
+.B ...
+.SH DESCRIPTION
+The
+.BR "bk here" ,
+.BR "bk populate" ,
+and
+.B "bk unpopulate"
+commands are used to manage the set of populated aliases and/or components
+in a nested collection.
+.LP
+The initial set of populated aliases are determined when a nested
+collection is cloned.  If no aliases are specified on the clone
+command line then the set is specified via the
+.I clone_default
+configuration variable (which is "ALL" if not found).
+If one or more aliases are
+specified, then only the repositories implied by those aliases 
+are populated.
+.LP
+The 
+.B "bk here"
+command can be used to list what is here, set what is here, or
+check what is here and list other places where components can be found. 
+The
+.B \-a
+option to
+.B "bk here check"
+prints out all URLs in which the component(s) can be found.
+If no alias parameters are listed with
+.BR "bk here check" ,
+then only the missing components are checked.
+.LP
+The
+.B "bk populate"
+command can be used to add to what is here.
+The 
+.B "bk unpopulate"
+command can be used to remove from what is here.
+.LP
+In order to preserve any local work, before removing any components
+.B "bk here"
+needs to be able to verify everything being removed exists elsewhere.
+The
+.B "bk superset"
+command will be run, which searches for local changesets, deltas,
+modifications, extra files, etc.
+See
+.B -f
+below for how to skip this check.
+.LP
+Note that it is not (currently) possible to remove part of an alias.
+If DEVTOOLS is populated and it implies "cmd/gcc" and "cmd/gdb",
+attempting to remove either component will result in an error.
+See examples below for how to work around this.
+.SH OPTIONS
+.TP \-\@\ URL\ 
+.OPTreq \-@ URL
+When looking for components, include 
+.ARG URL
+in the list of places to look.
+.\" also  -@@filename   (but ok not to document)
+.tp
+.B \-a
+When used with
+.BR "bk here check" ,
+print out all URLs in which the component(s) can be found.
+.tp
+.B \-f
+When removing repositories, do not check for local only work
+in the repositories to be removed.
+Using this option when there is local only work is dangerous
+unless you plan to undo all of that work.
+.tp
+.B \-q
+Run quietly.
+.tp
+.B \-v
+When listing aliases, show alias expansions using an indented list.
+Add
+.B \-v
+more options to indent to a deeper level.
+When checking aliases,
+.B \-v
+will output status of connecting to other repositories.
+.SH EXAMPLES
+.LP
+When cloning a product, it is possible to clone a subset of it by
+specifying one or more component names or aliases.
+That will clone just that subset:
+.DS
+$ bk clone -sDEVTOOLS bk://server/big-product
+$ cd big-product
+$ bk here
+DEVTOOLS
+PRODUCT
+.DE
+Note that the list of what is "here" takes two forms, how you specified
+it (typically one or more aliases), and the set of components implied
+by those aliases.
+To get the second form:
+.DS
+$ bk comps -h
+\&./cmd/gcc
+\&./cmd/gas
+\&./cmd/ld
+.DE
+If you need to add something, you just tell 
+.B "bk populate" 
+to do that:
+.DS
+$ bk populate DEBUGGER
+$ bk here
+DEBUGGER
+DEVTOOLS
+PRODUCT
+.DE
+If you need to remove something, you can only remove what you added, not
+individual components:
+.DS
+$ bk unpopulate ./cmd/gcc
+unpopulate: ./cmd/gcc is part of the DEVTOOLS alias, not removing.
+.DE
+If you absolutely must remove a subset, you can do so by exploding the
+alias in question into components:
+.DS
+$ bk here | grep -v DEVTOOLS > tmp
+$ bk alias DEVTOOLS >> tmp
+$ bk here set - < tmp
+$ bk unpopulate ./cmd/gcc
+$ bk here
+\&./cmd/gas
+\&./cmd/ld
+DEBUGGER
+PRODUCT
+.DE
+If you want to check where missing components can be found:
+.DS
+$ bk here check
+bin    : no valid urls found (missing)
+cmd/gcc: /repos/bk-trunk
+.DE
+This shows that the missing bin component has unique work in it relative
+to other searched repositories.
+In this case, in order for populate to work, the user would need to specify
+.OPTreq \-@ URL
+to name where to fetch the bin component.
+
+If you want to see all places this repository can find the missing
+components, add
+.B \-a
+to the command:
+.DS
+$ bk here check -a
+bin:
+	no valid urls found (missing)
+cmd/gcc:
+	/repos/bk-trunk
+	bk://repos.bitkeeper.com/bk-trunk
+.DE
+.SH "SEE ALSO"
+.SA alias
+.SA comps
+.SH CATEGORY
+.B Nested
+.\}

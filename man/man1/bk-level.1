@@ -1,0 +1,37 @@
+.so ../bk-macros
+.TH "bk level" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk level \- set or show the level of the repository
+.SH SYNOPSIS
+.B bk level
+.[B] \-l
+.[ARG] num
+.SH DESCRIPTION
+.LP
+The
+.B bk level
+command prints or sets the level of the repository.  A repository
+with no level setting defaults to level 1.  
+The level is automatically set when a repository is cloned to the level of
+the parent repository.
+.LP
+With an argument, it sets the level to that argument.  
+With no argument, the command prints the repository level.
+If an error occurs, the level is shown as 1 million (1000000).
+.LP
+Repository levels may be used to control the flow of changesets.  Changes
+may only flow to a repository of the same or higher level.  The typical
+use for levels is to create a stable or bug-fix repository.  If that repository
+has a lower level than the development repository, changes may be moved from
+stable to development, but not the other way.
+.SH OPTIONS
+.tp
+.B \-l
+Just list the level on a line by itself.  Useful for scripts.
+.SH "SEE ALSO"
+.SA clone
+.SA pull
+.SA push
+.\" help://workflow
+.SH CATEGORY
+.B Repository

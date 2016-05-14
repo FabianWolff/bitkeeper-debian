@@ -1,0 +1,65 @@
+.so ../bk-macros
+.TH "bk takepatch" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    ====================== BitKeeper takepatch command ======================
+.SH NAME
+bk takepatch \- apply a \*(BK patch
+.SH SYNOPSIS
+.B bk takepatch
+.[B] \-aciStv
+.[OPTreq] \-f file
+.SH DESCRIPTION
+.LP
+The takepatch command is used to apply a \*(BK patch.  \*(BK patches
+are how data is moved between \*(BK repositories.
+.LP
+Users do not normally invoke this command, it is called directly by 
+.BR bk\ pull ,
+.BR bk\ push ,
+or
+.BR bk\ receive .
+.SH OPTIONS
+.TP \-\-no\-automerge
+.B \-a
+Apply the changes (call 
+.BR bk\ resolve .)
+.tp
+.B \-c
+Do not accept conflicts with this patch.
+.tp
+.OPTreq \-f file
+Take the patch from 
+.ARG file
+and do not save it.
+.tp
+.B \-i
+Initial patch, create a new repository.
+.tp
+.OPTreq \-j N
+Unpack the patch using N parallel sub-processes.
+.tp
+.B \-\-no\-automerge
+Takepatch will try to automerge the file as part of taking the patch.
+This option will delay the merging until the resolve stage.
+.BR bk\ pull\ \-i
+uses this option.
+.tp
+.B \-S
+Save
+.B RESYNC
+and or
+.B PENDING
+directories even if errors.
+.tp
+.B \-T
+Run in text only mode, do not use GUI tools.
+.tp
+.B \-v
+Verbose level, more is more verbose,
+.Q \-vv
+is suggested.
+.SH "SEE ALSO"
+.SA pull
+.SA push
+.SA receive
+.SH CATEGORY
+.B Repository

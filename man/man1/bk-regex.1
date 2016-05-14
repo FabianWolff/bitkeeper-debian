@@ -1,0 +1,34 @@
+.so ../bk-macros
+.TH "bk regex" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk regex \- demo program to show regular expressions in \*(BK
+.SH SYNOPSIS
+.B bk regex
+.ARG regex
+.ARG string
+.[ARG] string\ .\|.\|.
+.SH DESCRIPTION
+.LP
+Some commands, most notably
+.BR "bk grep" ,
+can take a regular expression as an argument.
+This man page describes the \*(BK version of regular expressions.
+This command may be used to match a regex against one or more strings to
+see examples of how the regular expression matching works.
+.LP
+Regular expressions are used to search text for approximate (or exact)
+matches.
+Knowing how regular expressions work can be useful, they are quite 
+powerful.
+Suppose that the words \*(lqfoo,\*(rq \*(lqbar,\*(rq and
+\*(lqblech\*(rq were considered inappropriate in your source tree;
+the following command would find all files which contain any of
+those words:
+.DS
+bk -U grep 'foo|bar|blech'
+.DE
+BitKeeper is compatible with the PERL regular expression syntax. For a
+quick start on PCRE, please see
+.SA pcre
+.SH CATEGORY
+.B Utility

@@ -1,0 +1,85 @@
+# Copyright 2002,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Setup new key pair ..........................................$NL
+bk crypto -i 1024 my.sec my.pub || {
+	echo keygen failed
+	exit 1
+}
+if [ ! \( -s my.sec -a -s my.pub \) ] 
+then	echo key files not created
+	exit 1
+fi
+echo OK
+
+echo $N Test signing a datafile .....................................$NL
+cat > data <<EOF
+This is a test
+file that we
+will sign to verify it is correct.
+EOF
+
+bk crypto -s my.sec < data > data.sig || {
+	echo sign failed
+	exit 1
+}
+echo OK
+
+echo $N Test that data validates with key ...........................$NL
+bk crypto -v my.pub data.sig < data || {
+	echo signature failed to validate
+	exit 1
+}
+
+# change data
+cp data data2
+echo $NX x $NXL >> data2
+
+bk crypto -v my.pub data.sig < data2 && {
+	echo signature should not have validated
+	exit 1
+}
+echo OK
+
+echo $N Test hashstr ................................................$NL
+bk crypto -h test > OUT.h
+echo CY9rzUYh03PK3k6DJie09g > WANT
+checkfiles OUT.h WANT
+echo $NX test$NXL | bk crypto -h - > OUT.h-
+checkfiles OUT.h- WANT
+bk crypto -Xh test > OUT.Xh
+echo 098f6bcd4621d373cade4e832627b4f6 > WANT
+checkfiles OUT.Xh WANT
+bk crypto -Sh test > OUT.Sh
+echo qUqP5cyxm6YcTAhz05Hph5gvu9M > WANT
+checkfiles OUT.Sh WANT
+bk crypto -SXh test > OUT.SXh
+echo a94a8fe5ccb19ba61c4c0873d391e987982fbbd3 > WANT
+checkfiles OUT.SXh WANT
+echo OK
+
+#echo $N Run internal test vectors ...................................$NL
+#bk crypto -t > OUT 2>ERR || {
+#	echo tests failed
+#	cat OUT
+#	cat ERR
+#	exit 1
+#}
+#egrep -i 'error|failed' OUT && {
+#	echo regressions failed
+#	cat OUT
+#	cat ERR
+#	exit 1
+#}
+#echo OK

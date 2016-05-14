@@ -1,0 +1,58 @@
+.if \n[NESTED] \{\
+.so ../bk-macros
+.TH "bk populate" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk unpopulate \- remove components from a product
+.SH SYNOPSIS
+.B bk unpopulate
+.[B] \-fq
+.[OPTreq] \-@ url \ ...
+.APG alias \ ...
+.SH DESCRIPTION
+.LP
+The unpopulate command is used to remove unneeded components from a product.
+.LP
+If you no longer need one or more components, you may remove them like
+so:
+.DS
+$ cd big-product
+$ bk unpopulate DEV-TOOLS
+.DE
+In order to preserve any local work, unpopulate will run
+bk superset, which searches for local changesets, deltas, 
+modifications, extra files, etc.
+See 
+.B \-f
+below for how to skip this check.
+.LP
+Only aliases or components explicitly listed by a previous clone or
+populate command can be removed.  The list of currently populated aliases
+and be fetched with the following command:
+.DS
+bk alias here
+.DE
+.SH OPTIONS
+.TP \-@\*<url\*>
+.tp
+.OPTreq \-@ url
+If BitKeeper cannot find another product that has the same versions of the
+components being removed, this option can provide one or more URLs to
+search.
+.tp
+.B \-f
+Force the unpopulate to work even if local work is present.
+Or if a remote repository with the same component can't be found.
+.tp
+.B \-q
+Run quietly.
+.SH NOTE
+The unpopulate command is an alias for the command 'bk alias rm HERE args'
+.SH "SEE ALSO"
+.SA alias
+.SA clone
+.SA parent
+.SA populate
+.SA superset
+.SH CATEGORY
+.B Nested
+.\}

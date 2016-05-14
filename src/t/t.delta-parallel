@@ -1,0 +1,46 @@
+# Copyright 2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+commercial project
+echo $N Make sure delta --parallel works ............................$NL
+for i in 1 2 3 4 5 6 7
+do	echo foo > file$i
+done
+bk extras | bk -Lw --parallel delta -l -ayxxx $Q - || exit 1
+test `bk sfiles -p | wc -l` -eq 7 || fail
+echo OK
+
+echo $N Make sure delta --parallel works when there are too few args.$NL
+for i in 1 2 3 4 5 6 7
+do	echo foo >> file$i
+done
+bk -cU | bk -Lw --parallel=10 delta -l -ayxxx $Q - || exit 1
+echo OK
+cd ..
+rm -rf project
+commercial project
+echo $N Make sure delta -j works ....................................$NL
+for i in 1 2 3 4 5 6 7
+do	echo foo > file$i
+done
+bk extras | bk -Lw -j delta -l -ayxxx $Q - || exit 1
+test `bk sfiles -p | wc -l` -eq 7 || fail
+echo OK
+
+echo $N Make sure delta -j works when there are too few args ........$NL
+for i in 1 2 3 4 5 6 7
+do	echo foo >> file$i
+done
+bk -cU | bk -Lw -j10 delta -l -ayxxx $Q - || exit 1
+echo OK

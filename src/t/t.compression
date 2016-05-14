@@ -1,0 +1,44 @@
+# Copyright 2003,2005,2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Commercial
+# Can't gzip the ChangeSet file
+# Can gzip other files
+# Can ungzip other files
+echo $N Create commercial repository and check gzip on ChangeSet ....$NL
+fresh_commercial --compat project
+test "`bk compression ChangeSet`" = "ChangeSet gzip" || {
+	echo should have compressed the ChangeSet file
+	exit 1
+}
+echo OK
+
+echo $N Make sure we can gzip other files ...........................$NL
+cd BitKeeper/etc
+bk admin -Zgzip config
+test "`bk compression config`" = "config gzip" || {
+	echo should have compressed the config file
+	bk compression config
+	exit 1
+}
+echo OK
+
+echo $N Make sure we can ungzip other files .........................$NL
+bk admin -Znone config
+test "`bk compression config`" = "config none" || {
+	echo should have uncompressed the config file
+	exit 1
+}
+echo OK
+

@@ -1,0 +1,68 @@
+# Copyright 2006 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Check that numercical sort is deterministic .................$NL
+cat - <<EOF | bk sort -n > GOT
+2 b
+2 a
+2 c
+1 q
+3 a
+EOF
+cat - <<EOF > WANT
+1 q
+2 a
+2 b
+2 c
+3 a
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check that string field sort is deterministic ...............$NL
+cat - <<EOF | bk sort -k2 > GOT
+a d j
+b a j
+c a k
+d a j
+a a j
+EOF
+# sorts as a string, first from the field start, then whole string
+cat - <<EOF > WANT
+a a j
+b a j
+d a j
+c a k
+a d j
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Check that numerical field sort is deterministic ............$NL
+cat - <<EOF | bk sort -nk2 > GOT
+b 122q
+b 255m
+a 255m
+a 27j
+a 255n
+EOF
+cat - <<EOF > WANT
+a 27j
+b 122q
+a 255m
+b 255m
+a 255n
+EOF
+cmpfiles WANT GOT
+echo OK

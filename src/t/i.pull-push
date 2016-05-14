@@ -1,0 +1,240 @@
+# Copyright 2001-2002,2005-2006,2009-2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Tests for pull, push, and clone.
+echo $N Create initial repository ...................................$NL
+commercial project
+mkdir src
+cd src
+echo foo > 'F!O#O$ B%A^R&RR(R)RR'
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i 'F!O#O$ B%A^R&RR(R)RR' bar.c h.h || exit 1
+P=`bk pending | wc -l`
+if [ $P -ne 15 ]; then echo wrong pending result $P; bk pending; exit 1; fi
+bk commit $Q -yCset
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo failed to clear pending list; bk pending; exit 1; fi
+echo OK
+cores
+echo $N Clone repository ............................................$NL
+cd "$HERE"
+bk clone $Q "$HERE/project" "$HERE/copy" || { echo failed; exit 1; }
+bk _test -f copy/src/SCCS/s.'F!O#O$ B%A^R&RR(R)RR' || { echo failed; exit 1; }
+[ -f copy/BitKeeper/log/parent ] || { echo no parent; exit 1; }
+parent=`cat copy/BitKeeper/log/parent`
+[ "x$parent" = "xfile://$HERE/project" ] || { echo wrong parent $parent ; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+echo $N Pull with no changes in child ...............................$NL
+cd "$HERE/project/src"
+bk get $Q -e 'F!O#O$ B%A^R&RR(R)RR'
+echo delta two >> 'F!O#O$ B%A^R&RR(R)RR'
+bk delta $Q -y2 'F!O#O$ B%A^R&RR(R)RR'
+bk commit $Q -y2
+cd "$HERE/copy"
+bk pull $Q || { echo failed; exit 1; }
+revs=`bk prs -hd':I:\n' src/'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+[ $revs -eq 2 ] || { echo failed; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+if [ $DO_REMOTE = YES ]; then
+ cd "$HERE/copy"
+ echo $N Pull with explicit remote parent ............................$NL
+ bk pull $Q localhost:"$HERE/project" || { echo failed; exit 1; }
+ revs=`bk prs -hd':I:\n' src/'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+ [ $revs -eq 2 ] || { echo failed; exit 1; }
+ cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+ echo OK
+ echo $N Pull with explicit remote parent and username ...............$NL
+ cd "$HERE/copy"
+ bk pull $Q $USER@localhost:"$HERE/project" || { echo failed; exit 1; }
+ revs=`bk prs -hd':I:\n' src/'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+ [ $revs -eq 2 ] || { echo failed; exit 1; }
+ cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+ echo OK
+ echo $N Pull with explicit local parent .............................$NL
+ cd "$HERE/copy"
+ URL="$HERE/project"
+ bk pull $Q "$URL" || { echo failed; exit 1; }
+ revs=`bk prs -hd':I:\n' src/'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+ [ $revs -eq 2 ] || { echo failed; exit 1; }
+ cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+ echo OK
+ echo $N Pull with explicit local parent and username ................$NL
+ bk pull $Q $USER@$HOSTNAME:"$HERE/project" || { echo failed; exit 1; }
+ revs=`bk prs -hd':I:\n' src/'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+ [ $revs -eq 2 ] || { echo failed; exit 1; }
+ echo OK
+else
+ echo Pull with explicit remote parent ............................skipped
+ echo Pull with explicit remote parent and username................skipped
+ echo Pull with explicit local parent .............................skipped
+ echo Pull with explicit local parent and username ................skipped
+fi
+
+echo $N Pull from subdirectory of repository ........................$NL
+cd src
+bk pull $Q || { echo failed; exit 1; }
+revs=`bk prs -hd':I:\n' 'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+[ $revs -eq 2 ] || { echo failed; exit 1; }
+echo OK
+
+echo $N Pull with mergeable changes in child ........................$NL
+bk get $Q -e bar.c
+echo line three >>bar.c
+bk delta $Q -ythree bar.c
+bk commit $Q -ythree
+cd "$HERE/project/src"
+bk get $Q -e bar.c
+mv bar.c bar.x
+echo line zero >bar.c
+cat bar.x >>bar.c
+rm -f bar.x
+bk delta $Q -yzero
+bk commit $Q -y0
+cd "$HERE/copy"
+bk pull $Q || { echo failed; exit 1; }
+cd src
+cat > X <<EOF
+line zero
+bar
+line three
+EOF
+bk undos X > ref-bar.c
+bk get $Q bar.c
+cmp -s ref-bar.c bar.c
+[ $? -eq 0 ] || { echo failed; diff ref-bar.c bar.c; exit 1; }
+echo OK
+bk clean 
+echo $N Push with no upstream deltas ................................$NL
+bk push $Q || { echo failed; exit 1; }
+mv ref-bar.c "$HERE/project/src"
+cd "$HERE/project/src"
+bk get $Q bar.c
+cmp -s ref-bar.c bar.c
+[ $? -eq 0 ] || { echo failed; diff ref-bar.c bar.c; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+bk clean 
+rm -f ref-bar.c
+echo $N Push with an unrelated upstream delta .......................$NL
+cd "$HERE/project"
+date > stamp
+bk delta $Q -i stamp
+bk commit $Q -ytime
+KEY="`bk prs -hd:KEY: -r+ ChangeSet`"
+cd "$HERE/copy/src"
+bk get $Q -e h.h
+sed 's/h/qwerty/' <h.h >h.x
+mv h.x h.h
+bk delta $Q -ydvorak h.h
+cd ..
+bk commit $Q -yzxcvbnm
+bk push -a $Q 2> ERR || { echo push w/ autopull failed; exit 1; }
+cd "$HERE/project"
+KEY2="`bk prs -hd:KEY: -r+ ChangeSet`"
+[ "$KEY" = "$KEY2" ] || { echo bad push; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+echo $N Push with a conflicting upstream delta ......................$NL
+cd "$HERE/project/src"
+bk get $Q -e h.h
+sed 's/h/yuhjklbn/' <h.h >h.x
+mv h.x h.h
+bk delta $Q -yrogue h.h
+cd ..
+bk commit $Q -yrogue
+KEY="`bk prs -hd:KEY: -r+ ChangeSet`"
+cd "$HERE"
+tar cf PUSH.tar project copy
+cd "$HERE/copy"
+_BK_PREVENT_RESOLVE_RERUN=1 bk push -a $Q 2> resolve.out
+test $? -ne 0 || { echo failed; cat resolve.out; exit 1; }
+grep -q 'unresolved conflicts, nothing is applied' resolve.out || {
+	echo should have had conflicts, but did not
+	cat resolve.out
+	exit 1
+}
+KEY2="`bk prs -hd:KEY: -r+ "$HERE/project/ChangeSet"`"
+[ "$KEY" = "$KEY2" ] || { echo bad push; exit 1; }
+echo OK
+echo $N Resolve by hand and push again ..............................$NL
+# OK, now make sure that the discard button is disabled
+bk resolve $Q -F <<EOF >resolve.out 2>&1
+m
+C
+whatever
+.
+u
+EOF
+[ $? -eq 0 ] || { echo resolve failed; cat resolve.out; exit 1; }
+L=`bk get $Q -p src/h.h | wc -l`
+[ $L -eq 7 ] || { echo merge failed; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+cd "$HERE"
+cp -rp project project2
+cp -rp project project3
+cd copy
+KEY="`bk prs -hd:KEY: -r+ ChangeSet`"
+bk push $Q || { echo failed; exit 1; }
+KEY2="`cd "$HERE/project" && bk prs -hd:KEY: -r+ ChangeSet`"
+[ "$KEY" = "$KEY2" ] || { echo no push; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+# XXX TODO need test case for push/pull -n
+# XXX TODO need test case for push/pull to unrelated project
+# XXX TODO need test case for pull/pull/clone to/from space in pathname
+
+echo $N Create a bunch of output using nested .......................$NL
+cd "$HERE"
+nested nested
+bk tag $Q RB
+echo OK
+for x in 1 2 3 4; do
+	if [ "$x" = 1 ]; then
+		echo "+ BK_CONFIG=\"checkout: none! \" bk clone -l .  pull$x"
+		BK_CONFIG="checkout: none! " bk clone -l . pull$x
+	elif [ "$x" = 2 ]; then
+		echo "+ BK_CONFIG=\"checkout: get! \" bk clone -l .  pull$x"
+		BK_CONFIG="checkout: get! " bk clone -l . pull$x
+	else
+		bk clone $Q -l . pull$x
+	fi
+	bk parent $Q -ai pull$x
+	cd pull$x
+	touch $x gcc/$x gdb/$x
+	bk new $Q $x gcc/$x gdb/$x
+	if [ "$x" != 1 ]; then
+		cd gcc
+		bk commit $Q -y$x
+		cd ..
+	fi
+	cd gdb
+	bk commit $Q -y$x
+	cd ..
+	bk commit $Q -y$x
+	cd ..
+	bk clone $Q -l . push$x
+	bk parent $Q -ao push$x
+done
+set -x
+bk pull
+bk push
+bk undo -fsaRB
+BK_CONFIG="checkout: get! " bk pull
+bk undo -fsaRB
+bk comps -h | bk here set -
+bk here rm -f ./gcc
+bk pull

@@ -1,0 +1,252 @@
+# Copyright 2001,2004-2007,2013-2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+OUT="$HERE/out"
+RC="`bk dotbk`/rev.rc"
+
+echo $N Create some data ............................................$NL
+commercial project
+cd "$HERE/project/BitKeeper/etc"
+mkdir "$HERE/project/src"
+cd "$HERE/project/src"
+for f in file1 file2 file3 file4 file5 ; do
+    echo "this is $f" > $f 
+    bk ci $Q -i -y'new file' $f || exit 1
+done
+bk commit $Q -y'initial checkin' 
+bk tag $Q "BabySteps"
+for f in file1 file2 file3 ; do
+    bk get $Q -e $f
+    echo "Line two" >> $f
+    bk ci $Q -y'added a second line' $f
+done
+bk commit $Q -y'added a second line to file1, file2 and file3'
+echo OK
+
+echo $N Create dotbk/rev.rc .........................................$NL
+test -f "$RC" && rm -f "$RC"
+bk guitest revtool >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+    test_die 99
+EOF
+test -f "$RC" || (echo "failed" ; exit 1; )
+echo "OK"
+
+echo $N Bogus command line option ...................................$NL
+bk guitest revtool --bogus >"$OUT" 2>&1 <<'EOF'
+    test_buttonPress Quit
+    test_die 99
+EOF
+if [ $? -ne 1 ]; then echo "failed"; echo "exited $err; expected 1"; exit 1; fi
+egrep 'usage:.*bk ' "$OUT" > $DEV_NULL
+if [ "$?" -ne 0 ] ; then echo failed; cat "$OUT"; exit 1; fi
+echo OK
+
+echo $N Normal startup w/no args. ...................................$NL
+bk guitest revtool >"$OUT" 2>&1 <<'EOF'
+    global fname
+    set pwd [file normalize [pwd]]
+    set bk_root [file normalize [exec bk root]]
+    if {$pwd != $bk_root} {
+        puts "pwd ($pwd) is not bk root ($bk_root)"
+        exit 1
+    }
+    if {$::fname != "ChangeSet"} {
+        puts "filename is '$::fname'; expected ChangeSet"
+        exit 1
+    }
+    test_buttonPress Quit
+    test_die 99
+EOF
+if [ $? -ne 0 ]; then echo "failed"; cat "$OUT"; exit 1; fi
+echo OK
+
+echo $N Window title ................................................$NL
+bk guitest revtool >"$OUT" 2>&1 <<'EOF'
+    set title [string trim [wm title .]]
+    if {"$title" != "revtool: [exec bk root]: ChangeSet"} {
+	puts "unexpected title: '$title'"
+    }
+    exit 0
+EOF
+if [ -s "$OUT" ] ; then echo failed; cat "$OUT" ; exit 1 ; fi
+echo OK
+
+echo $N Test Select File -\> Current ChangeSet menu item..............$NL
+bk guitest revtool -r1.2 >"$OUT" 2>&1 <<'EOF'
+	global test_menuitems
+	test_getMenus {} {}
+	set got [lsort [array names test_menuitems \
+			    {Select File->Current Changeset->*}]]
+	set got [string map [list {Select File->Current Changeset->} {}] $got]
+	set want {{src/file1@1.0} {src/file1@1.1} {src/file2@1.0} {src/file2@1.1} {src/file3@1.0} {src/file3@1.1} {src/file4@1.0} {src/file4@1.1} {src/file5@1.0} {src/file5@1.1}}
+	if {$want != $got} {
+		puts "bad file list"
+		puts "WANT: $want"
+		puts "GOT : $got"
+	}
+	test_buttonPress Quit
+EOF
+[ -s "$OUT" ] && fail -f "$OUT"
+echo OK
+
+# this does a very shallow test for whether the graph is correct;
+# it simply checks that one data structure has been initialized. 
+echo $N Simple graph test ...........................................$NL
+bk guitest revtool >"$OUT" 2>&1 <<'EOF'
+    global rev2date w
+    set revs [lsort [array names rev2date]]
+    if {$revs != {1.1-bk 1.2-bk 1.3-bk}} {
+	puts "unexpected revisions: $revs"
+	exit 1
+    }
+    exit 0
+EOF
+if [ $? -ne 0 ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ -s "$OUT" ] ; then echo failed; cat "$OUT" ; exit 1 ; fi
+echo OK
+
+echo $N Annotations test.............................................$NL
+cd "$HERE/project/src"
+bk annotate -R -Aur -w+ file1 > WANT
+bk guitest revtool file1 > GOT 2>&1 <<'EOF'
+	global w
+	test_inputString "c"
+	# the end-2c is because there are two extra new lines in the text
+	# widget...
+	puts [$w(aptext) get 1.0 end-2c]
+	test_buttonPress "Quit"
+	test_die 99
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Annotations with preferences.................................$NL
+cd "$HERE/project/src"
+bk annotate -R -Abdnpru -w+ file1 > WANT
+echo 'set gc(rev.annotate) "-Abdnpru"' > "`bk dotbk`/config-gui"
+bk guitest revtool file1 > GOT 2>&1 <<'EOF'
+	global w
+	test_inputString "c"
+	# the end-2c is because there are two extra new lines in the text
+	# widget...
+	puts [$w(aptext) get 1.0 end-2c]
+	test_buttonPress "Quit"
+	test_die 99
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Annotations for tip..........................................$NL
+cd "$HERE/project/src"
+rm -f "`bk dotbk`/config-gui"
+bk get $Q -Aru -Pr+ file1 > WANT
+bk guitest revtool file1 > GOT 2>&1 <<'EOF'
+	global w
+	# get the TIP in a form that revtool likes
+	set TIP [exec bk prs -r+ -hnd:REV:-:P: file1]
+	prs $TIP
+	test_inputString "a"
+	# the end-2c is because there are two extra new lines in the text
+	# widget...
+	puts [$w(aptext) get 1.0 end-2c]
+	test_buttonPress "Quit"
+	test_die 99
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Annotations for tip with custom format.......................$NL
+cd "$HERE/project/src"
+echo 'set gc(rev.annotate) "-Abdnpru"' > "`bk dotbk`/config-gui"
+bk get $Q -Abdnpru -Pr+ file1 > WANT
+bk guitest revtool file1 > GOT 2>&1 <<'EOF'
+	global w
+	# get the TIP in a form that revtool likes
+	set TIP [exec bk prs -r+ -hnd:REV:-:P: file1]
+	prs $TIP
+	test_inputString "a"
+	# the end-2c is because there are two extra new lines in the text
+	# widget...
+	puts [$w(aptext) get 1.0 end-2c]
+	test_buttonPress "Quit"
+	test_die 99
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test revision given in command line..........................$NL
+bk cp file1 "name with  spaces" 2> QUIET
+bk guitest revtool -r1.1 "name with  spaces" >"$OUT" 2>&1 <<'EOF'
+	global anchor
+	if {$anchor ne "1.1-bk"} {
+		puts stderr "Revision 1.1 specified in command line, \
+		    but not selected in GUI"
+		exit 1
+	}
+	exit 0
+EOF
+echo OK
+
+echo $N Test key given in command line...............................$NL
+REV=`bk prs -hnd:KEY: -r1.1 "name with  spaces"`
+bk guitest revtool -r"$REV" "name with  spaces" >"$OUT" 2>&1 <<'EOF'
+	global anchor
+	if {$anchor ne "1.1"} {
+		puts stderr "Revision 1.1 specified in command line, \
+		    but not selected in GUI"
+		exit 1
+	}
+	exit 0
+EOF
+if [ $? -ne 0 ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ -s "$OUT" ] ; then echo failed; cat "$OUT"; exit 1; fi
+echo OK
+
+echo $N Test invalid revision given in command line..................$NL
+bk revtool -r1.1000 "name with  spaces" 2> ERR && {
+	echo expected failure
+	exit 1
+}
+grep -q "no such delta" ERR || {
+	echo wrong error message
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Test two revisions in the command line.......................$NL
+bk guitest revtool -r1.1 -l1.2 "name with  spaces" >"$OUT" 2>&1 <<'EOF'
+	global anchor
+	if {$anchor ne "1.1-bk"} {
+		puts stderr "Revision 1.1 specified in command line, \
+		    but not selected in GUI"
+		exit 1
+	}
+	exit 0
+EOF
+if [ $? -ne 0 ]; then echo failed; cat "$OUT"; exit 1; fi
+if [ -s "$OUT" ] ; then echo failed; cat "$OUT"; exit 1; fi
+echo OK
+
+echo $N Test two revisions in the command line, one invalid..........$NL
+bk revtool -r1.1000 -l1.1 "name with  spaces" >"$OUT" 2>&1 && {
+	echo expected failure
+	exit 1
+}
+echo "either 1.1 or 1.1000 is not a valid revision" > EXPECTED
+cmpfiles "$OUT" EXPECTED
+echo OK

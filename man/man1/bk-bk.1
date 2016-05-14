@@ -1,0 +1,247 @@
+.so ../bk-macros
+.TH "bk" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk \- \*(BK configuration management system front end
+.SH SYNOPSIS
+.B bk 
+.[B] \-A|U|e|r
+.[OPTreq] \-s alias
+.[B] options
+.ARG command 
+.[ARG] options
+.SH DESCRIPTION
+.B bk
+is the front end to all \*(BK commands.
+All \*(BK commands are prefixed with 
+.B bk
+in order to avoid ambiguity with
+non-\*(BK commands that might be already installed on the system such as 
+.B bk co
+and
+.BR "bk ci" .
+.LP
+If you are looking for instructions on how to get started, try running the
+test drive at
+.BR http://www.bitkeeper.com/Test.html .
+.SH OPTIONS
+Only the global options are documented here.
+To see command specific options consult the documentation for the command
+in question (bk help
+.ARG command ).
+.de TPP
+.TP \-\-subset=\*<a\*>\ 
+..
+.TPP
+.OPTopt \-@ url
+Run the command in the specified repository rather than locally.
+If
+.ARG url
+is not specified, then use the parent[s] of the current repository.
+If there are multiple parents, incoming and/or outgoing, use all of those
+parents.
+You can use the construct
+.OPTreq \-@@ file
+to specify a file containing a list of repository URLs, one per line;
+the command is run in each of the remote repositories.
+.IP
+The
+.OPTopt \-r dir
+option works as expected, running the command recursively over all
+of the implied files.
+If specified,
+.ARG dir
+must be relative to the root of the remote repository.
+.IP
+If 
+.Q \-
+is the last argument, then the standard input is read and buffered.
+Each remote command receives the same input.
+.TPP
+.B \-A
+.tp
+.B \-\-all-files
+Starting at the current working directory, run
+.ARG command
+on all files in the entire repository or nested collection.
+In a standalone repository this option is similar to
+.BR \-r .
+For example, to search all files in a nested collection:
+.DS
+$ bk -A grep 'the string I want to find'
+.DE
+See \-s below for ways to limit the set of files processed in a nested
+collection.
+.TPP
+\fB--config\fR=\*<key:val\*>
+Override one value in the configuration for this command only.
+.TPP
+\fB--cd\fR=\*<dir\*>
+Change to
+.ARG dir
+before running the command.
+.if \n[NESTED] \{\
+.TPP
+.B \-e
+.tp
+.B \-\-each-repo
+This is a nested collection iterator that runs
+.ARG command
+in each of the populated components and then the product.
+For example, to see the full path to the root of each repository in a nested
+collection:
+.DS
+$ bk -e pwd
+.DE
+See \-s below for ways to limit the set of repositories processed in a nested
+collection.
+.\}
+.TPP
+.B \--headers
+For remote commands (\-@)
+.if \n[NESTED] or for nested collection iterators,
+this option causes the output
+from running the command in each repository to prefixed with a header:
+.DS
+#### \*<repo-url or location\*> ####
+.DE
+.if \n[NESTED] \{\
+.TPP
+.B \-P
+Change directories to the root of the product repository before running
+.ARG command .
+Same as 
+.B \-R
+in a non-nested collection.
+.\}
+.TPP
+.B \-R
+Change directories to the root of the repository before running
+.ARG command .
+.TPP
+.OPTopt \-r dir
+Starting at 
+.ARG dir ,
+or the repository root if 
+.ARG dir
+was not specified, apply
+.ARG command
+recursively to
+.ARG dir
+and all subdirectories.
+This works by generating a list of files and passing them to
+.ARG command
+on the standard input.
+This option differs from
+.B \-A
+in that it is limited to the current repository only, so if you are
+in a component it will list only files belonging to that component.
+.if \n[NESTED] \{\
+.TPP
+.OPTreq \-s alias
+.tp
+.B \-\-subset=\*<a\*>
+This option restricts the files (\-A/\-U) or repositories (\-e)
+processed to those belonging to the specified alias[es].
+The option may be repeated to specify multiple aliases,
+the alias may be a component,
+and the alias may be negated.
+To search everywhere except the product:
+.DS
+$ bk -U -s^PRODUCT grep some_string
+.DE
+This option must be combined with one of:
+\-A,
+\-\-all-files,
+\-e,
+\-\-each-repo,
+\-U,
+\-\-user-files.
+.SP
+In a standalone repository this option has no effect.
+.TPP
+.B \-U
+.tp
+.B \-\-user-files
+Starting at the current working directory, run
+.ARG command
+on all user files
+in the entire repository or nested collection.
+User files means everything except deleted and \*[BK] metadata files.
+In a standalone repository this option is similar to
+.BR \-Ur .
+For example, to check out your collection:
+.DS
+$ bk -U co
+.DE
+To see all unchecked in changes:
+.DS
+$ bk -cU diffs
+.DE
+See \-s above for ways to limit the set of files processed in a nested
+collection.
+.\}
+.TPP
+.B "\-1acGpx \-^G"
+One or more of these options may be used in combination with 
+.QR \-A ,
+.QR \-r ,
+or
+.Q \-U
+to limit the set of files passed to
+.ARG command .
+.\" HEY!  YOU!  Man page hacker.  If you change these make sure you follow
+.\" whatever bk-gfiles.1 says, that's the authoritative source, OK?  Thanks!
+.RS
+.TP ABCD
+.B \-1
+Only examine the current (or named) directory.
+Do not go into subdirectories.
+.tp
+.B \-G
+List files only if they are checked out ("gotten").
+.tp
+.B \-^G
+List files only if they are not checked out ("not gotten").
+.tp
+.B \-a
+Examine all files, even if listed in
+.BR BitKeeper/etc/ignore .
+.tp
+.B \-c
+List changed files (locked and modified).
+See EXAMPLES below for a typical usage.
+.tp
+.B \-p
+List files with pending deltas.  
+.tp
+.B \-x
+List files which have no revision control files.
+See EXAMPLES below for a typical usage.
+.tp
+.OPTreq \-\-gfiles-opts= opts
+This long option may be used to pass any valid option to sfiles.
+The format must include the leading \- or \-\- for each option
+and each option must be separated by a space like so:
+.DS
+\-\-gfiles-opts='-c --cold'
+.DE
+.RE
+.SH EXIT STATUS
+Unless otherwise documented, all \*(BK commands return exit status
+0 on success and greater than 0 on failure.
+.SH EXAMPLES
+.LP
+The following commands are equivalent:
+.DS 6
+bk -A co
+bk -R gfiles | bk -R co -
+cd \`bk root\`; bk gfiles | bk co -
+.DE
+An example usage for generating a patch of all new and/or changed files:
+.DS
+$ bk -cxU diffs -Nu
+.DE
+.SH "SEE ALSO"
+.SA gfiles
+.SH CATEGORY
+.B Repository

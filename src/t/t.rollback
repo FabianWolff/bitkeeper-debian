@@ -1,0 +1,126 @@
+# Copyright 2000-2006,2010-2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# All tests start from SAVE tarball which has two repositories with just
+# the basics in it.
+#
+# 1) M
+
+
+if [ X$Q = X ]
+then	L=-l
+else	L=
+fi
+
+# Because we use tar xmf we don't check for timestamp errors here.
+unset _BK_DEVELOPER
+
+# Create a repository with 5 files in it.  The files contain
+# 1, 2, 3, 4, 5 and start out as A, B, C, D, E
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+echo $N Create 5 files with 1,2,3,4,5 as contents ...................$NL
+echo 1 > A
+echo 2 > B
+echo 3 > C
+echo 4 > D
+echo 5 > E
+bk ci $Q -i A B C D E
+if bk _test ! -f SCCS/s.A; then echo failed to create history; exit 1; fi
+bk commit $S -y"This is a \"Change Set\""
+echo OK
+cores
+bk -r check -a
+echo $N Clone and save a tarball of the two repositories ............$NL
+cd "$HERE"
+bk clone $Q project copy
+tar cf SAVE project copy 2> /dev/null
+echo OK
+
+# Add keys to the cset file by creating a file and change one key.
+echo $N Check corrupted key in the ChangeSet file w/ new file .......$NL
+cd "$HERE"
+rm -rf project copy
+tar xmf SAVE
+cd project
+ls > LS
+bk new $Q LS
+bk commit $Q -ywhatever
+KEY=`bk prs -hr+ -d:KEY: LS`
+MONTH=`bk prs -hr+ -d:Dm: LS`
+BADKEY=`echo "$KEY" | sed s/$MONTH/00/`
+bk _scat SCCS/s.ChangeSet | sed "s,$KEY,$BADKEY," | bk undos > X
+bk _mv X SCCS/s.ChangeSet
+bk admin -z ChangeSet
+bk checksum -f ChangeSet 2>/dev/null
+cd "$HERE/copy"
+bk pull $Q "$HERE/project" 2>/dev/null
+if [ -d RESYNC ]; then echo failed to abort the takepatch; exit 1; fi
+echo OK
+
+echo $N Check for removed file in RESYNC dir ........................$NL
+cd "$HERE"
+rm -rf project copy
+tar xmf SAVE
+cd project
+ls > LS
+bk new $Q LS
+bk commit $Q -ywhatever
+cd ../copy
+bk pull -R $Q "$HERE/project"
+cd "$HERE"
+tar cf copy.tar copy 2> /dev/null
+cd copy
+bk _rm RESYNC/SCCS/s.LS
+bk resolve $Q 2>ERRORS
+if [ $? -eq 0 ]; then echo failed to exit with an error; exit 1; fi
+if [ ! -d RESYNC ]; then echo failed to leave RESYNC; exit 1; fi
+grep -q 'Missing file (bk help chk3) bk/.*@bk_regression.bk' ERRORS || {
+	echo Bad error message
+	cat ERRORS
+	exit 1
+}
+echo OK
+
+echo $N Check for corrupted file in RESYNC dir ......................$NL
+cd "$HERE"
+rm -rf copy
+tar xmf copy.tar
+cd copy
+bk _scat RESYNC/SCCS/s.LS > X
+echo foo >> X
+bk _mv X RESYNC/SCCS/s.LS
+bk resolve $Q 2>ERRORS
+if [ $? -eq 0 ]; then echo failed to exit with an error; exit 1; fi
+if [ ! -d RESYNC ]; then echo failed to leave RESYNC; exit 1; fi
+grep -q 'bad file checksum, corrupted file' ERRORS
+if [ $? != 0 ]
+then	echo Bad error message
+	cat ERRORS
+	exit 1
+fi
+echo OK
+
+# XXX - need these
+#
+# a) do the resolve, go to apply it, and hit a b.file
+# b) same thing with a create, make sure it deletes that one
+# c) remove the b.file and run resolve again, should work
+# d) same thing as a, except force an edit and make mods in repo
+# e) same things as d, except chmod -w a directory that needs to +w

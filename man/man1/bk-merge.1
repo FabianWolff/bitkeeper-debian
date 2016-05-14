@@ -1,0 +1,95 @@
+.so ../bk-macros
+.TH "bk merge" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk merge \- three-way text based file merge
+.SH SYNOPSIS
+.B bk merge
+.[B] \-s
+.ARG local
+.ARG ancestor
+.ARG remote
+.ARG merge
+.br
+.B bk merge
+.[B] \-s
+.ARG path/gfile
+.SH DESCRIPTION
+The
+.B bk merge
+command combines changes made 
+to
+.ARG ancestor
+by 
+.ARG local
+with the changes made to
+.ARG ancestor
+by
+.ARG remote
+and merges them into
+.ARG merge .
+When only a gfile is given on the command line, it is assumed to be a
+file in the RESYNC tree with an unresolved merge.  In that case the 3
+parts are extracted automatically and the merge output is written to
+stdout.  This form is mainly useful as part of pre-resolve triggers.
+.LP
+If all changes are made to different regions of the
+.ARG ancestor ,
+then the merge is said to be free of conflicts.
+.LP
+A conflict occurs if both
+.ARG local
+and 
+.ARG remote
+have made changes to the same section of
+.ARG ancestor .
+If a conflict is found, the conflicting lines will be marked in the output
+as follows:
+.DS
+\&<<<<<<<\ \c
+.ARG local
+changes made in the local repository
+=======
+changes made in the remote repository
+>>>>>>>\ \c
+.ARG remote
+.DE
+It is up to the caller to edit the 
+.ARG merge 
+file and resolve any conflicts.
+.SH OPTIONS
+.TP
+.B \-s
+Perform a set merge instead of a normal file merge.  In this case the
+files are assumed to be lists of items, one item per line, and the
+merge does an automatic union of the lists and writes the result in
+sorted order.  Conflicts cannot occur in this mode.  This option is
+automatically used to merge these \*[BK] files:
+.RS
+.B BitKeeper/etc/gone
+.br
+.B BitKeeper/etc/ignore
+.RE
+.SH EXIT STATUS
+.B bk merge
+returns exit status:
+.TP
+0
+if there were no conflicts
+.tp
+1
+if there were conflicts
+.tp
+2
+if an error occurred
+.SH "SEE ALSO"
+.BR diff3 (1),
+.SA fmtool
+.SA remerge
+.SA resolve
+.SA resolving
+.SA smerge
+.SA triggers
+.SH CATEGORY
+.B Repository
+.br
+.B File

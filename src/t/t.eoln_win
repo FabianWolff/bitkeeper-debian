@@ -1,0 +1,84 @@
+# Copyright 2000-2002,2005,2013 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+if [ "$PLATFORM" != "WIN32" ]
+then
+echo "Win32 tests for EOLN support.................................skipped"
+exit 0
+fi
+
+
+# Note: This test assumes the shell "echo" comamnd output in binary mode
+echo $N Create initial repository ...................................$NL
+commercial project
+bk edit $Q BitKeeper/etc/config
+grep -v eoln BitKeeper/etc/config > c
+mv c BitKeeper/etc/config
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Check ci co in EOLN_NATIVE mode .............................$NL
+# create a file with line terminated with CRLF 
+printf "data\r\n" > data
+cp data data.ref
+bk ci $Q -i data
+bk co $Q data
+cmp -s data data.ref || {
+	echo failed after ci
+	od -c data data.ref
+	bk flags data
+	exit 1
+}
+bk edit $Q data
+cmp -s data data.ref || {
+	echo failed after edit
+	od -c data data.ref
+	exit 1
+}
+echo OK
+
+echo $N Check diffs in EOLN_NATIVE mode .............................$NL
+# in EOLN_NATIVE mode the diffs output is still LF terminated
+echo new_stuff > data
+bk diffs --no-unified -h data > diffs.out
+bk undos > diffs.ref << EOF
+1c1
+< data
+---
+> new_stuff
+EOF
+cmp -s diffs.out diffs.ref
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Check ci a file with LF only ................................$NL
+bk undos  > data << EOF
+new1
+new2
+new3
+EOF
+bk ci $Q -ynew data
+bk get $Q data
+od -c data | bk undos > od.out
+bk undos > od.ref << EOF
+0000000   n   e   w   1  \r  \n   n   e   w   2  \r  \n   n   e   w   3
+0000020  \r  \n
+0000022
+EOF
+cmp -s od.ref od.out
+if [ $? -ne 0 ]; then echo failed; exit 1; fi
+echo OK

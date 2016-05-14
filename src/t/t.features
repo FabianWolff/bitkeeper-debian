@@ -1,0 +1,156 @@
+# Copyright 2010-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Verify that clone fails with unknown feature ................$NL
+commercial project
+echo foo > foo
+bk delta -i -l -ywhatever $Q foo
+echo wizbang >> BitKeeper/log/features
+cd ..
+bk clone -q project copy 2>ERR && fail
+bk getmsg -= repo_feature wizbang > WANT
+cmpfiles ERR WANT
+echo OK
+
+echo $N Verify that a bk editor fails with unknown feature ..........$NL
+EDITOR=cat bk editor project/foo 2>ERR && fail -f ERR
+cmpfiles ERR WANT
+echo OK
+
+echo $N Try to commit changes to repo ...............................$NL
+cd project
+echo whoopee >> BitKeeper/log/features
+bk getmsg -= repo_feature whoopee,wizbang > WANT
+echo hi > data
+bk new $Q data 2>ERR && fail -f ERR
+cmpfiles ERR WANT
+echo OK
+
+# key to the bk feature debugging variables:
+#  _BK_TESTFEAT
+#     Replace BK_FEATURES sent from the bk to the bkd
+#     This is the list of all features understood by the local bk.
+#     (to be compared with the remove FEATURES file)
+#  _BK_TEST_REQUIRED
+#     Replaces BK_FEATURES_REQUIRED sent from the bk to the bkd
+#     This is the list of features in the local repository's features
+#     file.  (to be compared to the remote bk's builtin features)
+#  _BKD_*
+#     same as above but sent in sendServerInfo() instead of sendEnv()
+#     and we revert bk/bkd and local/remote
+
+echo $N Send messages back from bkd .................................$NL
+cd "$HERE"
+nested nest
+bk clone $Q . ../nestcopy
+cd ../nestcopy
+_BK_TESTFEAT='HORSE,fastpatch' bk pull $Q 2>ERR && fail -f ERR
+bk getmsg -= bk_missing_feature SAMv3 > WANT
+cmpfiles ERR WANT
+_BK_TEST_REQUIRED='HORSE' bk pull $Q 2>ERR && fail -f ERR
+bk getmsg -= bkd_missing_feature HORSE > WANT
+cmpfiles ERR WANT
+echo OK
+
+echo $N Last set of pull commands left no remote read locks .........$NL
+cd ../nest
+bk lock -ql || fail
+echo OK
+
+echo $N Here what bkd has and output message ........................$NL
+cd ../nestcopy
+_BKD_TESTFEAT='HORSE,fastpatch' bk pull $Q 2>ERR && fail -f ERR
+bk getmsg -= bkd_missing_feature SAMv3 > WANT
+cmpfiles ERR WANT
+_BKD_TEST_REQUIRED='HORSE' bk pull $Q 2>ERR && fail -f ERR
+bk getmsg -= bk_missing_feature HORSE > WANT
+cmpfiles ERR WANT
+echo OK
+
+echo $N Last set of pull commands left remote read locks ............$NL
+cd ../nest
+bk lock -lq || fail
+echo OK
+
+echo $N Test clone with illegal features ............................$NL
+cd ..
+_BKD_TEST_REQUIRED=HORSE bk clone -q 2>ERR nest junk && fail -f ERR
+
+# the bkd can get a perror(EPIPE) when the client fails to read the SFIO
+grep -v 'zputs_hfwrite' ERR > ERR2
+
+bk getmsg -= bk_missing_feature HORSE > WANT
+cmpfiles ERR2 WANT
+bk lock -lq nest || fail
+echo OK
+
+echo $N Test new nested comp does not set sortkey ...................$NL
+cd "$HERE/nest"
+bk setup -f comp
+bk --cd=comp features | grep -q sortkey && fail comp has sortkey
+echo OK
+
+echo $N Test that bk features with none prints nothing ..............$NL
+cd "$HERE"
+rm -f project/BitKeeper/log/features # cleanup after earlier test
+bk clone $Q $COMPAT4 project compat
+cd compat
+test "`bk features`" && { bk features; fail; }
+echo OK
+
+echo "----- Test features -m"
+echo $N standalone ..................................................$NL
+cd "$HERE"
+commercial sa
+bk features -m > OUT
+cat <<EOF > WANT
+This repository is compatible with bk-7.x and later because of features:
+	BWEAVEv3, BKMERGE
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N downgrade ...................................................$NL
+bk clone $COMPAT4 . ../sa-downgrade >OUT 2>&1 || fail
+cd ../sa-downgrade
+bk features -m > OUT
+grep -q "compatible with bk-4.x and later" OUT || fail -f OUT wrong message
+echo OK
+
+echo $N nested ......................................................$NL
+cd "$HERE"
+nested nest2
+bk features -m > OUT
+cat <<EOF > WANT
+This repository is compatible with bk-7.x and later because of features:
+	BWEAVEv3, BKMERGE
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N downgrade ...................................................$NL
+bk clone $COMPAT4 . ../nest2-downgrade >OUT 2>&1 || fail
+cd ../nest2-downgrade
+bk features -m > OUT
+grep -q "compatible with bk-5.x and later" OUT || fail -f OUT wrong message
+grep -q 'SAMv3$' OUT || fail -f OUT wrong message
+echo OK
+
+echo $N add poly ....................................................$NL
+# this is a contrived case, a "real" test for this is in t.nested-poly
+echo POLY >> BitKeeper/log/features
+bk features -m > OUT
+grep -q "compatible with bk-6.x and later" OUT || fail -f OUT wrong message
+grep -q 'POLY$' OUT || fail -f OUT wrong message
+echo OK

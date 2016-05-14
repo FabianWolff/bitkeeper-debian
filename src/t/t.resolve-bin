@@ -1,0 +1,158 @@
+# Copyright 2002-2003,2006-2007,2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+mkBINs
+data="data"
+
+commercial proj
+cp -rp "$HERE/proj" "$HERE/ascii"
+echo $N Trying to check in some binary data .........................$NL
+cp "$BIN1" ${data}
+chmod u+w ${data}
+# This makes sure we aren't expanding keywords.
+echo '@A@ @B@ @D@ @E@ @F@ @G@ @H@ @I@ @L@ @M@ @P@ @R@ @S@ @T@ @U@ @W@ @Y@ @Z@ @@@' | sed s/@/%/g >> $data
+cp $data saved_bin
+BIN1=saved_bin
+cp $data uuencode
+bk new $Q -Euuencode uuencode
+bk co $Q -l uuencode
+cmp -s "$BIN1" uuencode
+if [ $? -ne 0 ]; then echo Failed - files differ.; exit 1; fi
+echo OK
+
+echo $N Trying to merge some binary data ............................$NL
+bk commit $Q -ywhatever
+cd "$HERE"
+bk clone $Q proj child
+cd "$HERE/proj"
+bk edit $Q uuencode
+cat "$BIN2" >> uuencode
+bk delta $Q -yappend uuencode
+bk commit $Q -yappend
+cd "$HERE/child"
+bk edit $Q uuencode
+cat "$BIN2" > uuencode
+bk delta $Q -yreplace uuencode
+bk commit $Q -yreplace
+bk pull $Q -R
+echo q | bk resolve -a -T > OUT 2>&1
+grep -q "Not automerging binary 'uuencode'" OUT || {
+	echo failed to fail the automerge
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure we get to the binary menu .........................$NL
+(echo ''; echo q) | bk resolve > OUT 2>&1
+grep -q "binary conflict" OUT || {
+	echo failed to get to binary menu
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Add an ascii file but mark it no-merge ......................$NL
+cd "$HERE/ascii"
+cat > ascii <<EOF
+Hi mom,
+this is 
+an ascii
+file
+which
+we
+will modify.
+EOF
+bk new $Q ascii
+bk admin $Q -fNOMERGE ascii
+bk commit $Q -ybaseline
+bk clone $Q "$HERE/ascii" "$HERE/nomerge"
+bk flags ascii | grep -q NOMERGE || {
+	echo failed to add flag
+	bk flags ascii
+	exit 1
+}
+echo OK
+
+echo $N Try to automerge a file which has been marked no merge ......$NL
+bk edit $Q ascii
+mv ascii XXX
+sed s/file/FILE/ < XXX > ascii
+bk delta -ywhatever $Q ascii
+bk commit $Q -yconflict
+cd ../nomerge
+bk edit $Q ascii
+echo foobar >> ascii
+bk delta -ywhatever $Q ascii
+bk commit $Q -yconflict
+bk pull -R $Q
+(echo ''; echo q) | bk resolve > OUT 2>&1
+grep -q "binary conflict" OUT || {
+	echo failed to get to binary menu
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Use the remote version, verify that it worked ...............$NL
+(echo 'ur'; echo q) | bk resolve > OUT 2>&1
+test -d RESYNC && {
+	cat OUT
+	exit 1
+}
+bk get -q ascii
+bk cat "$HERE/ascii/ascii" | cmp - ascii || {
+	echo failed to use remote
+	bk cat "$HERE/ascii/ascii" | diff - ascii
+	exit 1
+}
+echo OK
+
+echo $N Make sure identical binaries automerge ......................$NL
+cd "$HERE"
+bk clone $Q proj automerge
+cd "$HERE/proj"
+bk edit $Q uuencode
+( cat "$BIN2"; cat "$BIN2"; cat "$BIN2") > uuencode
+bk delta $Q -yreplace uuencode
+bk commit $Q -yreplace
+cd "$HERE/automerge"
+bk edit $Q uuencode
+( cat "$BIN2"; cat "$BIN2"; cat "$BIN2") > uuencode
+cp uuencode "$HERE/cmp"
+bk delta $Q -yreplace uuencode
+bk commit $Q -yreplace
+bk pull $Q -R
+echo q | bk resolve -l -d -a > OUT 2>&1
+grep -q "Not automerging binary 'uuencode'" OUT && {
+	echo failed to automerge
+	cat OUT
+	exit 1
+}
+REV=`bk prs -hr+ -d:I: uuencode`
+test "X$REV" = X1.4 || {
+	echo failed to make merge delta
+	bk prs uuencode
+	exit 1
+}
+bk get $Q uuencode
+cmp -s uuencode "$HERE/cmp" || {
+	echo did not end up with the same file
+	cat OUT
+	exit 1
+}
+echo OK
+
+# This crashes revtool and X11 if you double click on the last rev
+# bk revtool uuencode

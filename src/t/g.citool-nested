@@ -1,0 +1,348 @@
+# Copyright 2010,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+OUT="$HERE/out"
+RC="`bk dotbk`/ci.rc"
+
+doFiles() {
+	for f in file1 file2 file3 file4 file5 ; do
+		echo "this is $f" > $f
+		bk ci $Q -i -y'new file' $f || exit 1
+	done
+	bk commit $Q -y'initial checkin' || exit 1
+}
+
+echo $N Create a nested repo.........................................$NL
+nested project deep
+cd "$HERE/project"
+doFiles
+cd "$HERE/project/gcc"
+doFiles
+cd "$HERE/project/gdb"
+doFiles
+cd "$HERE/project/gui/bin"
+doFiles
+cd "$HERE/project/gui/lib"
+doFiles
+cd "$HERE/project"
+bk commit $Q -y'commit components' || exit 1
+echo OK
+
+echo $N committing a single component ...............................$NL
+bk edit $Q gcc/file1
+echo "foo" >> gcc/file1
+OLD=`bk -R prs -hd:REV: -r+ ChangeSet`
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_selectFile "gcc/file1"
+	test_inputComment "gcc/file1 comment"
+	test_selectFile "ChangeSet"
+	test_inputComment "ChangeSet comment"
+	test_buttonPress "Commit"
+	test_buttonPress "Commit"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+NEW=`bk -R prs -hd:REV: -r+ ChangeSet`
+test "$NEW" = "$OLD" && {
+	echo failed
+	echo "No ChangeSet created"
+	exit 1
+}
+CMTS=`bk -R prs -hd:C: -r+ ChangeSet`
+test "$CMTS" = "ChangeSet comment" || {
+	echo failed
+	echo "unexpected comments: $CMTS"
+	exit 1
+}
+echo OK
+
+echo $N committing a component and product ..........................$NL
+bk edit $Q file1
+echo "foo" >> file1
+bk edit $Q gcc/file1
+echo "foo" >> gcc/file1
+OLD=`bk -R prs -hd:REV: -r+ ChangeSet`
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_selectFile "file1"
+	test_inputComment "file1 comment"
+
+	test_selectFile "gcc/file1"
+	test_inputComment "gcc/file1 comment"
+
+	test_selectFile "ChangeSet"
+	test_inputComment "ChangeSet comment"
+
+	test_buttonPress "Commit"
+	test_buttonPress "Commit"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+NEW=`bk -R prs -hd:REV: -r+ ChangeSet`
+test "$NEW" = "$OLD" && {
+	echo failed
+	echo "No ChangeSet created"
+	exit 1
+}
+CMTS=`bk -R prs -hd:C: -r+ ChangeSet`
+test "$CMTS" = "ChangeSet comment" || {
+	echo failed
+	echo "unexpected comments: $CMTS"
+	exit 1
+}
+echo OK
+
+echo $N committing some pending deltas ..............................$NL
+bk edit $Q file1
+echo "foo" >> file1
+bk ci $Q -y'comment' file1
+bk edit $Q gcc/file1
+echo "foo" >> gcc/file1
+bk ci $Q -y'comment' gcc/file1
+OLD=`bk -R prs -hd:REV: -r+ ChangeSet`
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_selectFile "ChangeSet"
+	test_inputComment "ChangeSet comment"
+
+	test_buttonPress "Commit"
+	test_buttonPress "Commit"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+NEW=`bk -R prs -hd:REV: -r+ ChangeSet`
+test "$NEW" = "$OLD" && {
+	echo failed
+	echo "No ChangeSet created"
+	exit 1
+}
+CMTS=`bk -R prs -hd:C: -r+ ChangeSet`
+test "$CMTS" = "ChangeSet comment" || {
+	echo failed
+	echo "unexpected comments: $CMTS"
+	exit 1
+}
+echo OK
+
+echo $N change in product but no components shows up ................$NL
+bk edit $Q file1
+echo "# gratuitous change" >> file1
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_buttonPress "Quit"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+bk unedit $Q file1
+echo OK
+
+echo $N change in a component creates a component cset file .........$NL
+bk edit $Q gcc/file1
+echo "foo" >> gcc/file1
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_fileIsInList "gcc ChangeSet"
+	test_buttonPress "Quit"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+echo OK
+
+echo $N change in a deep component creates a component cset file ....$NL
+bk edit $Q gui/lib/file1
+echo "foo" >> gui/lib/file1
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_fileIsInList "gui/lib ChangeSet"
+	test_buttonPress "Quit"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+bk unedit $Q gui/lib/file1
+echo OK
+
+echo $N component changeset contains file comments ..................$NL
+bk edit $Q gui/lib/file1
+echo "foo" >> gui/lib/file1
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_selectFile "gui/lib/file1"
+	test_inputComment "Comments for file1"
+	test_selectFile "gui/lib ChangeSet"
+	set text [test_getDiffs]
+	if {![string match "*Comments for file1*" $text]} {
+	    puts "gui/lib ChangeSet does not have file comments for file1"
+	    exit 1
+	}
+	test_buttonPress "Quit" then "Quit without*"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+bk unedit $Q gui/lib/file1
+echo OK
+
+echo $N product changeset contains file and component cset comments .$NL
+bk edit $Q gui/lib/file1
+echo "foo" >> gui/lib/file1
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_selectFile "gui/lib/file1"
+	test_inputComment "Comments for file1"
+	test_selectFile "gui/lib ChangeSet"
+	test_inputComment "Comment for gui/lib changeset"
+	test_selectFile "ChangeSet"
+	set text [test_getDiffs]
+	if {![string match "*Comments for file1*" $text]} {
+	    puts "gui/lib ChangeSet does not have file comments for file1"
+	    exit 1
+	}
+	if {![string match "*Comment for gui/lib changeset*" $text]} {
+	    puts "ChangeSet does not have gui/lib ChangeSet comments"
+	    exit 1
+	}
+	test_buttonPress "Quit" then "Quit without*"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+bk unedit $Q gui/lib/file1
+echo OK
+
+echo $N sfiles failing on a component gives sensible error...........$NL
+chmod 0 gui/lib
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_buttonPress "Quit" then "Quit without*"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT"; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+chmod 777 gui/lib
+echo OK
+
+echo $N component cset is marked done on startup if product is done .$NL
+bk edit $Q gcc/file1
+echo "foo" >> gcc/file1
+echo "comment for gcc/file1" | bk cfile save gcc/file1
+echo "comment for cset" | bk cfile save ChangeSet
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_fileHasIcon "gcc ChangeSet" done
+	test_fileHasComments "gcc ChangeSet" "comment for cset"
+	test_buttonPress "Quit" then "Quit without saving*"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+echo OK
+
+echo $N Test various paths for saving comments on quit ..............$NL
+cd "$HERE/project"
+# clean up from previous tests
+bk sfiles -x | xargs rm -f
+find . -name '*,c' | xargs rm -f
+
+bk edit $Q gcc/file1
+echo "FOO" >> gcc/file1
+bk edit $Q gdb/file1
+echo "FOO" >> gdb/file1
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_selectFile gcc/file1
+	test_inputComment "comment for gcc/file1"
+	test_selectFile gdb/file1
+	test_inputComment "comment for gdb/file1"
+	test_buttonPress "Quit" then "Quit but save*"
+EOF
+test $? -ne 0 -o -s "$OUT" && { echo failed; cat "$OUT"; exit 1; }
+
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_fileHasComments "gcc/file1" "comment for gcc/file1"
+	test_fileHasComments "gdb/file1" "comment for gdb/file1"
+	test_fileHasComments "gcc ChangeSet" ""
+	test_fileHasComments "gdb ChangeSet" ""
+	test_fileHasComments "ChangeSet" ""
+	test_buttonPress "Quit" then "Quit without saving*"
+EOF
+test $? -ne 0 -o -s "$OUT" && { echo failed; cat "$OUT"; exit 1; }
+
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_selectFile "gcc ChangeSet"
+	test_inputComment "comment for gcc ChangeSet"
+	test_selectFile "gdb ChangeSet"
+	test_inputComment "comment for gdb ChangeSet"
+	test_buttonPress "Quit" then "Quit but save*"
+EOF
+test $? -ne 0 -o -s "$OUT" && { echo failed; cat "$OUT"; exit 1; }
+
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_fileHasComments "gcc ChangeSet" "comment for gcc ChangeSet"
+	test_fileHasComments "gdb ChangeSet" "comment for gdb ChangeSet"
+	test_fileHasComments "ChangeSet" ""
+	test_buttonPress "Quit" then "Quit without saving*"
+EOF
+test $? -ne 0 -o -s "$OUT" && { echo failed; cat "$OUT"; exit 1; }
+echo OK
+
+echo $N Test toggling a component ChangeSet .........................$NL
+bk edit $Q gcc/file1
+echo "foo" >> gcc/file1
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_toggleFile "gcc ChangeSet"
+	test_fileHasIcon "gcc ChangeSet" excluded
+	test_buttonPress "Quit" then "Quit without saving*"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+echo OK
+
+echo $N Test discarding the last file removes a component cset ......$NL
+bk edit $Q gdb/file1
+echo "foo" >> gdb/file1
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_fileIsInList "gdb ChangeSet"
+	test_selectFile "gdb/file1"
+	test_buttonPress "Discard"
+	test_buttonPress "Discard"
+	test_fileIsNotInList "gdb ChangeSet"
+	test_buttonPress "Quit" then "Quit without saving*"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+echo OK
+
+echo $N Test rescan picks up new component changes ..................$NL
+bk edit $Q gcc/file1
+echo "foo" >> gcc/file1
+bk guitest citool > "$OUT" 2>&1 <<'EOF'
+	test_fileIsInList "gcc/file1"
+	test_fileIsNotInList "gdb/file1"
+
+	exec bk edit -q gdb/file1
+	set fp [open gdb/file1 a+]
+	puts $fp "FOO"
+	close $fp
+
+	test_buttonPress "Rescan"
+	test_fileIsInList "gdb/file1"
+
+	test_buttonPress "Quit" then "Quit without saving*"
+EOF
+err=$?
+test -s "$OUT" && { echo failed; cat "$OUT" ; exit 1 ; }
+test $err -eq 99 && { echo "failed (exit $err)" ; exit 1 ; }
+bk unedit $Q gcc/file1 gdb/file1
+echo OK

@@ -1,0 +1,31 @@
+.so ../bk-macros
+.TH "bk wrap" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME 
+bk wrap \- using \*[BK] wrappers
+.SH DESCRIPTION
+.LP
+For various reasons, you may wish to wrap a patch which is transmitted
+through email.  The typical reason is that the patch is going through
+some mailer which chops long lines or performs some other unwanted
+transformation on the data.  Wrapping is typically done via the 
+bk send interface with the \-w option.
+.LP
+The following two commands produce identical data:
+.DS
+$ ls -1 | bk uuwrap | bk unuuwrap
+$ ls -1
+.DE
+.LP
+The current set of wrappers are:
+.DS
+b64 - wrap data using base 64 encoding
+gzip_b64 - gzip the data and then base 64 encode the zipped data
+gzip_uu - gzip the data and then uuencode the zipped data
+uu - wrap the data using uuencode
+.DE
+.SH SEE ALSO
+.SA base64
+.SA send
+.SA receive
+.SH CATEGORY
+.B File

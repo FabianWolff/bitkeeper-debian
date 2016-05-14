@@ -1,0 +1,47 @@
+# Copyright 2005,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#
+
+echo $N Make sure we do not have duplicates in a bk edit ............$NL
+commercial project
+for i in ChangeLog FAQ INDEX Make_vms.com Makefile Makefile.in \
+	Makefile.riscos README adler32.c algorithm.txt compress.c \
+	configure crc32.c deflate.c deflate.h descrip.mms example.c \
+	gzio.c infblock.c infblock.h infcodes.c infcodes.h inffast.c \
+	inffast.h inffixed.h inflate.c inftrees.c inftrees.h \
+	infutil.c infutil.h maketree.c minigzip.c trees.c trees.h \
+	uncompr.c zconf.h zlib.3 zlib.h zlib.html zutil.c zutil.h
+do	echo $i > $i
+done
+bk extras | bk new $Q -
+bk clean
+bk edit 2>ERR
+grep -q 'exists, skipping it.' ERR && {
+	echo Failed to surpress duplicates in the directory listing
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Make sure a .DS_Store in .bk does not make bk assert.........$NL
+commercial proj
+bk clone $Q . ../proj-copy
+touch afile
+bk new $Q afile
+bk commit $Q -yafile
+cd ../proj-copy
+touch .bk/.DS_Store
+bk pull $Q || fail
+echo OK

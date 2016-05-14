@@ -1,0 +1,96 @@
+#!/bin/sh
+# Copyright 2007,2014-2016 BitMover, Inc
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test $# -eq 1 || {
+	echo "Usage: mkrelease <version-like-'bk-4.0.2'>"
+	exit 1
+}
+
+# ssh $ruser@$host:$hostdir
+ruser=bitkeeper-org
+host=webhost-int
+hostdir=www/downloads
+keysrc=/home/bk/internal/ssh-keys/downloads.key
+key=downloads.key.me
+cp "$keysrc" "$key" || { echo failed to cp $keysrc; exit 1; }
+chmod 600 "$key"
+trap "rm -f '$key'" 0 1 2 3 15
+
+ver=$1
+vernum=`echo $ver | sed 's/bk-//g'`
+S=/home/bk/images/${ver}
+
+test -d $S || {
+	echo "Source directory $S does not exist. Aborting"
+	exit 1
+}
+
+# setup upgrade information
+save=`pwd`
+cd $S
+$save/build_upgrade_index.pl $ver ${ver}-* || exit 1
+# Wayne's magic line to get windows to get 'bk upgrade' to work on windows
+echo "ForceType application/octet-stream" > .htaccess
+cd "$save"
+
+echo "Making download directory for $ver on $host"
+ssh -i $key $ruser@$host mkdir -p $hostdir/$vernum || {
+	echo failed making $host:$hostdir/$vernum
+	echo Go take a look and see if you need to clean up something
+	exit 1
+}
+echo "Mirroring $ver to $host"
+rsync -av -e "ssh -i $key" $S/. $ruser@$host:$hostdir/$vernum/. || {
+	echo failed installing $host:$hostdir/$vernum
+	echo Go take a look and possibly remove that directory.
+	exit 1
+}
+
+echo "Copying src to $host"
+make -s src-tar || {
+	echo make src-tar failed
+	exit 1
+}
+scp -i $key tmp/src/$ver.tar.gz $ruser@$host:$hostdir/$vernum/.
+
+echo "Queuing mail to be sent next week to announce release"
+cat <<EOF > announce
+at -f announce next week
+echo "Could someone verify that BitKeeper $ver really shipped and send
+an announcement to customers?
+
+Also post to users.bitkeeper.org
+
+And someday, go run a script that closes bugs fixed in this release.
+
+Thanks,
+
+$USER
+" | mail -s "BitKeeper $ver released... maybe." dev
+EOF
+at -f announce next week
+rm -f announce
+
+echo "Sending mail that all this has happened"
+cat <<EOF | mail -s "BitKeeper $ver published" dev
+Published bits for $ver in the download area, and
+queued an atjob to send mail in a week that if all is well,
+annouce the release.
+
+If this is not right, delete $host:$hostdir/$vernum
+And cancel my atjob queued on work.
+EOF
+
+echo Done

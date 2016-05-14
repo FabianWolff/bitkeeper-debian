@@ -1,0 +1,778 @@
+# Copyright 2000-2002,2004-2011,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Because we use tar xmf we don't check for timestamp errors here.
+unset _BK_DEVELOPER
+
+# old-style tags are only supported if they are older than 2010
+# we take a big hammer and force the beginning of all of these tests
+# to be in the past. When we are done creating old tags we move
+# to the present. (Note: we do end up with repos new new tags in the
+# present and old tags in the past.)
+BK_DATE_TIME_ZONE='2005-02-02 20:20:20-02'
+export BK_DATE_TIME_ZONE
+
+# Tests for tag propogation in new/old protocols.
+echo $N Create initial repository ...................................$NL
+fresh_commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+mkdir src
+cd src
+echo foo > 'F!O#O$ B%A^R&RR(R)RR'
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i 'F!O#O$ B%A^R&RR(R)RR' bar.c h.h
+if bk _test ! -f SCCS/s.'F!O#O$ B%A^R&RR(R)RR'; then echo failed to create history; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 15 ]; then echo wrong pending result $P; bk pending; exit 1; fi
+bk commit $S -yCset
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo failed to clear pending list; bk pending; exit 1; fi
+echo OK
+cd "$HERE"
+nested nested
+cd "$HERE/project"
+cores
+
+echo --- testing pre-BK-7.0 rules
+echo $N Tags may not start with a digit .............................$NL
+for i in 2 2foobar
+do	bk tag $Q $i 2>ERR && fail -f ERR
+	test "`cat ERR`" = "admin: $i: tags can't start with a digit." || fail -f ERR
+done
+echo OK
+
+echo $N Tags may not start with @ = - + or . ........................$NL
+for i in @ = - + .
+do
+	bk tag $Q -- $i 2>ERR && fail -f ERR
+	test "`cat ERR`" = "admin: $i: tags can't start with a '$i'." || fail -f ERR
+	bk tag $Q -- ${i}foo 2>ERR && fail -f ERR
+	test "`cat ERR`" = "admin: ${i}foo: tags can't start with a '$i'." || fail -f ERR
+done
+echo OK
+
+echo $N Tags may not contain .. ., ,. ,, ............................$NL
+for s in .. ., ,. ,,
+do
+	bk tag $Q foo${s}bar 2>ERR && fail -f
+	test "`cat ERR`" = "admin: tag foo${s}bar cannot contain '${s}'" || fail -f ERR
+done
+echo OK
+
+if [ "$PLATFORM" != "WIN32" ]
+then
+echo $N "Tags may not contain the control characters \001 | \\n or \\r .$NL"
+for i in '\001' '\n' '\r' '|'
+do
+	T=`printf "foo${i}bar"`
+	bk tag $Q -r+ "$T" 2>ERR && fail -f ERR "Tagging with $i worked"
+	test "`cat ERR`" = "admin: tag $T cannot contain \"^A,|\n\r\"" || fail -f ERR Wrong error for $i
+done
+echo OK
+fi
+
+echo --- testing BK-7.0 rules
+if [ "$PLATFORM" != "WIN32" -a "`uname -m`" != ppc ]   # msys/ppc shell brain-damage, just skip hard stuff
+then
+echo $N Test tags for invalid characters.............................$NL
+for i in '?' '*' ' ' '~' '^' ':' ';' "'" '"' '(' ')' '[' ']' '{' '}' '/' '!' '$' '&' '\177' '%%' '`'
+do
+	T=`printf "foo${i}bar"`
+	C=`printf "${i}"`
+	bk tag $Q -r+ "$T" 2>ERR && fail -f ERR "Tagging with $i worked"
+	test "`cat ERR`" = "admin: tag $T cannot contain '$C'" || fail -f ERR
+	test "$PLATFORM" = "WIN32" && continue   # /foo becomes C:/foo
+	T=`printf "${i}"`
+	bk tag $Q -r+ "$T" 2>ERR && fail -f ERR "Tagging with $i worked"
+	test "`cat ERR`" = "admin: tag $T cannot contain '$T'" || fail -f ERR
+done
+echo OK
+
+echo $N Tags may not contain characters below \\040...................$NL
+# need to skip newline(10)
+perl -e 'foreach $i (1..32) { next if $i == 10; printf("%d foo%cbar\n", $i, $i); }' |
+while read i tag
+do	bk tag $Q -r+ "$tag" 2>ERR && fail -f OUT "Tagging with ($i) worked: $tag"
+	grep -q 'admin: tag.*cannot contain' ERR || fail -f ERR
+done
+echo OK
+fi
+
+echo $N Tags may not contain a backslash.............................$NL
+T="foo\\bar"
+bk tag $Q -r+ "$T" 2>ERR && fail -f ERR "Tagging with $T worked"
+test "`cat ERR`" = "admin: tag $T cannot contain '\\'" || fail -f ERR
+echo OK
+
+
+echo $N Add old style tags ..........................................$NL
+cd "$HERE"
+cp -rp project tags
+cd tags
+_BK_NO_TAG_GRAPH=YES bk tag $Q OLD
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS l' && {
+	echo added a leaf
+	bk _scat SCCS/s.ChangeSet
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS[0-9]' && {
+	echo added a tag graph node
+	bk _scat SCCS/s.ChangeSet
+	exit 1
+}
+bk admin -hhhq || fail
+echo OK
+
+echo $N Add new style tags ..........................................$NL
+bk tag $Q NEW
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS0' || {
+	echo did not add tag pointing to the root node
+	bk _scat SCCS/s.ChangeSet | egrep '^.cS|^.d '
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS0 l' || {
+	echo did not add leaf flag
+	bk _scat SCCS/s.ChangeSet | egrep '^.cS|^.d '
+	exit 1
+}
+bk tag $Q 'NEW=TAG'
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS0' || {
+	echo lost tag pointing to the root node
+	bk _scat SCCS/s.ChangeSet | egrep '^.cS|^.d '
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS0 l' && {
+	echo Root tag is still marked as leaf
+	bk _scat SCCS/s.ChangeSet | egrep '^.cS|^.d '
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS5 l' || {
+	echo Did not add tag pointing to previous tag
+	bk _scat SCCS/s.ChangeSet | egrep '^.cS|^.d '
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet > SAVE
+bk admin -z ChangeSet
+bk _scat SCCS/s.ChangeSet > SAVE2
+cmp -s SAVE2 SAVE || {
+	echo admin -z stomped on tags
+	diff SAVE2 SAVE
+	exit 1
+}
+rm SAVE2
+bk admin -hhhq || fail
+echo OK
+
+echo $N Add same tag to a new cset as part of the cset ..............$NL
+ls > RST
+bk new $Q RST
+bk commit $Q --tag=NEW -yNEW2 || fail
+bk admin -hhhq || fail
+echo OK
+
+echo $N Clone repository ............................................$NL
+cd "$HERE"
+bk clone $Q "$HERE/project" "$HERE/copy" || { echo failed; exit 1; }
+bk clone $Q "$HERE/project" "$HERE/copy2" || { echo failed; exit 1; }
+bk clone $Q "$HERE/project" "$HERE/copy3" || { echo failed; exit 1; }
+bk _test -f copy/src/SCCS/s.'F!O#O$ B%A^R&RR(R)RR' || { echo failed; exit 1; }
+[ -f copy/BitKeeper/log/parent ] || { echo no parent; exit 1; }
+parent=`cat copy/BitKeeper/log/parent`
+host=`bk gethost`
+[ "x$parent" = xfile://"$HERE/project" ] || \
+					{ echo wrong parent $parent; exit 1; }
+cd "$HERE/project"; checkLocks; cd "$HERE/copy"; checkLocks
+echo OK
+
+echo $N Create a changeset in compat mode with a tag ................$NL
+cd "$HERE/project/src"
+bk get $Q -e 'F!O#O$ B%A^R&RR(R)RR'
+echo delta two >> 'F!O#O$ B%A^R&RR(R)RR'
+bk delta $Q -fywhatever 'F!O#O$ B%A^R&RR(R)RR'
+_BK_NO_TAG_GRAPH=YES bk commit $Q -yopull_cset --tag='NOT-IN-TAG-GRAPH'
+unset BK_DATE_TIME_ZONE
+cd ..
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS[0-9]' && {
+	echo added a tag graph node
+	bk _scat SCCS/s.ChangeSet
+	exit 1
+}
+bk admin -hhhq || fail
+bk admin -z
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS[0-9]' && {
+	echo added a tag graph node after the admin -z
+	bk _scat SCCS/s.ChangeSet
+	exit 1
+}
+echo OK
+
+echo $N Pull a new changeset with an old tag using pull .............$NL
+cd "$HERE/copy2"
+bk pull $Q || { echo failed; exit 1; }
+revs=`bk prs -hd':I:\n' src/'F!O#O$ B%A^R&RR(R)RR' | wc -l`
+[ $revs -eq 2 ] || { echo failed; exit 1; }
+bk _scat SCCS/s.ChangeSet | grep -q 'NOT-IN-TAG' || { echo did not propogate tag; exit 1; }
+bk admin -hhhq || fail
+echo OK
+
+echo $N Resolve a tag conflict, pick remote, see if it sticks .......$NL
+cd "$HERE"
+rm -rf project copy
+commercial project
+echo hi > foo
+bk new $Q foo
+bk commit -yDsub1 $Q
+cd "$HERE"
+bk clone $Q project copy
+cd "$HERE/project"
+echo hi > bar
+bk new $Q bar
+bk commit -yDsub2 --tag=TAG $Q
+REMOTE=`bk prs -hrTAG -d:KEY: ChangeSet`
+cd "$HERE/copy"
+echo hi > snafu
+bk new $Q snafu
+bk commit -yDsub3 --tag=TAG $Q
+LOCAL=`bk prs -hrTAG -d:KEY: ChangeSet`
+bk _cp SCCS/s.ChangeSet CSET
+bk pull $Q -R
+(
+echo ""
+echo "x"
+echo r
+) | bk resolve -l $Q 2>OUT
+test -d RESYNC && {
+	echo resolve failed
+	cat OUT
+	bk _scat RESYNC/SCCS/s.ChangeSet | egrep '^.cS|^.d '
+	exit 1
+}
+KEY=`bk prs -hrTAG -d:KEY: ChangeSet`
+if [ "$KEY" = "$LOCAL" ]
+then	echo Whoops, used local instead of remote
+	echo "REMOTE:	$REMOTE"
+	echo "LOCAL:	$LOCAL"
+	bk prs -d':I: :KEY:\n' ChangeSet
+	cat OUT
+	exit 1
+fi
+if [ "$KEY" != "$REMOTE" ]
+then	echo Whoops, it is not remote and is not local
+	echo "REMOTE:	$REMOTE"
+	echo "LOCAL:	$LOCAL"
+	echo "KEY:	$KEY"
+	bk prs -d':I: :KEY:\n' ChangeSet
+	exit 1
+fi
+echo OK
+
+echo $N Undo after the unchoosen rev, merge should be gone ..........$NL
+bk undo $Q -fa1.2.1.1
+KEY=`bk prs -hrTAG -d:KEY: ChangeSet`
+if [ "$KEY" != "$LOCAL" ]
+then	echo Whoops, key is not restored
+	echo "LOCAL:	$LOCAL"
+	bk prs -d':I: :KEY:\n' ChangeSet
+	exit 1
+fi
+echo OK
+
+echo $N Pull again, choose local, see if it sticks ..................$NL
+bk pull $Q -R
+bk resolve $Q 2>OUT 1>&2 <<EOF
+l
+EOF
+KEY=`bk prs -hrTAG -d:KEY: ChangeSet`
+if [ "$KEY" = "$REMOTE" ]
+then	echo Whoops, used remote instead of local
+	echo "REMOTE:	$REMOTE"
+	echo "LOCAL:	$LOCAL"
+	bk prs -d':I: :KEY:\n' ChangeSet
+	exit 1
+fi
+if [ "$KEY" != "$LOCAL" ]
+then	echo Whoops, it is not local and is not remote
+	echo "REMOTE:	$REMOTE"
+	echo "LOCAL:	$LOCAL"
+	echo "KEY:	$KEY"
+	bk prs -d':I: :KEY:\n' ChangeSet
+	exit 1
+fi
+echo OK
+
+# We depend on tags added after the cset is created to have a 0 cksum so
+# we can distinguish them from a cset.
+# XXX - what if the cset is legitmately == 0?  I suppose we get the count
+# wrong at that point.
+echo $N Make sure that tag chksum == 0 ..............................$NL
+cd "$HERE/project"
+bk tag $Q project
+CHKSUM=`bk prs -nhad'$if(:DT:=T){:DSUM:}' ChangeSet`
+if [ "$CHKSUM" -ne 0 ]
+then	echo failed, CHKSUM = $CHKSUM
+	bk prs -ad':I: :DT: :DSUM: :KEY:\n' ChangeSet
+	exit 1
+fi
+echo OK
+
+echo $N Create a tag only conflict, push, check error message .......$NL
+cd "$HERE/copy"
+bk tag $Q copy
+bk push >OUT 2>&1
+if [ $? -eq 0 ]
+then	echo failed to exit non zero;
+	cat OUT
+	exit 1
+fi
+grep -q 'The repository you are pushing to is 1 csets/tags ahead' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Test propogation of the first tag ...........................$NL
+cd "$HERE"
+rm -rf tagpush tagchild
+commercial tagpush
+ls > file
+bk new $Q file
+bk commit $Q -ywhatever
+bk clone $Q "$HERE/tagpush" "$HERE/tagchild"
+bk tag $Q TAG
+cd "$HERE/tagchild"
+bk pull $Q || {
+	echo pull failed
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q 'd R 1.2 ' || {
+	echo failed to send removed delta
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q 'STAG' || {
+	echo failed to send tag
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q 'S0 l' || {
+	echo failed to mark tag in tag graph correctly
+	exit 1
+}
+echo OK
+
+echo $N Test propogation of a tag added with a commit ...............$NL
+cd "$HERE/tagpush"
+bk edit $Q file
+bk delta -fywww $Q file
+bk commit $Q -ywhatever --tag=TAG_NO_2
+cd "$HERE/tagchild"
+bk pull $Q || {
+	echo pull failed
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q 'STAG_NO_2' || {
+	echo failed to send tag
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q 'S4 l' || {
+	echo failed to mark leaf tag in tag graph correctly
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q 'S0$' || {
+	echo failed to mark root tag in tag graph correctly
+	exit 1
+}
+echo OK
+
+echo $N Make sure we pick up tags from SCCS/t.ChangeSet .............$NL
+cd "$HERE/tagpush"
+bk edit $Q file
+bk delta -fywww $Q file
+echo 't.tag' > t.ChangeSet
+echo 't.tag2' >> t.ChangeSet
+echo 'I am a tag with spaces' >> t.ChangeSet
+bk _mv t.ChangeSet SCCS/t.ChangeSet
+bk commit $Q -ywhatever 
+bk _test -f SCCS/t.ChangeSet && {
+	echo failed to remove t.ChangeSet after commit
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q '^.cSt.tag' || {
+	echo failed to add tag to ChangeSet file
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q '^.cSt.tag2' || {
+	echo failed to add tag2 to ChangeSet file
+	exit 1
+}
+bk _scat SCCS/s.ChangeSet | grep -q '^.cSI am a tag with spaces' || {
+	echo failed to add I am a tag with spaces to ChangeSet file
+	exit 1
+}
+echo OK
+
+# Test the case where the same tag is on multiple entries on each side.
+# It should find the last one on each side.
+echo $N Test propogation of a tag added with a commit, pick remote ..$NL
+cd "$HERE/tagpush"
+bk edit $Q file
+bk delta -fywww $Q file
+bk commit $Q -ywhatever --tag=same_tag
+cd "$HERE/tagchild"
+bk pull $Q || {
+	echo pull failed
+	exit 1
+}
+# Now alternate between sides
+for  i in 1 2 3
+do	for dir in tagpush tagchild
+	do	cd "$HERE"/$dir
+		bk edit $Q file
+		bk delta -fywww $Q file
+		bk commit $Q -ywhatever --tag=same_tag
+	done
+done
+cd "$HERE"
+# Running over NFS gets this whine: 
+# tar: tagchild/BitKeeper/etc/csets-in: file changed as we read it
+tar cf tagchild.TAR tagchild 2>/dev/null
+cd "$HERE/tagchild"
+#  ( echo ""
+#   echo x
+#   echo p
+#   echo t
+#   echo q
+#   ) | bk pull
+echo r | bk pull $Q 2>/dev/null
+test -d RESYNC && {
+	echo failed to resolve
+	exit 1
+}
+test X`bk prs -hr1.5.1.3 -nd:TAG: ChangeSet` = Xsame_tag || {
+	echo Failed to add tag to tip of branch, 1.5.1.3
+	bk prs ChangeSet
+	exit 1
+}
+echo OK
+#bk revtool
+
+echo $N Test propogation of a tag added with a commit, pick merge ...$NL
+cd "$HERE"
+rm -rf tagchild
+tar xmf tagchild.TAR
+cd "$HERE/tagchild"
+echo m | bk pull $Q 2>/dev/null
+test -d RESYNC && {
+	echo failed to resolve
+	exit 1
+}
+test X`bk prs -hr+ -nd:TAG: ChangeSet` = Xsame_tag || {
+	echo Failed to add tag to merge
+	bk prs ChangeSet
+	exit 1
+}
+echo OK
+#bk revtool
+
+echo $N Tag conflict only, try to choose merge, should fail .........$NL
+cd "$HERE"
+cd "$HERE/tagpush"
+bk tag $Q -r1.3 old_tag
+cd "$HERE/tagchild"
+bk tag $Q -r1.4 old_tag
+( echo ""
+  echo x
+  echo m
+  echo q
+) | bk pull $Q 2>OUT 
+test -d RESYNC || {
+	echo should have failed to resolve
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Choose local, should work fine. .............................$NL
+( echo ""
+  echo x
+  echo l
+  echo q
+) | bk resolve $Q 2>OUT 
+test -d RESYNC && {
+	echo failed to resolve
+	cat OUT
+	exit 1
+}
+echo OK
+
+# These are white box tests, designed to tickle an ex-bug (L1 failed)
+echo $N Merge tag where history contains same name on L2 branch .....$NL
+cd "$HERE"
+bk clone $Q project mergemain
+cd mergemain
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q --tag=foo -yfoo
+cd "$HERE"
+bk clone $Q mergemain mergebranch
+cd mergemain
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q --tag=bar -yfoo
+cd "$HERE/mergebranch"
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q --tag=foo -yfoo
+bk pull $Q "$HERE/mergemain"
+echo OK
+
+echo $N Merge tag where history contains same name on L1 branch .....$NL
+cd "$HERE/mergemain"
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q --tag=baz -yfoo
+echo q | bk pull $Q "$HERE/mergebranch" > OUT 2>&1 || {
+	echo Failed
+	exit 1
+}
+echo OK
+
+# Create a repository
+# clone it
+# tag it
+# opush the tag
+
+#echo $N Create the same tag in a new place ..........................$NL
+#cd "$HERE/copy/src"
+#bk get $Q -e 'F!O#O$ B%A^R&RR(R)RR'
+#echo delta two >> 'F!O#O$ B%A^R&RR(R)RR'
+#bk delta $Q -yopush_cset 'F!O#O$ B%A^R&RR(R)RR'
+#bk commit $Q -yopush_cset --tag=TAG2
+#echo OK
+
+test -x /usr/bin/ruby && {
+echo $N Test ruby script to archive tagged csets ....................$NL
+cd "$HERE"
+bk clone $Q -r1.2 project tagexport || fail
+mkdir tagexport/BitKeeper/triggers
+cat > tagexport/BitKeeper/triggers/post-incoming.release <<'EOF'
+#!/usr/bin/ruby -w
+
+exit 0 if ENV['BK_EVENT'] != "incoming push"
+exit 0 if ENV['BK_STATUS'] != "OK"
+
+tags = {}
+IO.popen("bk changes -ad'$if(:TAG:){$each(:TAG:){(:TAG:)\\n}}' - " +
+	 "< \"#{ENV['BK_CSETLIST']}\"") {|f|
+	f.each {|tag| tags[tag.chomp] = 1 }
+}
+exit 0 if tags.empty?
+
+RELEASEDIR="../release"
+
+tags.each_key {|tag|
+	puts "Making release archive for #{tag}"
+	base = File.expand_path("#{RELEASEDIR}/prog-#{tag}")
+	file = base + ".tar.gz"
+	File.unlink(file) if File.exists? file
+
+	system("bk export -r#{tag} -tplain . \"#{base}\"") or raise
+	system("tar -C\"#{base}\" -czf \"#{file}\" .") or raise
+	system("rm -rf \"#{base}\"") or raise
+}
+exit 0
+EOF
+chmod +x tagexport/BitKeeper/triggers/post-incoming.release || fail
+cd project
+echo "I love ruby" > language
+bk new $Q language
+bk commit $Q -yruby || fail
+bk tag $Q ruby
+mkdir ../release
+bk push $Q ../tagexport 2> OUT || fail
+test -f ../release/prog-ruby.tar.gz || fail
+bk tag $Q newstuff
+bk push $Q ../tagexport 2> OUT || fail
+test -f ../release/prog-newstuff.tar.gz || fail
+echo OK
+}
+
+echo $N Make sure we check for illegal char in tag ..................$NL
+cd "$HERE"
+commercial proj
+touch foo
+bk new $Q foo
+bk commit $Q --tag=.1 -yfoo  2>out && fail
+grep -q "commit: .1: tags can't start with a '.'" out || {
+	echo failed; exit 1;
+}
+echo OK
+
+echo $N Create tag graph with two tips ..............................$NL
+commercial twotipbase
+cd ..
+bk clone $Q twotipbase twotip
+cd twotipbase
+touch foo
+bk new $Q foo
+bk commit $Q -yfoo
+bk tag $Q FOO
+bk tag $Q -r1.1 FOO
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q -yfoo
+bk tag $Q FOO
+cd ../twotip
+bk tag $Q -r1.1 BAR
+bk pull $Q
+bk undo $Q -fr+
+echo OK
+
+# flow right into ...
+echo $N Create tag graph with missing node ..........................$NL
+# This scenario is a bug hit by Phil Marden
+bk undo $Q -fr+ 2>ERR || {
+	echo Failed
+	cat ERR
+	exit 1
+}
+echo OK
+
+echo $N Create tag graph with multiple tips .........................$NL
+commercial tipbase
+cd ..
+bk clone $Q tipbase tips || fail
+bk clone $Q tipbase tipsave || fail
+cd tipbase
+touch foo
+bk new $Q foo
+bk commit $Q -yfoo || fail
+cd ..
+for d in 1 2; do bk clone $Q tipbase tip$d || exit 1; done
+cd tipbase
+bk tag $Q FOO
+bk tag $Q -r1.1 FOO
+for d in 1 2; do
+	cd ../tip$d
+	bk tag $Q -r1.1 FOO$d
+	bk tag $Q FOO$d
+done
+cd ../tipbase
+for d in 1 2; do bk pull $Q ../tip$d || exit 1; done
+cd ../tips
+bk tag $Q -r1.1 BAR
+bk pull $Q || fail
+bk undo $Q -fr+ || fail
+bk _scat SCCS/s.ChangeSet | grep -q '^.cS0 l' || {
+	echo 'Failed'
+	echo In problem setup, expected tag leaf to have parent 0
+	exit 1
+}
+ROOTS=`bk _scat SCCS/s.ChangeSet | grep '^.cS0' | wc -l`
+MEMBERS=`bk _scat SCCS/s.ChangeSet | grep '^.cS[0-9]' | wc -l`
+test "$ROOTS" -eq 3 -a "$ROOTS" = "$MEMBERS" || {
+	echo 'Failed'
+	echo In problem setup, expected 4 tags to have parent 0
+	exit 1
+}
+echo OK
+
+# flow right into ...
+echo $N Fix tag graph by tagmerge -- in a locked repo ...............$NL
+LOCKURL=`bk lock -rt`
+trap "bk _kill $LOCKURL" 0
+bk tagmerge > OUT 2> ERR && fail tagmerge should block on lock
+grep -q "Entire repository is locked by" ERR || fail -f ERR
+trap '' 0
+bk _kill $LOCKURL
+echo OK
+
+echo $N Fix tag graph by tagmerge ...................................$NL
+PREFIX=`bk _scat SCCS/s.ChangeSet | grep '^.cS[0-9][0-9]* [0-9][0-9]*' | wc -l`
+bk tagmerge > OUT 2> ERR || fail
+POSTFIX=`bk _scat SCCS/s.ChangeSet | grep '^.cS[0-9][0-9]* [0-9][0-9]*' | wc -l`
+test "$PREFIX" -eq 0 -a "$POSTFIX" -eq 2 || {
+	echo 'Failed'
+	echo In fixing graph, expected 3 merge node in tag graph
+	echo "PREFIX $PREFIX POSTFIX $POSTFIX"
+	echo ERR
+	cat ERR
+	echo OUT
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Test bk tags is shorthand for bk changes -t .................$NL
+bk changes -t > WANT
+bk tags > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test bk tags works remotely .................................$NL
+REPO=`bk pwd`
+cd ..
+bk tags $Q "$REPO" > GOT
+cd "$REPO"
+cmpfiles WANT ../GOT
+echo OK
+
+echo $N Check that bk tag in component fails ........................$NL
+cd "$HERE/nested/gcc"
+bk tag bad 2>ERR && fail "should have failed"
+bk grep -q "tag: component tags not yet supported" ERR || fail -f ERR
+echo OK
+
+echo $N Check that bk tag -q in component still errs ................$NL
+bk tag -q bad 2>ERR && fail "should have failed"
+bk grep -q "tag: component tags not yet supported" ERR || fail -f ERR
+echo OK
+
+echo $N Check that bk tag in product succeeds .......................$NL
+cd "$HERE/nested"
+bk tag $Q ok || fail
+echo OK
+
+echo $N See that mkgraph does not strip tag with no graph ...........$NL
+cd "$HERE"
+commercial not-gone
+bk edit $Q BitKeeper/etc/config
+bk tag $Q foo
+# strip tag graph data
+bk _scat SCCS/s.ChangeSet | perl -ne 'print unless /^\001cS\d/' | bk undos > new
+bk _cp new SCCS/s.ChangeSet
+bk admin -z ChangeSet
+bk changes -rfoo -ndx > GOT || fail
+echo x > WANT
+checkfiles WANT GOT
+echo OK
+
+echo $N Poke at slib.c:walkList range parsing .......................$NL
+cd "$HERE"
+commercial walklist
+touch foo-bar
+bk new $Q foo-bar
+bk commit $Q -f
+bk tag $Q FOOBAR || fail
+bk tag $Q FOO-BAR || fail
+# no '-' in tag, passes
+bk edit $Q -xFOOBAR foo-bar || fail FOOBAR
+bk unedit $Q foo-bar
+# '-' in tag, fails in walkList
+bk edit -q -xFOO-BAR foo-bar 2> ERR && fail -f ERR FOO-BAR passed, fix test
+grep -q 'rev in include/exclude list for SCCS/s.foo-bar' ERR || fail -f ERR
+echo OK

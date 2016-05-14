@@ -1,0 +1,190 @@
+# Copyright 2002,2004-2011,2013-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+trap 'test -n "$PORT" && bk _kill bk://localhost:$PORT' 0
+cd "$HERE"
+bk bkd -dq -aPORT -ikill > "$HERE/BKD" 2>&1 || fail
+PORT=`cat PORT`
+
+echo $N Make sure we can restore an identical ChangeSet file ........$NL
+commercial repair1
+for i in foo bar blech whatsit
+do	echo $i > $i
+	bk new $Q $i
+done
+bk commit $Q -ycomment || fail
+bk clone $Q "$HERE/repair1" "$HERE/repair2" || fail
+cd "$HERE"/repair2
+bk _rm SCCS/s.ChangeSet
+bk _repair > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+bk -r check -ac || fail
+bk changes -r`head -1 BitKeeper/log/TIP` > /dev/null || fail
+echo OK
+
+echo $N Make sure we can restore an identical file ..................$NL
+bk _rm SCCS/s.foo
+bk _repair > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+bk -r check -ac || fail
+bk changes -r`head -1 BitKeeper/log/TIP` > /dev/null || fail
+echo OK
+
+echo $N Make sure we can restore a ChangeSet file which is ahead ....$NL
+cd "$HERE/repair1"
+for i in foo bar blech whatsit
+do	bk edit $Q $i
+	echo $i >> $i
+	bk delta -ywhatever $Q $i
+done
+bk commit $Q -ycomment || fail
+cd "$HERE/repair2"
+bk _rm SCCS/s.ChangeSet
+bk _repair > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+bk -r check -ac || fail
+bk changes -r`head -1 BitKeeper/log/TIP` > /dev/null || fail
+echo OK
+
+echo $N Make sure we can restore a file which is ahead...............$NL
+bk _rm SCCS/s.foo
+bk _repair > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+bk -r check -ac || fail
+bk changes -r`head -1 BitKeeper/log/TIP` > /dev/null || fail
+echo OK
+
+echo $N Make sure we can restore multiple files which are ahead .....$NL
+bk _rm SCCS/s.foo SCCS/s.bar SCCS/s.blech SCCS/s.whatsit
+bk _repair > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	exit 1
+}
+bk -r check -ac || fail
+bk changes -r`head -1 BitKeeper/log/TIP` > /dev/null || fail
+echo OK
+
+echo $N Sane error message if the parent file is behind..............$NL
+for i in foo bar blech whatsit
+do	bk edit $Q $i
+	echo $i >> $i
+	bk delta -ywhatever $Q $i
+done
+bk commit $Q -yahead || fail
+bk _mv SCCS/s.foo save.foo
+bk _repair > OUT 2>&1 && fail -f OUT should fail
+grep -q 'Missing delta (bk help chk2) in BitKeeper/repair/foo' OUT || fail -f OUT
+test -d BitKeeper/repair && {
+	echo failed to clean up repair directory
+	exit 1
+}
+bk _mv save.foo SCCS/s.foo 
+bk -r check -ac || fail
+bk changes -r`head -1 BitKeeper/log/TIP` > /dev/null || fail
+echo OK
+
+echo $N Sane error message if the parent ChangeSet is behind ........$NL
+bk clone $Q "$HERE/repair2" "$HERE/repair3" || fail
+bk _rm SCCS/s.ChangeSet
+bk _repair > OUT 2>&1 && {
+	echo failed
+	cat OUT
+	exit 1
+}
+grep -q 'Your repository tip was not found in any of the specified ' OUT || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Sane error message if the remote ChangeSet is behind ........$NL
+bk _repair -@bk://localhost:$PORT/repair1 > OUT 2>&1 && {
+	echo failed
+	cat OUT
+	exit 1
+}
+grep -q 'Your repository tip was not found in any of the specified ' OUT || {
+	echo failed
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Force fetch of remote ChangeSet even if behind ..............$NL
+bk _repair --use-older-changeset -@bk://localhost:$PORT/repair1 > OUT 2>&1 && \
+    fail -f OUT
+grep -q 'The repair was NOT complete.' OUT || fail -f OUT wrong error
+bk _test -w SCCS/1.ChangeSet || fail should be writable
+echo OK
+
+echo $N Make sure we can repair with a different parent .............$NL
+bk _rm SCCS/s.ChangeSet # remove the forced changeset from test above
+bk _repair -@"$HERE"/repair3 > OUT 2>&1 || {
+	echo failed
+	cat OUT
+	bk changes -r+ "$HERE"/repair3 
+	exit 1
+}
+bk -r check -ac || fail
+bk changes -r`head -1 BitKeeper/log/TIP` > /dev/null || fail
+echo OK
+
+echo $N Create initial repository for awc gone test .................$NL
+cd "$HERE"
+commercial project
+bk admin -Z
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N "Try to update a deleted (i.e gone) file" .....................$NL
+mkdir src
+cd src
+echo foo > foo.c
+echo bar > bar.c
+echo h > h.h
+bk ci $Q -i foo.c bar.c h.h
+bk commit $Q -ycset1
+bk clone $Q "$HERE/project" "$HERE/copy"
+bk _rm -f foo.c SCCS/s.foo.c bar.c SCCS/s.bar.c
+bk -r check -ag | bk gone -q -
+bk commit $Q -yfoo_gone
+cd "$HERE/copy/src"
+bk mv foo.c foo2.c
+bk edit $Q foo2.c
+echo "new stuff" > foo2.c
+bk delta $Q -ynew_stuff foo2.c
+bk commit $Q -y"rename+new_stuff" foo2.c
+cd "$HERE/project/src"
+bk pull "$HERE/copy"  > out 2>&1
+grep -q "cannot accept updates" out || { echo failed; exit 1; }
+echo OK
+

@@ -1,0 +1,132 @@
+# Copyright 2001,2004-2007 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+test -d "$HERE/home" || mkdir "$HERE/home"
+export BK_TEST_HOME="$HERE/home"
+OUT="$HERE/out"
+RC="`bk dotbk`/rename.rc"
+
+echo $N Create some data ............................................$NL
+commercial project
+cd "$HERE/project/BitKeeper/etc"
+mkdir "$HERE/project/src"
+cd "$HERE/project/src"
+cat > foo1 <<EOF
+Test File %W%
+stuff
+stuff
+stuff
+stuff
+stuff
+EOF
+cp foo1 foo2
+cp foo1 foo3
+bk ci $Q -i foo1 foo2 foo3 || exit 1
+bk commit $Q -y"test of renametool"
+DIFF="$HERE/export".diff.$$
+P1="$HERE/project"
+P2="$HERE/project2"
+cd "$HERE"
+bk clone $Q "$P1" "$P2"
+cd "$P2/src"
+bk mv foo1 bar1
+bk commit $Q -y"test of renametool2"
+cd "$P1"
+bk -r edit > /dev/null 2>&1
+cd "$P2"
+bk -r edit > /dev/null 2>&1
+cd "$HERE"
+bk treediff project project2 > "$DIFF"
+cd "$P1"
+bk -r clean > /dev/null 2>&1
+cd "$P2"
+bk -r clean > /dev/null 2>&1
+echo OK
+
+echo $N Simple start up and exit.....................................$NL
+cd "$P1"
+bk get $Q src/foo1
+bk get $Q src/foo2
+# renametool reads its list of files from stdin, so we need to specify
+# our test script as a file
+cat > test_script <<'EOF'
+test_buttonPress Quit
+test_die 99
+EOF
+echo "src/foo1
+
+src/foo2" | bk guitest --script test_script renametool >"$OUT" 2>&1
+err=$?
+if [ $err -ne 0 ] ; then echo "failed" ; exit 1 ; fi
+echo OK
+
+echo $N Create dotbk/rename.rc ......................................$NL
+test -f "$RC" && rm -f "$RC"
+# renametool reads its list of files from stdin, so we need to specify
+# our test script as a file
+cat > test_script <<'EOF'
+test_buttonPress Quit
+test_die 99
+EOF
+echo "src/foo1
+
+src/foo2" | bk guitest --script test_script renametool >"$OUT" 2>&1
+err=$?
+if [ $err -ne 0 ] ; then echo "failed" ; exit 1 ; fi
+test -f "$RC" || { echo "failed"; exit 1; }
+echo OK
+
+echo $N fix for incr --1 \(More conflicts than will fit in listbox\)...$NL
+# this test assumes that gc(rename.listHeight) is 8; it creates 9
+# name conflicts which used to cause an error 
+cd "$P1"
+bk get $Q src/foo1
+bk get $Q src/foo2
+bk get $Q src/foo3
+cp src/foo3 src/foo4
+cp src/foo3 src/foo5
+cp src/foo3 src/foo6
+cp src/foo3 src/foo7
+cp src/foo3 src/foo8
+cp src/foo3 src/foo9
+mkdir src2
+cp src/foo* src2
+# renametool reads its list of files from stdin, so we need to specify
+# our test script as a file
+cat > test_script <<'EOF'
+test_buttonPress Quit
+test_die 99
+EOF
+echo "src/foo1
+src/foo2
+src/foo3
+src/foo4
+src/foo5
+src/foo6
+src/foo7
+src/foo8
+src/foo9
+
+src2/foo1
+src2/foo2
+src2/foo3
+src2/foo4
+src2/foo5
+src2/foo6
+src2/foo7
+src2/foo8
+src2/foo9" | bk guitest --script test_script renametool >"$OUT" 2>&1
+err=$?
+if [ $err -ne 0 ] ; then echo "failed" ; cat "$OUT" ; exit 1 ; fi
+echo OK

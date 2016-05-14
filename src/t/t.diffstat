@@ -1,0 +1,58 @@
+# Copyright 2012-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Test diffstat paths in a nested component....................$NL
+nested prod
+for f in afile gcc/afile gdb/afile
+do
+	touch $f
+	bk new $Q $f
+	bk edit $Q $f
+	echo "foo" > $f
+done
+bk -Uc diffs --stats-only >GOT
+cat <<EOF >WANT
+gcc/afile | 1 +
+gdb/afile | 1 +
+afile     | 1 +
+3 files changed, 3 insertions(+)
+
+EOF
+cmpfiles WANT GOT
+bk ci $Q -yfiles afile gcc/afile gdb/afile
+bk commit $Q -yfiles
+echo OK
+
+echo $N Test diffstat in a port......................................$NL
+cd "$HERE/prod"
+bk detach $Q gcc "$HERE/gcc" || fail
+cd "$HERE/gcc"
+bk edit $Q afile
+echo stuff >> afile
+bk ci -y. $Q afile
+bk commit $Q -yafile
+touch bfile
+bk new $Q bfile
+bk commit $Q -ybfile
+cd "$HERE/prod/gcc"
+bk port --stats "$HERE/gcc" 2>$DEV_NULL > GOT || fail
+cat <<EOF > WANT
+Port file://$HERE/gcc
+  -> file://$HERE/prod/gcc
+afile | 1 +
+1 files changed, 1 insertions(+)
+
+EOF
+cmpfiles WANT GOT
+echo OK

@@ -1,0 +1,166 @@
+# Copyright 2005-2006,2009-2011,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Hack a near real install directory with 555 perms on dirs ...$NL
+
+BKSRC=`bk bin`
+if [ -d "$BKSRC/tmp/bitkeeper" ]
+then
+cp -r "$BKSRC/tmp/bitkeeper" "$HERE/installdir"
+if [ "$PLATFORM" = "WIN32" ]
+then	PATH=`win2msys "$HERE/installdir"`:$PATH
+else	PATH="$HERE/installdir":$PATH
+fi
+export PATH
+cd "$HERE/installdir"
+find . -depth -print | while read x ; do chmod -w "$x" ; done
+cd "$HERE"
+echo OK
+else
+echo skipped
+fi
+
+SUFF=""
+bk version | grep -q '^Expires in' && SUFF=.trial
+
+
+echo $N Test upgrade to get status from bitkeeper ...................$NL
+commercial junk2
+BK_NOTTY=1 bk upgrade -cf >OUT 2>ERR
+grep -q "No upgrade for the arch" ERR && {
+     # can set BK_UPGRADE_PLATFORM to some official arch to run test
+     echo skipped
+     exit 0
+}
+cat <<END > WANT
+Fetching http://www.bitkeeper.org/downloads/latest/INDEX
+END
+checkfiles ERR WANT
+
+grep -q "BitKeeper version .* is available for download." OUT || {
+	echo wrong output
+	cat OUT
+	exit 1
+}
+echo OK
+
+test x$SUFF != x && {
+echo $N Test that bk upgrade works with an expired image.............$NL
+# Test out expiration always shows version (minus the time dep items)
+bk version | grep -v "^Built on:" | grep -v "^Expires in:" > WANT
+BK_NOTTY=1 _BK_EXPIRED_TRIAL=1 \
+    bk changes -r+ | grep -v "^Built on:" | grep -v "^Expires in:" > GOT
+cmpfiles WANT GOT
+# That's good.  Now see that upgrade works.
+BK_NOTTY=1 _BK_EXPIRED_TRIAL=1 \
+    bk upgrade -cf >OUT 2>ERR || fail -f ERR should not have failed
+grep -q "BitKeeper version .* is available for download." OUT || \
+	fail -f OUT wrong output
+echo OK
+}
+
+echo $N Test upgrade where we already have the latest ...............$NL
+BK_NOTTY=1 BK_UPGRADE_FORCEMATCH=1 bk upgrade -cf >OUT 2>ERR && {
+	echo should have failed
+	cat OUT
+	cat ERR
+	exit 1
+}
+cat <<END > WANT
+Fetching http://www.bitkeeper.org/downloads/latest/INDEX
+END
+checkfiles ERR WANT
+cat <<END > WANT
+upgrade: no new version of bitkeeper found
+END
+checkfiles OUT WANT
+echo OK
+
+echo $N Test upgrade to get status from bitkeeper using a proxy .....$NL
+# squid proxy running on work.  Only accepts 10.0.0.0/8 connections.
+# XXX test proxy passwords too?
+http_proxy=http://data.bitkeeper.com:3128
+export http_proxy
+BK_NOTTY=1 bk upgrade -cf >OUT 2>ERR || {
+	echo should not have failed
+	cat OUT
+	cat ERR
+	exit 1
+}
+cat <<END > WANT
+Fetching http://www.bitkeeper.org/downloads/latest/INDEX
+END
+checkfiles ERR WANT
+
+grep -q "BitKeeper version .* is available for download." OUT || {
+	echo wrong output
+	cat OUT
+	exit 1
+}
+echo OK
+
+# create a fake upgrade area and test the whole encryption decryption loop
+
+
+# This should also skip Windows machines...
+test -d /home/bk/bk-3.2.x || exit 0
+
+# Not everyone has a /usr/bin/perl which is what the script wants
+test -x /usr/bin/perl || exit 0
+
+# Not everyone has strict.pm or understands it.
+test `uname` = NetBSD && exit 0
+
+# MacOS does not do the inskeys thing.
+test `uname` = Darwin && exit 0
+
+echo $N Create local upgrade area ...................................$NL
+cd "$HERE"
+BK_INSTALLER=
+# Lazy way to get full path
+find "$BKSRC"/utils -name 'bk*-console-setup.exe' -o -name 'bk*.bin' > /tmp/bk$$
+test `wc -l < /tmp/bk$$` -gt 1 && {
+	echo skipped
+	$RM -f /tmp/bk$$
+	exit 0
+}
+test `wc -l < /tmp/bk$$` -eq 1 && BK_INSTALLER=`cat /tmp/bk$$`
+$RM /tmp/bk$$
+test X$BK_INSTALLER = X && {
+	echo skipped
+	exit 0
+}
+
+OS=`bk version | sed -n 's/.* for //p'`
+INSTALLER=bk-3.2.6-$OS.bin
+mkdir upgrade
+cd upgrade
+cp $BK_INSTALLER $INSTALLER
+bk get $Q -S "$BKSRC"/build_upgrade_index.pl
+"$BKSRC"/build_upgrade_index.pl  bk-3.2.6 $INSTALLER
+cd ..
+cd junk2
+bk upgrade -df "$HERE/upgrade" >OUT || {
+	echo should not have failed
+	exit 1
+}
+grep -q "New version of bk fetched: $INSTALLER" OUT || {
+	echo Wrong message
+	exit 1
+}
+cmp -s $BK_INSTALLER $INSTALLER || {
+	echo wrong file
+	exit 1
+}
+echo OK

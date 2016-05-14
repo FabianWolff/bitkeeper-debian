@@ -1,0 +1,240 @@
+# Copyright 1999-2000,2003,2006,2009-2011,2014-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+commercial stripdel
+R=1
+for D in '87/05/28 23:49:57' '97/05/28 23:49:57' '97/05/30 01:34:11' '97/06/23 01:33:45+06:30' '98/01/30 17:45:17-05:00'
+do	cat > INITX <<EOF
+D 1.$R $D $USER 0 0 0/0/0
+c This is revision 1.$R of $D
+c This the second comment of 1.$R
+P this/is/the/pathname.$R
+------------------------------------------------
+EOF
+	# We must be careful not to leave a locked file behind at the
+	# end of the loop.  clean will complain because the recorded
+	# and actual pathnames don't match.
+	if [ $R -ne 1 ]
+	then	bk co $Q -l FILE
+	fi
+	echo 1.$R >> FILE
+	if [ $R -eq 1 ]
+	then	bk delta $Q -i -IINITX FILE
+	else	bk delta $Q -IINITX FILE
+	fi
+	R=`expr $R + 1`
+done
+bk _get  $Q -l -r1.3 FILE
+echo "added in 1.3.1.1" >> FILE
+_BK_MV_OK=1 bk ci $Q -y FILE
+bk _get $Q -l -r1.3.1 FILE
+echo "added in 1.3.1.2" >> FILE
+_BK_MV_OK=1 bk ci $Q -y FILE
+echo $N Check stripdel !TOT .........................................$NL
+cat > X << EOF
+stripdel: revision 1.4 not at tip of branch in SCCS/s.FILE.
+EOF
+bk undos X > CMP1
+
+# a test to show this isn't legal
+echo FILE > IN
+bk stripdel -r1.4 - < IN 2>ERR && fail -f ERR should fail
+bk stripdel -r1.4 FILE 2> CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; diff CMP1 CMP2; exit 1; fi
+echo OK
+echo $N Check stripdel !TOB .........................................$NL
+cat > X << EOF
+stripdel: revision 1.3.1.1 not at tip of branch in SCCS/s.FILE.
+EOF
+bk undos X > CMP1
+bk stripdel -r1.3.1.1 FILE  2> CMP2
+cmp -s CMP1 CMP2
+if [ $? -ne 0 ]; then echo Failed.; diff CMP1 CMP2; exit 1; fi
+echo OK
+echo $N Check stripdel TOT ..........................................$NL
+bk stripdel $Q -r1.5 FILE
+bk _scat SCCS/s.FILE | grep -q "^.d D 1.5"
+if [ $? -eq 0 ]; then echo Failed to remove delta table entry.; exit 1; fi
+bk _scat SCCS/s.FILE | grep -q '^1.5$'
+if [ $? -eq 0 ]; then echo Failed to remove delta body entry.; exit 1; fi
+echo OK
+echo $N Check stripdel TOB ..........................................$NL
+bk stripdel $Q -r1.3.1.1,1.3.1.2 FILE
+bk _scat SCCS/s.FILE | grep -q '^.d D 1.3.1.[12]'
+if [ $? -eq 0 ]; then echo Failed to remove delta table entry.; exit 1; fi
+bk _scat SCCS/s.FILE | grep -q '^added in 1.3.1.[12]'
+if [ $? -eq 0 ]; then echo Failed to remove delta body entry.; exit 1; fi
+echo OK
+# Make a graph with a cset merged twice, and those merged
+echo $N Create a repository with two files ..........................$NL
+cd "$HERE"
+rm -fr stripdel proj copy1 copy2 left right
+commercial proj
+touch foo bar
+bk new $Q foo bar
+bk commit $Q --tag=first -ynewfoo
+if [ $? -ne 0 ]; then echo failed commit; exit 1; fi
+echo OK
+echo $N Clone and make deltas in each proj and copy1 ................$NL
+cd "$HERE"
+bk clone $Q proj copy1
+cd proj
+bk edit $Q foo
+echo left > foo
+bk delta $Q -ytrunk foo
+bk commit $Q -ytrunk
+cd "$HERE/copy1"
+bk edit $Q foo
+bk delta $Q -ycopy1 foo
+bk commit $Q -ycopy1
+if [ $? -ne 0 ]; then echo failed commit; exit 1; fi
+echo OK
+echo $N Clone and make deltas in each copy1 and copy2 ...............$NL
+cd "$HERE"
+bk clone $Q copy1 copy2
+cd copy1
+bk edit $Q bar
+echo right > bar
+bk delta $Q -ytrunkcopy1 bar
+bk commit $Q -ytrunkcopy1
+cd "$HERE/copy2"
+bk edit $Q foo
+bk delta $Q -ytrunkcopy2 foo
+bk commit $Q -ytrunkcopy2
+if [ $? -ne 0 ]; then echo failed commit; exit 1; fi
+echo OK
+echo $N "Merge copy2 -> copy1, copy2 -> proj, copy1 -> proj ..........$NL"
+cd "$HERE/copy1"
+bk pull $Q "$HERE/copy2"
+bk admin $Q -Sright ChangeSet
+cd "$HERE/proj"
+bk pull $Q "$HERE/copy2"
+bk admin $Q -Sleft ChangeSet
+bk pull $Q "$HERE/copy1" || fail
+if [ $? -ne 0 ]; then echo failed pull; exit 1; fi
+echo OK
+
+echo $N Check stripdel managing tree with twice merged cset -1- .....$NL
+cd "$HERE"
+bk clone $Q -rright proj right
+cd right
+bk get $Q foo bar
+echo right > X
+bk undos X > CMPBAR
+touch CMPFOO
+cmp -s foo CMPFOO
+if [ $? -ne 0 ]; then echo failed foo diff; exit 1; fi
+cmp -s bar CMPBAR
+if [ $? -ne 0 ]; then echo failed bar diff; exit 1; fi
+echo OK
+
+echo $N Check stripdel managing tree with twice merged cset -2- .....$NL
+cd "$HERE"
+bk clone $Q -rleft proj left
+cd left
+bk get $Q foo bar
+echo left > X
+bk undos X > CMPFOO
+touch CMPBAR
+cmp -s foo CMPFOO
+if [ $? -ne 0 ]; then echo failed foo diff; exit 1; fi
+cmp -s bar CMPBAR
+if [ $? -ne 0 ]; then echo failed bar diff; exit 1; fi
+echo OK
+
+echo $N Try stripdel of edited file .................................$NL
+bk edit $Q bar || fail
+echo junk >> bar
+bk ci -l -y"add junk" $Q bar || fail
+echo more junk >> bar
+bk stripdel $Q -r1.2 bar 2>ERR && {
+	echo stripdel should have failed
+	exit 1
+}
+grep -q "can't strip an edited file" ERR || {
+	echo wrong error message
+	exit 1
+}
+echo OK
+
+echo $N Try stripdel of edited file w/o gfile........................$NL
+echo junk >> bar
+bk ci -l -y"add junk" $Q bar || fail
+rm bar
+# See that stripdel does not honor checkout mode
+BK_CONFIG='checkout:get!' bk stripdel $Q -r+ bar || fail
+test -f bar && fail bar file checked out
+echo OK
+
+echo $N Show removing writable file which had its content changed ...$NL
+date > fff
+bk new -u $Q fff || fail
+chmod +w fff
+echo foo >> fff
+bk diffs -r+ foo || fail
+bk clean foo || fail
+bk stripdel $Q -r.. fff 2> GOT && fail -f GOT
+test -f fff || fail fff was removed
+cat <<EOF > WANT
+fff writable, with changes, but not edited.
+stripdel: can't strip an edited file: fff
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Show removing writable file with no content change ..........$NL
+bk _rm fff
+bk get $Q fff
+chmod +w fff
+bk stripdel $Q -r.. fff || fail
+test -f fff && fail fff still exists
+echo OK
+
+echo $N Test that _BK_STRIPTAGS is deprecated .......................$NL
+_BK_STRIPTAGS=1 bk admin -z ChangeSet 2>ERR && fail -f ERR
+cat <<EOF >WANT
+_BK_STRIPTAGS is no longer supported.
+EOF
+cmpfiles WANT ERR
+echo OK
+
+# Note that users shouldn't run this, it's for csetprune only.
+# It should newroot the repo (csetprune does, this does not)
+# because you will no longer be able to pull from a repo with tags.
+echo $N Test that stripdel --strip-tags works .......................$NL
+bk tag $Q NEWTAG
+bk changes -rNEWTAG -nd'$if(x=y){z}' || fail
+bk stripdel $Q --strip-tags ChangeSet
+bk changes -rNEWTAG -nd'$if(x=y){z}' 2> ERR && fail -f ERR
+echo "changes: no such delta \`\`NEWTAG'' in ChangeSet" > WANT
+cmpfiles WANT ERR
+echo OK
+
+cd "$HERE"
+echo $N Make sure stripdel cleans up d.files ........................$NL
+commercial dfiles
+mkdir subdir
+cd subdir
+for i in a b c d e f
+do 	echo $i > $i
+done
+cd ..
+bk extras | bk new $Q -
+bk commit $Q -y'new files'
+bk mvdir subdir dir || fail
+bk sfiles -pCA | bk stripdel $Q - || fail
+bk -r names $Q || fail
+test -d dir && fail
+echo OK

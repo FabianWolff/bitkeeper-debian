@@ -1,0 +1,437 @@
+.so .bitmacros
+.TH GET 1 "September 1999" "BitMover, Inc." BitSCCS
+.SH NAME
+get \- retrieve a version of an SCCS file
+.SH SYNOPSIS
+.nh
+.na
+.B get
+.B -qkepg -dmunN
+.BI -c date
+.BI -r range
+.BI -G name
+.IB files .\|.\|.
+.hy
+.ad
+.SH DESCRIPTION
+.B get
+retrieves a particular working copy from an \*S revision control file.
+With no options,
+.B get
+retrieves the most recent version of the file on the current branch.
+.PP
+.B get
+can get an older version of the file, using revision numbers, dates, or
+symbols as a way of specifying the version.
+.PP
+.B get
+can get files with each line 
+prefixed with revision numbers, the user name, and/or the date of the 
+revision in which the line was most recently added.  This feature is 
+quite useful for tracking down bugs.
+.PP
+.B get
+supports both \*R and \*S keyword expansion so that you may place
+the version number, name, date, user, etc., in the file as part of its 
+contents.
+.PP
+For each
+.BI s. filename
+argument,
+.B get
+displays the revision ID and the number of lines retrieved (to
+standard error):
+.DS
+$ get get.c
+get.c 1.39: 145 lines
+.DE
+The retrieved file normally has the same filename base as the
+.BR s. file,
+less the prefix.  It is called the
+.BR g file.
+If the path to the file was
+.BR .../foo/bar/SCCS/s.file ,
+then the 
+.BR g file
+will be
+.BR .../foo/bar/file .
+.PP
+.so filenames
+.SH OPTIONS
+.TP
+.PD 0
+.B -q
+Do not print the filename, revision, and number of lines of each file
+retrieved.  Error messages are still printed.
+.TP
+.B -k
+Do not expand keywords.  See below.
+.TP
+.B -e
+Check out the file and lock it for editing.  No one else may check in
+changes to this file while you have it edited.
+.IP
+This option implies 
+.BR -k .
+.TP
+.B -p
+Write the text of the file to standard output instead of creating a
+.BR g- file.
+This option cannot be used with
+.BR -e .
+.TP
+.B -g
+Lock the file for editing, but do not create a
+.BR g- file.
+This is useful mainly when you already have an editable
+.BR g- file
+for some reason.
+.TP
+.BI -c date
+Get the latest revision of the file which was checked in before
+.IR date .
+The format of
+.I date
+is \fB[\fPYY\fB]\fPYY\fB[\fPMM\fB[\fPDD\fB[\fPHH\fB[\fPMM\fB[\fPSS\fB]]]]]\fP
+where YY, etc. are digits.  If you omit part of the date, it is
+rounded down, so e.g. 199904 is taken as 19990401000000.  You can
+force a date to be rounded up by prepending a plus: +199904 is
+equivalent to 19990430235959.
+.TP
+.BI -r rev
+Get revision
+.I rev
+of the file.  It is an error if the file doesn't contain a revision
+with that number.
+.IP
+You need not specify the entire revision to retrieve a version with
+.BR get .
+When you omit
+.B -r
+altogether, or when you omit the last component of the revision,
+.B get
+retrieves the highest revision possible.  
+.B get 
+will not cross over release boundaries, i.e., if the revision file has
+.B 1.1-1.20,2.1-2.13
+and you ask for
+.B -r1
+then you get
+.BR 1.20 .
+It works similarly for branches, you can ask for
+.B 1.13.1
+and if 
+.B 1.13.1.5 
+is the last delta on that branch, then that is what you will get.
+.TP
+.BI -G name
+Use
+.I name
+for the name of the
+.BR g- file
+instead of the normal one inferred from the name of the
+.BR s. file.
+.TP
+.B -d
+Prefix each line with the date it was last modified, like this:
+.DS
+97/05/20	/* get.c - implements SCCS get */
+.DE
+.TP
+.B -m
+Prefix each line with the revision number in which it was last
+modified.
+.TP
+.B -u
+Prefix each line with the user ID of the person who last modified it.
+.TP
+.B -n
+Prefix each line with the name of the file.
+.TP
+.B -N
+Prefix each line with its line number.
+.PD
+.PP
+The
+.BR -d ", " -m ", " -u ,
+.BR -n ", and " -N
+options may be used in any combination.  The prefixes always appear in
+the same order, which is like this:
+.DS
+get.c  97/05/20  lm	1.1	1	/* get.c - implements SCCS get */
+.DE
+.SH KEYWORDS
+In the absence of
+.B \-e
+or
+.BR \-k ,
+.B get
+expands the following keywords by replacing them with the indicated
+values in the text of the retrieved source.
+.TP 10
+.I Keyword
+.I Value
+.TP
+.B %\&@%
+The login name of the user who made the revision, with the host (and
+possibly domain name):
+.IR lm@bitmover.com .
+.PD 0
+.TP
+.B %\&D%
+Current date as 
+.IB yy / mm / dd .
+If the
+.B YEAR4
+flag is set (see
+.XR admin 1 ),
+then print the year as 4 digits.
+.TP
+.B %\&E%
+Date newest applied delta was created as
+.IB yy / mm / dd .
+If the
+.B YEAR4
+flag is set, then print the year as 4 digits.
+.TP
+.B %\&F%
+The
+.BR s. file
+name
+.TP
+.B %\&G%
+Date newest applied delta was created as
+.IB mm / dd / yy .
+If the
+.B YEAR4
+flag is set, then print the year as 4 digits.
+.TP
+.B %\&H%
+Current date as
+.IB mm / dd / yy .
+If the
+.B YEAR4
+flag is set, then print the year as 4 digits.
+.TP
+.B %\&I%
+Revision number of the retrieved version.
+.TP
+.B %\&M%
+The file name of the 
+.BR g file
+.TP
+.B %\&P%
+The fully qualified
+.BR s. file
+name
+.TP
+.B %\&T%
+Current time as
+.IB hh : mm : ss
+.TP
+.B %\&U%
+Time the newest applied delta was created:
+.IB hh : mm : ss
+.TP
+.B %\&K%
+The ChangeSet key of the most recent delta:
+.nh
+.IB awc@etp3.bitmover.com | src/slib.c | 19990907232338 | 58843
+.hy
+.TP
+.B %\&Z%
+The 4-character string
+.RB ` @(#) ',
+which is recognized by
+.XR what 1 .
+.TP
+.B %\&A%
+Shorthand for 
+.BR "%\&Z%%\&Y% %\&M% %\&I%%\&Z%" , 
+which looks like: %A%.
+This is the traditional string to embed in an object file for the
+.B what
+command.  With \*(BK, 
+.B "@(#)%\&K%"
+is often a better choice.
+.TP
+.B %\&W%
+Shorthand for another form of
+.B what
+string:
+.BR "%\&Z%%\&M%        %\&I%"
+which looks like: %W%
+.PD
+.PP
+In the absence of 
+.B -e
+or 
+.BR -k ,
+and if the
+.B RCS
+flag is set in the 
+.BR s. file, 
+then
+.B get
+will also expand the following list of \*R keywords:
+.TP 15
+.I Keyword
+.I Value
+.TP
+.B $Author$
+The login name of the user who made the revision.
+.PD 0
+.TP
+.B $Date$
+The date that the revision was made.
+.TP
+.B $Header$
+The full path name, the revision, the date, the user@host, and the state of the
+file.
+.TP
+.B $Id$
+Same as $Header$ except the file name is just the base name, not a full path.
+.TP
+.B $RCSfile$
+The base name of the file.
+.TP
+.B $Revision$
+The revision number of the retrieved delta.
+.TP
+.B $Source$
+The full path name of the revision control file.
+.TP
+.B $State$
+The state assigned to the file.
+.PD
+.SH "MORE OPTIONS"
+These options are less generally useful, or preserved only for
+backward compatibility with \*(AT or \*R.
+.TP
+.B -b
+Create a new branch.  Used with the
+.B -e
+option to indicate that the new delta should be on a branch.
+.PD 0
+.TP
+.B -s
+Same as
+.BR -q .
+.TP
+.B -l
+Same as 
+.BR -e .
+.TP
+.BI -i rev-list
+Include the deltas mentioned in
+.I rev-list
+in the
+.BR g file.
+.I rev-list
+is a comma-separated list of revisions.
+To specify a range of deltas, use a 
+.RB ` - ' 
+separator instead of a comma, between two revisions in the list.
+Symbolic tags may be used in place of the revisions if and only if the
+tags do not contain a
+.RB ` - '.
+.IP
+The effect of
+.B -i
+is to bring in text from deltas that would not normally be part of the
+revision retrieved.  For example, if the default revision is 1.24 and
+you specify
+.BR -i 1.23.1.2
+then the changes from 1.23.1.2 will be ``woven'' into the 1.24
+revision, and the
+.BR g file
+will contain text from both.
+.TP 
+.BI -x rev-list
+Exclude the indicated deltas from the retrieved version.
+.I rev-list
+looks the same as with
+.BR -i ,
+but the changes in the revisions mentioned are removed from the 
+.BR g file,
+not added to it. 
+.TP
+.B -DD
+Print diffs like
+.B -D
+would, but in the format generated by
+.XR cset 1
+with the
+.B -m 
+option.
+.TP
+.B -DDD
+Print diffs suitable for a hash-file.  See
+.XR hashfile 5 .
+.TP
+.B -F
+Don't bother checksumming the file.  Use of this option is not
+advised.
+.TP
+.B -h
+Invert the sense of the hash-file flag in the
+.BR s. file.
+In other words, treat a normal file as a hash-file, and a hash-file as
+a normal file.
+.TP
+.B -H
+Put the file in its historic location, not its current location.  If
+the file has ever been renamed, these are different.
+.TP
+.B -P
+Like
+.B -p
+but generate output even if the file is damaged.  This is useful when
+attempting to recover data from a corrupt
+.BR s. file.
+.TP
+.B -t
+This option is ignored for \*(AT compatibility.
+.TP
+.B -R
+Look for revision numbers with the file names.  When this option is
+used, each file name supplied to
+.B get
+must be of the form
+.IB path : rev "\fR;"
+for example,
+.RB get.c : 1.24 .
+.TP
+.BI -M rev
+Set the merge pointer of the revision retrieved to point to
+.IR rev .
+This is purely a notation in the delta table; you will also need to
+use
+.B -i
+or some other mechanism to get the actual changes merged in.  (Or you
+can just let
+.XR resolve 1
+do it for you.)
+.SH FILES
+.TP 20
+.BI g file
+version retrieved by
+.B get
+.TP
+.BI p. file
+lock file that indicates who has what revision locked.
+.TP
+.BI x. file
+temporary copy of
+.BI s. file
+.PD
+.SH "SEE ALSO"
+.na
+.XR bitsccs 1 ,
+.XR admin 1 ,
+.XR delta 1 ,
+.XR prs 1 ,
+.XR gfiles 1 ,
+.XR what 1 ,
+.XR sccsfile 5 ,
+.XR hashfile 5

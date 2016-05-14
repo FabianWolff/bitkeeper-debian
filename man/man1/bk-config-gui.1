@@ -1,0 +1,443 @@
+.so ../bk-macros
+.TH "bk config-gui" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME 
+bk config-gui \- configuration for \*(BK graphical tools
+.\" XXX TP indents could use some tweaking 
+.SH DESCRIPTION
+.LP
+\*[BK] uses a configuration file called 
+.B config-gui
+for the 
+configuration of the \*(BK graphical tools.
+The configuration file is used to modify
+colors, fonts, and widget dimensions. 
+.LP
+The location of this configuration file can be determined
+for your platform by running the command
+.BR "bk\ dotbk" .
+This command will return the pathname of the directory where
+the \*(BK graphical tools will look for the 
+.B config-gui
+file.
+.LP
+The config file must be a valid tcl program as it is
+evaluated by the \*(BK GUI tools (which are also tcl/tk programs).
+The point of being a
+program is that tcl code may be added to the config file
+in order to customize the gui based on arbitrary values such
+as machine name, screen size, etc.  For example, if all screens
+of a certain size were known to be LCD screens (typically laptops),
+then the following technique could be used to get colors more
+appropriate for those screens:
+.DS
+if {[winfo screenwidth .] <= 1024} {
+	# These show up better on LCD displays.
+	set gc(diffColor) gray
+	set gc(activeDiffColor) lightseagreen
+	set gc(fm3.handColor) yellow
+}
+.DE
+.LP
+The point of the
+.B config-gui
+file is to change configuration options.
+A typical line looks like this:
+.ft R
+.DS
+set gc(diffColor) #f0f0f0
+.DE
+and the meanings for each part of that line are:
+.DS
+.ta +1.4i
+set	tcl syntax for assigning variables
+gc(diffColor)	configuration option
+#f0f0f0	hexadecimal color value
+.DE
+Each variable in the config file may take one of two forms, 
+tool specific or global.  Tool specific variables, which apply only
+to the named tool, have the tool
+name as a prefix, i.e.,
+.DS
+set gc(cset.fixedFont)  {fixed 12 roman}
+.DE
+whereas global variables, which apply to all tools unless there is a
+tool specific version defined as well, look like
+.DS
+set gc(fixedBoldFont) {fixed 12 roman bold}
+.DE
+.LP
+The tool names used to get to tool specific
+variables (or to have a change only apply to that tool) are the
+GUI tool's name with the trailing \*(lqtool\*(rq dropped, i.e.,
+\*(lqdiff\*(rq for \*(lqdifftool\*(rq.
+.SH TCL INFORMATION
+The following tcl/tk commands may be useful for display specific
+customization:
+.TP "\f(CW[winfo screenheight .]\fP"
+\f(CW[winfo depth .]\fP
+returns the color depth of the screen in bits, i.e., 16 means the screen
+can do 65536 different colors.
+.tp
+\f(CW[winfo screen .]\fP
+Returns the name of the screen in the form displayName.screenIndex,
+i.e., \*(lqdisks.bitkeeper.com:0.0\*(rq.
+.tp
+\f(CW[winfo screenheight .]\fP
+returns the height of the screen in pixels.
+.tp
+\f(CW[winfo screenwidth .]\fP
+returns the width of the screen in pixels.
+.SH GUI CONFIGURATION
+.SS GLOBAL CONFIGURATION
+The following is a list of variables used by the various gui tools.
+Each of these needs to be in a statement like: 
+.DS
+set gc(\c
+.ARGc variable
+)\ \c
+.ARG value
+.DE
+.ft R
+but in the list below we just show the 
+.ARG variable
+part.
+.nr I 18
+.TP \fBfixedBoldFont\fP
+.B fixedFont
+Font used in all of the text widgets such as file lists,
+entry boxes, and text widgets showing contents of files.
+Defaults to values that match appropriate system defaults.
+.tp
+.B fixedBoldFont
+Bold font used to highlight text such as difference within
+lines in
+.BR "bk difftool" .
+Defaults to values that match appropriate system defaults.
+.tp
+.B diffColor
+Color of the changed lines in a diff view.
+Default:\ #EDEDED
+.tp
+.B activeDiffColor
+Color of the selected diff block in a diff view.
+Default:\ #2FEDAD
+.tp
+.B oldColor
+Color of the older revision or diff.
+.br
+Overrides diffColor.
+Default:\ #B48CFF
+.tp
+.B newColor
+Color of the newer revision or diff.
+.br
+Overrides diffColor.
+Default:\ #A8D8E0
+.tp
+.B activeOldColor
+Color of the older selected diff block in a diff view.
+Overrides activeDiffColor.
+Default:\ #2FEDAD
+.tp
+.B activeNewColor
+Color of the newer selected diff block in a diff view.
+Overrides activeDiffColor.
+Default:\ #2FEDAD
+.tp
+.B highlightOld
+Color of the subline highlighting for old lines in a diff.
+Default:\ #FFA500
+.tp
+.B highlightNew
+Color of the subline highlighting for new lines in a diff.
+Default:\ #FFA500
+.tp
+.B noticeColor
+Color for warnings and messages.
+Default:\ #DBDFE6
+.tp
+.B searchColor
+Highlight color for search matches. Used in
+.B bk difftool
+and
+.BR "bk revtool" .
+Default:\ #FFA500
+.tp
+.B warnColor
+Color of the error messages. Used in
+.BR "bk citool" .
+Default:\ #FFFF00
+.tp
+.B textBG
+Background color for text windows. Used in all of
+the tools.
+Default:\ #FFFFFF
+.tp
+.B textFG
+Text color.  Used in all of the tools.
+Default:\ #000000
+.tp
+.B tabwidth
+The width of a tab in average sized characters. 
+Default:\ 8.
+.tp
+.B quit
+Key used to exit from the gui tools.
+Default:\ <Control-q>
+.SS CITOOL CONFIGURATION
+.TP \fBci.commentsHeight\fP
+.B ci.commentsHeight
+height of the comments window.
+.tp
+.B ci.diffHeight
+height of the diffs window (the lower window).
+.tp
+.B ci.display_bytes
+Number of bytes to show in new files in
+.BR "bk citool" .
+If set to 0, the entire file is displayed.
+Default:\ 8192
+.tp
+.B ci.editHeight
+Height of the popup editor.
+Default:\ 30
+.tp
+.B ci.editWidth
+Width of the popup editor.
+Default:\ 80
+.tp
+.B ci.excludeColor
+Color of the exclude icon (X character).
+Default:\ #FF0000
+.tp
+.B ci.filesHeight
+number of files in the top window.
+.tp
+.B ci.rescan
+Set this to option to 1 if you would like
+.B bk citool
+to run again after
+doing the commit. Rescanning is useful if you do development in the
+manner where you modify many files that logically belong to separate
+changesets. This option then allows you to stay in
+.B bk citool
+and create different changesets for the files without restarting
+citool each time.
+Default:\ 0
+.SS CSETTOOL CONFIGURATION
+.TP \fBci.commentsHeight\fP
+.B cset.annotation
+Annotation options to apply when getting files to be diffed. 
+See the
+.Q \-a
+option to
+.BR "bk co" . 
+Example:
+.QR \-aum . 
+Default: \*(lq\|\*(rq (do not display annotations)
+.tp
+.B cset.listHeight
+Number of lines in the list windows.
+Default:\ 12
+.SS DIFFTOOL CONFIGURATION
+.TP \fBci.commentsHeight\fP
+.B diff.diffHeight
+Number of lines in the diff windows.
+Default:\ 50
+.tp
+.B diff.searchColor
+Highlight color for search matches.
+Default:\ #ADD8E6
+.SS FM3TOOL CONFIGURATION
+.TP \fBfm3.toggleAnnotations\fPn
+.B fm3.comments
+Boolean which controls the display of the comments window at the top.
+Default:\ 1 (on)
+.tp
+.B fm3.firstDiff
+Keyboard accelerator for going to the first change.
+Default:\ \*(lq\-\*(rq
+.tp
+.B fm3.handColor
+Color used to highlight hand selected merge choices in the side by side 
+local and remote diff windows.
+Default:\ #B4B6CB
+.tp
+.B fm3.lastDiff
+Keyboard accelerator for going to the last change.
+Default:\ \*(lq+\*(rq
+.tp
+.B fm3.mergeColor
+Color used to highlight merge choices, both manual and automatic, in the 
+lower merge window.
+Default:\ #B4B6CB
+.tp
+.B fm3.nextConflict
+Keyboard accelerator for going to the next conflict (skips automerged changes).
+Default:\ \*(lq}\*(rq
+.tp
+.B fm3.nextDiff
+Keyboard accelerator for going to the next change.
+Default:\ \*(lq]\*(rq
+.tp
+.B fm3.prevConflict
+Keyboard accelerator for going to the previous conflict
+(skips automerged changes).
+Default:\ \*(lq{\*(rq
+.tp
+.B fm3.prevDiff
+Keyboard accelerator for going to the previous change.
+Default:\ \*(lq[\*(rq
+.tp
+.B fm3.sameColor
+Color used to highlight the portion of a conflict consisting of unchanged lines.
+Default:\ #EFEFEF
+.tp
+.B fm3.showEscapeButton
+When entering edit mode, if this variable is set to 1 a button will be
+displayed that you can click on to exit edit mode.
+Default:\ 1
+.tp
+.B fm3.spaceColor
+Color used to highlight the beginnings of lines which are 
+\*(lqspacers\*(rq inserted to make the changes line up horizontally.
+Default:\ #000000
+.tp
+.B fm3.toggleAnnotations
+Keyboard accelerator for toggling the display of annotations.
+Default:\ \*(lqz\*(rq
+.tp
+.B fm3.toggleGCA
+Keyboard accelerator for toggling the display of the GCA.
+Default:\ \*(lqx\*(rq
+.tp
+.B fm3.undo
+Keyboard accelerator for undoing the last merge selection.
+Default:\ \*(lqu\*(rq
+.SS HELPTOOL CONFIGURATION
+.TP \fBrev.commentHeight\fP
+.B help.linkColor
+Color of the hyperlinks in
+.BR "bk helptool" .
+Default:\ #0000FF
+.tp
+.B help.scrollbars
+The location of the two scrollbars in helptool.  The value should be two
+characters with each one being L or R.  The first character indicates the
+position of the topic list scrollbars as Left or Right, while the second
+character specifies the position of the content scrollbar.
+Default:\ RR
+.tp
+.B help.topicsColor
+Highlight color for topic search matches.
+Default:\ #FFA500
+.tp
+.B help.height
+Number of rows to display in
+.BR "bk helptool" .
+Default:\ 50
+.tp
+.B help.width
+Number of columns to display in
+.BR "bk helptool" .
+Default:\ 72
+.tp
+.B help.exact
+Only return full word/phrase matches.
+Default:\ 0, set to 1 to enable
+.SS RENAMETOOL CONFIGURATION
+.TP \fBrev.commentHeight\fP
+.B rename.listHeight
+Height of the file list widget in
+.B bk renametool
+(in lines).
+Default:\ 8
+.SS REVTOOL CONFIGURATION
+.TP \fBrev.commentHeight\fP
+.B rev.canvasBG
+Color of the graph background.
+Default:\ #9FB6B8
+.tp 
+.B rev.commentBG
+Background color of the comment window in the annotated listing. 
+Default:\ #ADDD8E6
+.tp
+.B rev.arrowColor
+Color of the arrows connecting the revision boxes.
+Default:\ #00008B
+.tp
+.B rev.mergeOutline
+Color of the box surrounding the merge revisions.
+Default:\ #00008B
+.tp
+.B rev.revOutline
+Color of the box surrounding the regular revisions.
+Default:\ #00008B
+.tp
+.B rev.revColor
+Fill color of the unselected node.
+Default:\ #9FB6B8
+.tp
+.B rev.selectColor
+Highlight color for the selected annotated line.
+Default:\ #ADDD8E6
+.tp
+.B rev.commentHeight
+Height of the comment window above the annotated file listing.
+Default:\ 5
+.tp
+.B rev.textWidth
+Width of widget that displays the file content.
+Default:\ 92
+.tp
+.B rev.annotate
+Arguments to the annotate command.
+Default:
+.QR \-Aur .
+.tp
+.B rev.textHeight
+Height of widget that displays the file content.
+Default:\ 50
+.tp
+.B rev.showRevs
+The number of revs to show when running revtool against a single file.
+Default:\ 250
+.tp
+.B rev.showCsetRevs
+The number of revs to show when running revtool against a ChangeSet file.
+Default:\ 50
+.tp
+.B rev.tagOutline
+Color of the outline around nodes in the ChangeSet graph that have
+a tag associated with them. If this value is the empty string no
+outline will be drawn.
+Default:\ #FFFF00
+.tp
+.B rev.dateColor
+Color of the date text at the bottom of graph.
+Default:\ #181818
+.SH "SEE ALSO"
+.B Any Tcl/Tk documentation
+.br
+.BR X (1)
+.br
+.SA citool
+.SA csettool
+.SA difftool
+.SA fmtool
+.SA fm3tool
+.SA helptool
+.SA revtool
+.SA renametool
+.\" help://GUI
+.\" help://gui
+.\" help://GUI-config
+.\" help://gui-config
+.\" help://gui config
+.\" help://gui configuration
+.SH CATEGORY
+.B Overview
+.br
+.B Admin
+.br
+.B GUI-tools

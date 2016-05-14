@@ -1,0 +1,44 @@
+# Copyright 2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+More information at: http://dev-wiki.bitkeeper.com/valgrind
+
+# valgrind works on x86 linux machines like 'work'
+# it helps to have the libc6-dbg debian package installed
+
+------------------
+# to run valgrind on a bk command and check for memory
+# leaks, do this:
+
+_BK_NO_PAGING=1 valgrind --tool=memcheck -q --trace-children=yes \
+	--leak-check=full \
+	bk ARGS
+
+------------------
+# to run a full regression under valgrind
+
+valgrind --tool=memcheck -q --trace-children=yes --leak-check=full \
+   --log-fd=101 ./doit t.XXX 101>&2
+
+- Note we have a src/t/do_valgrind.sh that does this for every test,
+  sloooow
+- dropping leak-check will generate alot less extra output
+
+------------------
+# to profile a process and visualize the data with kcachegrind
+
+_BK_NO_PAGING=1 valgrind --tool=callgrind --cache-sim=yes \
+	--branch-sim=yes --dump-instr=yes \
+	./bk ARGS..
+kcachegrind

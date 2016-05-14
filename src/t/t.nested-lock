@@ -1,0 +1,146 @@
+# Copyright 2009-2012 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Test basic lock/unlock operations............................$NL
+nested product
+NLOCK=`bk lock -Ppidfile -Wt`
+PID=`cat pidfile`
+test "X$PID" = X && fail no PID
+test -f BitKeeper/writer/nested_lock || fail
+bk lock -l 2> X
+grep -q "Write locked" X || fail -f X
+grep -q "$PID" X || fail -f X
+bk _kill $NLOCK
+test -f BitKeeper/writer/nested_lock && fail
+bk lock -l 2> X
+grep -q "No active lock in repository" X || fail -f X
+test -d RESYNC && fail
+NLOCK=`bk lock -Ppidfile -Rt`
+PID=`cat pidfile`
+test "X$PID" = X && fail no PID
+test -d BitKeeper/readers || fail
+test 1 = `ls BitKeeper/readers | wc -l` || fail
+test -d RESYNC || fail
+bk lock -l 2> X
+grep -q "Read locked" X || fail -f X
+grep -q "$PID" X || fail -f X
+# Grab another one
+NLOCK2=`bk lock -Ppidfile -Rt`
+PID2=`cat pidfile`
+test 2 = `ls BitKeeper/readers | wc -l` || fail `ls BitKeeper/readers`
+bk lock -l 2> X
+grep -q "$PID2" X || fail -f X
+grep -q "$PID" X || fail -f X
+bk _kill $NLOCK2
+test 1 = `ls BitKeeper/readers | wc -l` || fail
+bk lock -l 2> X
+grep -q "$PID2" X && fail -f X
+bk _kill $NLOCK
+test -d RESYNC && fail
+bk lock -l 2> X
+grep -q "No active lock in repository" X || fail -f X
+echo OK
+
+echo $N Test corrupt lock gets staled................................$NL
+NLOCK=`bk lock -Ppidfile -Wt 2> LOCKMSG`
+PID=`cat pidfile`
+test "X$PID" = X && fail no PID
+test -f BitKeeper/writer/nested_lock || fail
+echo "corrupt lock" > BitKeeper/writer/nested_lock
+NLOCK2=`bk lock -Ppidfile -Wt`
+PID2=`cat pidfile`
+bk lock -l 2> X
+grep "$PID" X | grep -q "(stale)" && fail -f X
+grep -q "$PID2" X || fail -f X
+# nested unlock should refuse to unlock the wrong lock
+bk _kill $NLOCK
+grep -q "lock does not match this lock" LOCKMSG || fail -f LOCKMSG
+bk _kill $NLOCK2
+echo OK
+
+echo $N Test stale write lock is not cleared.........................$NL
+_BK_LEAVE_LOCKED=1
+export _BK_LEAVE_LOCKED
+NLOCK=`bk lock -Ppidfile -Wt 2> LOCKMSG`
+PID=`cat pidfile`
+test "X$PID" = X && fail no PID
+bk lock -l 2>&1 | grep -q "$PID" || fail did not lock
+bk _kill $NLOCK
+c=0
+while bk _kill -0 $PID
+do	bk _usleep 10000
+	c=`expr $c + 1`
+	test $c = 100 && fail too many retries
+done
+test -f BitKeeper/writer/nested_lock || fail did not leave locked
+bk lock -lv 2>&1 | grep -q "$PID" || fail cleared stale write lock
+bk unlock -w
+bk lock -lv 2>&1 | grep -q "$PID" && fail abort did not clear stale write lock
+_BK_LEAVE_LOCKED=
+export _BK_LEAVE_LOCKED
+echo OK
+
+echo $N Test we do not go into an infinite loop......................$NL
+cd "$HERE"
+bk clone $Q product child
+cd product/gcc
+touch afile
+bk new $Q afile
+bk commit -S $Q -yafile
+cd ..
+bk commit $Q -yafile
+cd "$HERE/child"
+# pull, but don't apply
+bk pull $Q -R
+# I need to remove the BitKeeper dir from gcc
+# so that the abort code thinks it's already been
+# applied
+rm -rf gcc/RESYNC
+_BK_LEAVE_LOCKED=1
+export _BK_LEAVE_LOCKED
+NLOCK=`bk lock -Ppidfile -Wt 2> LOCKMSG`
+PID=`cat pidfile`
+test "X$PID" = X && fail no PID
+bk lock -l 2>&1 | grep -q "$PID" || fail did not lock
+bk _kill $NLOCK
+c=0
+while bk _kill -0 $PID
+do	bk _usleep 10000
+	c=`expr $c + 1`
+	test $c = 100 && fail too many retries
+done
+test -f BitKeeper/writer/nested_lock || fail did not leave locked
+bk unlock -w
+bk -P abort -qf 2> LOUT
+grep -q "$PID" LOUT && fail did not clear stale lock
+grep -q "Forced Shutdown. Recursed too deep." LOUT && \
+	fail -f LOUT infinite loop killed bk
+_BK_LEAVE_LOCKED=
+export _BK_LEAVE_LOCKED
+echo OK
+
+echo $N Test for stale mutex lock blocking things ...................$NL
+# Stale mutex will block for 2 minutes .. we cut that short here
+# just show that it is working.
+cd "$HERE"
+touch product/BitKeeper/tmp/nl_mutex
+bk clone $Q product mutuxer 2> ERR &
+PID=$!
+bk _usleep 100000
+test -d mutuxer && fail
+# windows - use bk's rm to support interacting with contention
+bk _rm product/BitKeeper/tmp/nl_mutex
+wait $PID
+test -d mutuxer || fail
+echo OK

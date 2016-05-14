@@ -1,0 +1,34 @@
+.so ../bk-macros
+.TH "bk unedit" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    =============== Un-editing files ===============
+.SH NAME
+bk unedit \- destroy any unchecked in changes to specified files
+.SH SYNOPSIS
+.B bk unedit
+.[B] \-q
+.FILES
+.SH DESCRIPTION
+.LP
+If you wish to discard any modifications you have made to a file,
+you can use the
+.B bk unedit
+command.  For each listed file,
+.B bk unedit
+will discard the write lock and discard the checked out file and ANY CHANGES
+YOU HAVE MADE TO THE FILE.  Use this command only when you have made
+changes to a file that you want to throw away.  If you want to clean
+up only those files without changes, use the bk clean command.
+.LP
+The
+.B bk unedit
+command will not autoexpand the file list, you must explicitly
+name each file you want to unedit.
+.SH OPTIONS
+.TP
+.B \-q
+be quiet.
+.SH "SEE ALSO"
+.SA clean
+.SA edit
+.SH CATEGORY
+.B File

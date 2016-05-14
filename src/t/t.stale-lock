@@ -1,0 +1,64 @@
+# Copyright 2002,2005-2006,2010 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Create a repository 
+echo $N Create initial repository, force it to send configs .........$NL
+cat > c <<EOF
+logging: lm@bitmover.com
+description: locking bug
+email: lm@bitmover.com
+eoln: unix
+keyword: sccs
+EOF
+BK_USER=joe bk setup -cc -f project
+cd project
+echo 1 > A
+echo 2 > B
+bk ci $Q -i A B
+if bk _test ! -f SCCS/s.A; then echo failed to create history; exit 1; fi
+BK_USER=jane bk commit $S -y"This is a \"Change Set\""
+echo OK
+
+echo $N Create a merge conflict, resolve it, look for stale locks ...$NL
+bk clone $Q "$HERE/project" "$HERE/clone"
+bk edit $Q A
+echo conflict >> A
+bk delta $Q -ywhatever A
+BK_USER=billy bk commit $Q -ywhatever
+cd "$HERE/clone"
+bk edit $Q A
+echo CONFLICT >> A
+bk delta $Q -ywhatever A
+BK_USER=bob bk commit $Q -ywhatever
+cd "$HERE/project"
+mkdir BitKeeper/triggers
+cat > BitKeeper/triggers/post-incoming <<EOF
+test -f "$HERE/project/BitKeeper/readers" && {
+	echo Failed to remove reader lock > /dev/tty
+}
+exit 0
+EOF
+chmod +x BitKeeper/triggers/post-incoming
+(echo ur
+echo C) | bk pull $Q ../clone >OUT 2>&1 || {
+	echo failed to finish resolve
+	cat OUT
+	exit 1
+}
+C=`ls BitKeeper/readers | wc -l`
+test $C = 0 || {
+	echo failed to remove read lock
+	exit 1
+}
+echo OK

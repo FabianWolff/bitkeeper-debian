@@ -1,0 +1,101 @@
+# Copyright 2011-2013,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repositories .................................$NL
+commercial project
+bk clone $Q ../project ../clone
+echo OK
+
+echo $N Check uniq daemon with writable .bk .........................$NL
+cd "$HERE"
+# first stop the uniq daemon (if running) and blow away the current uniqdb
+kill_uniq "$HERE/.bk/bk-keys-db"
+rm -f "`bk dotbk`/bk-keys/`bk gethost -r`"
+rm -f "/tmp/.bk-keys-$USER"
+# create some deltas
+for i in project clone
+do
+	(cd $i
+	echo foo > foo
+	BK_DATE_TIME_ZONE="2037-02-02 02:02:02-02" bk new $Q foo
+	)
+done
+# check that a dir was created in the expected place
+test -d .bk/bk-keys-db || fail no db dir
+# check that the keys are different
+A=`bk log -r+ -nd:KEY: project/foo`
+B=`bk log -r+ -nd:KEY: clone/foo`
+test "$A" != "$B" || fail keys not different
+echo OK
+
+echo $N Check uniq daemon with uniqdb config option .................$NL
+cd "$HERE"
+# first stop the uniq daemon (if running) and blow away its current dir
+kill_uniq "$HERE/.bk/bk-keys-db"
+rm -rf .bk/bk-keys-db
+# create some deltas
+for i in project clone
+do
+	(cd $i
+	echo foo > foo2
+	BK_CONFIG="uniqdb:$HERE/keysdb" \
+	  BK_DATE_TIME_ZONE="2037-02-02 02:02:02-02" bk new $Q foo2
+	)
+done
+# check that a dir was created in the expected place
+test -d keysdb || fail no db dir
+test -d .bk/bk-keys-db && fail old uniqdb dir still exists
+# check that the keys are different
+A=`bk log -r+ -nd:KEY: project/foo`
+B=`bk log -r+ -nd:KEY: clone/foo`
+test "$A" != "$B" || fail keys not different
+kill_uniq "$HERE/keysdb"
+rm -rf "$HERE/keysdb"
+echo OK
+
+echo $N Check purge of old keys .....................................$NL
+echo foo >purge-tst1
+# a time_t of 123 gets pruned; 1577840461 does not
+_BK_UNIQ_TIMET=123 bk new $Q purge-tst1 || fail
+echo foo >purge-tst2
+_BK_UNIQ_TIMET=1577840461 bk new $Q purge-tst2 || fail
+# force the key prune
+kill_uniq "$HERE/.bk/bk-keys-db"
+echo "get purge-tst" | bk info_shell --uniqdb | grep purge-tst >GOT
+grep -q purge-tst1 GOT && echo key was not purged
+grep -q purge-tst2 GOT || echo key was purged
+echo OK
+
+echo $N Check ChangeSet key regression ..............................$NL
+# Test that a bug causing ChangeSet delta keys to be saved to the uniqdb
+# incorrectly has been fixed.
+cd "$HERE/project"
+echo foo >uniqdb-bug
+bk new $Q uniqdb-bug || fail
+bk commit $Q -ytst || fail
+# Force the uniqdb to be written out and then read the ChangeSet key back.
+# It doesn't matter if there are other ChangeSet keys in the db; any one
+# will do.
+kill_uniq "$HERE/.bk/bk-keys-db"
+echo "get ChangeSet" | bk info_shell --uniqdb | grep ChangeSet >GOT
+egrep '[^|]+\|ChangeSet\|[^|]+\|[^|]+$' GOT >OUT || fail -f GOT bad key
+echo OK
+
+echo $N Check recover from uniq_server crash ........................$NL
+cd "$HERE/project"
+echo foo >uniqdb-crash
+# This causes the uniq_server to process one request and then exit(1)
+# to simulate a crash that leaves around stale lock and port files.
+_BK_UNIQ_REQS=1! bk new $Q uniqdb-crash >OUT 2>&1 || fail -f OUT delta failed
+echo OK

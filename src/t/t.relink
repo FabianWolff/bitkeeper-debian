@@ -1,0 +1,189 @@
+# Copyright 2002,2005-2006,2009-2011,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+BK_NO_HARDLINK_CLONE=1
+export BK_NO_HARDLINK_CLONE
+
+echo 'BAM:no!' > "`bk dotbk`"/config
+
+echo $N Create initial repositories .................................$NL
+fresh_commercial project
+echo hi > ff
+bk new $Q ff
+bk commit $Q -yff || fail
+bk -r check -ac	# Add's rootlog
+bk -r admin -z   # make sure all files use canonical packing size
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+cd ..
+bk clone -q project clone || fail
+bk clone -q project clone2 || fail
+bk clone -q project clone3 || fail
+echo OK
+
+# Pointless to check this on windows, it needs fslayer lovin.
+test -d project/.bk -a "$PLATFORM" = "WIN32" && exit 0
+
+echo $N Try to relink them ..........................................$NL
+NFILE=`bk sfiles project | wc -l`
+NFILE=`expr $NFILE + 0`	# trim the white space
+bk relink clone project 2>OUT || fail -f OUT
+grep -q "relinked $NFILE/$NFILE files, 0 different, 0 already linked." OUT || {
+	echo Bad status message
+	cat OUT
+	echo wanted
+	echo relinked $NFILE/$NFILE files, 0 different, 0 already linked.
+	exit 1
+}
+echo OK
+
+echo $N Try to relink them again, should already be linked ..........$NL
+bk relink clone project 2>OUT || {
+	cat OUT
+	exit 1
+}
+grep -q "relinked 0/$NFILE files, 0 different, $NFILE already linked." OUT || {
+	echo Bad status message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Try to relink multiple repositories at once .................$NL
+bk relink clone* project 2>OUT || {
+	cat OUT
+	exit 1
+}
+grep -q "relinked $NFILE/$NFILE files, 0 different, 0 already linked." OUT || {
+	echo Bad status message
+	cat OUT
+	exit 1
+}
+grep -q "relinked 0/$NFILE files, 0 different, $NFILE already linked." OUT || {
+	echo Bad status message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Try to relink with read lock in the from repo, should fail ..$NL
+L=`cd clone ; bk lock -rt`
+bk relink clone project 2>OUT && {
+	bk _kill $L
+	echo Should have failed
+	cat OUT
+	exit 1
+}
+bk _kill $L
+grep -q "relink: unable to write lock clone" OUT || {
+	echo Bad status message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Try to relink with write lock in the from repo, should fail .$NL
+L=`cd clone ; bk lock -wt`
+bk relink clone project 2>OUT && {
+	bk _kill $L
+	echo Should have failed
+	cat OUT
+	exit 1
+}
+bk _kill $L
+grep -q "relink: unable to write lock clone" OUT || {
+	echo Bad status message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Try to relink with read lock in the to repo, should work ....$NL
+cp -rp project relink
+L=`cd project ; bk lock -rt`
+bk relink relink project 2>OUT || {
+	bk _kill $L
+	cat OUT
+	exit 1
+}
+bk _kill $L
+grep -q "relinked $NFILE/$NFILE files, 0 different, 0 already linked." OUT || {
+	echo Bad status message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure that no args means relink to the parent ...........$NL
+cd "$HERE/clone"
+bk -r admin -z
+MINE=`bk _stat SCCS/s.ChangeSet | awk -F\| '{print $2}'`
+PARENT=`bk _stat "$HERE/project/SCCS/s.ChangeSet" | awk -F\| '{print $2}'`
+bk relink 2>OUT || fail
+grep -q "relinked $NFILE/$NFILE files, 0 different, 0 already linked." OUT || {
+	echo Bad status message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure that no args means use the parent inode ...........$NL
+INO=`bk _stat SCCS/s.ChangeSet | awk -F\| '{print $2}'`
+test $MINE = $INO && {
+	echo failed
+	exit 1
+}
+test $PARENT -eq $INO || {
+	echo failed to use parent
+	exit 1
+}
+echo OK
+
+echo $N Make sure that no args means relink to all the parents ......$NL
+cd "$HERE/clone"
+bk parent -aq ../clone2
+bk -r admin -z
+bk relink 2>OUT || fail
+grep -q "relinked $NFILE/$NFILE files, 0 different, 0 already linked." OUT || {
+	echo Bad status message
+	cat OUT
+	exit 1
+}
+test `wc -l < OUT` -eq 2 || {
+	echo should have had two relink lines
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Setup timestamp error........................................$NL
+cd "$HERE"
+bk --cd=clone3 admin -z ff
+bk relink project clone3 2>OUT || fail
+echo "project: relinked 1/7 files, 0 different, 6 already linked." > WANT
+cmpfiles OUT WANT
+echo OK
+
+echo $N Show sfiles converge ........................................$NL
+cd clone3
+_BK_FORCE_REPACK=1 bk admin -z ff || fail
+bk _cp SCCS/s.ff 1
+bk edit $Q ff
+echo hh >> ff
+BK_USER=fjljs bk ci -ydd $Q ff || fail
+bk stripdel $Q -r+ ff || fail
+_BK_FORCE_REPACK=1 bk admin -z ff || fail
+bk _cp SCCS/s.ff 2
+cmpfiles 1 2
+echo OK

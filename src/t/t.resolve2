@@ -1,0 +1,51 @@
+# Copyright 2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+newfile() {
+	dir=`dirname $1`
+	mkdir -p "$dir"
+	echo $1 > "$1"
+	bk new $Q "$1"
+}
+
+echo $N Test replacing directory with file with local junk...........$NL
+commercial project
+newfile pages/apage.adoc
+newfile public/afile.html
+newfile public/assets/img/img.png
+bk edit $Q BitKeeper/etc/ignore
+echo '*.junk' >> BitKeeper/etc/ignore
+bk ci $Q -yignore BitKeeper/etc/ignore
+bk commit $Q -yadd_files
+bk clone $Q . ../copy || fail
+cd ../copy
+newfile pages/assets/img/foo.png
+newfile pages/bpage.adoc
+bk commit $Q -ybad || fail
+cd ../project
+bk pull $Q ../copy
+bk mv pages/assets/img/foo.png public/assets/img || fail
+cd pages
+rm -rf assets
+newfile assets
+cd ..
+bk commit $Q -yfix || fail
+cd ../copy
+newfile pages/cpage.adoc
+echo junk > pages/assets/img/foo.junk
+bk commit $Q -yunrelated || fail
+printf "rl\ny\nq" | bk pull $Q > ERR 2>&1 && fail should have failed
+grep -q "Could not remove '../pages/assets' because of the following file:" ERR || fail -f ERR 
+grep -q "foo.junk" ERR || fail -f ERR foo.junk 
+echo OK

@@ -1,0 +1,38 @@
+# Copyright 1999-2001,2008 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+commercial project
+echo $N Test add E flag .............................................$NL
+echo 'XX@W@YY' | sed s/@/%/g > test.c
+echo 'YY@W@ZZ' | sed s/@/%/g >> test.c
+bk ci $Q -i test.c
+bk admin $Q -fEXPAND1 test.c
+bk get $Q test.c
+echo "XX@(#)test.c 1.2YY" > X
+echo 'YY@W@ZZ' | sed s/@/%/g >> X
+bk undos X > ref.c
+cmp -s test.c ref.c
+if [ $? -ne 0 ]; then echo Failed; cat test.c; exit 1; fi
+echo OK
+echo $N Test delete E flag ..........................................$NL
+bk admin $Q -FEXPAND1 test.c
+bk get $Q test.c
+cat  << EOF > X
+XX@(#)test.c 1.3YY
+YY@(#)test.c 1.3ZZ
+EOF
+bk undos X > ref.c
+cmp -s test.c ref.c
+if [ $? -ne 0 ]; then echo Failed; cat test.c; exit 1; fi
+echo OK

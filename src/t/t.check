@@ -1,0 +1,985 @@
+# Copyright 2000-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+umask 002
+
+echo $N Create initial repository ...................................$NL
+commercial project
+bk clone $Q . ../proj4	# for a later test
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+bk _getdir . | grep -q '|?' || {
+echo $N Demo bug of in a mergesort like alg .........................$NL
+mkdir a
+touch a/f
+bk new $Q a/f
+rmdir a
+touch a
+# Need to use lower case err to sort after 'a' to tickle the ex-coding err
+bk -r check 2> err && fail -f err
+cat <<EOF > WANT
+file './a' masks a directory with history,
+more details: bk getmsg shadow ./a
+EOF
+cmpfiles err WANT
+rm a err
+bk -r check || fail
+test -d a || fail not fixed
+echo OK
+}
+
+echo $N Create some data ............................................$NL
+for dir in d1 d2 d3 d1/sub1 d2/sub1 d3/sub d3/sub2
+do	mkdir $dir
+	for file in a b c d 
+	do	echo "I am $dir/$file: %I%" > $dir/$file
+	done
+done
+echo bam-bam > bam
+bk new $Q -b bam
+bk sfiles -x | bk ci $Q -i -
+if bk _test ! -f d3/sub2/SCCS/s.a; then echo failed to create files; exit 1; fi
+echo OK
+
+echo $N Commit the data .............................................$NL
+bk commit $S -yCset
+if [ `bk sfiles -pC | wc -l` -ne 0 ];
+then	echo failed to commit all files; exit 1; fi
+echo OK
+
+echo $N Create another changeset ....................................$NL
+bk -r edit $Q
+bk sfiles -g | grep -v ChangeSet | grep -v BitKeeper | while read x
+do	echo more data >> $x
+done
+bk -r ci $Q -ycset2
+bk commit $S -yCset2
+if [ `bk sfiles -pC | wc -l` -ne 0 ];
+then	echo failed to commit all files; exit 1; fi
+echo OK
+
+echo $N Create another changeset ....................................$NL
+bk -r edit $Q
+bk sfiles -g | grep -v ChangeSet | grep -v BitKeeper | while read x
+do	echo more data >> $x
+done
+bk -r ci $Q -ycset3
+bk commit $S -yCset3
+if [ `bk sfiles -pC | wc -l` -ne 0 ];
+then	echo failed to commit all files; exit 1; fi
+echo OK
+
+echo $N Create another changeset with two deltas ....................$NL
+bk -r edit $Q
+bk sfiles -g | grep -v ChangeSet | grep -v BitKeeper | while read x
+do	echo more data >> $x
+done
+bk -r ci $Q -ycset4
+bk -r edit $Q
+bk sfiles -g | grep -v ChangeSet | grep -v BitKeeper | while read x
+do	echo more data >> $x
+done
+bk -r ci $Q -ycset4
+bk commit $S -yCset4
+if [ `bk sfiles -pC | wc -l` -ne 0 ];
+then	echo failed to commit all files; exit 1; fi
+echo OK
+
+echo $N Make sure that it checks clean ..............................$NL
+cd "`bk root`"
+rm -f BitKeeper/log/checked
+bk -r check -a > OUT 2>&1 || {
+	echo failed to exit 0
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure that check -a does not add a checked timestamp ....$NL
+test -f BitKeeper/log/checked && fail
+echo OK
+
+echo $N Make sure that check -ac does add a checked timestamp .......$NL
+bk -r check -ac
+test -f BitKeeper/log/checked || fail
+echo OK
+
+echo $N Make sure that check -a adds an NFILES ......................$NL
+rm BitKeeper/log/NFILES
+bk -r check -a
+test -f BitKeeper/log/NFILES || fail
+echo OK
+
+echo $N Make sure that check -a corrects bad NFILES count ...........$NL
+WANT=`cat BitKeeper/log/NFILES`
+echo 10000 > BitKeeper/log/NFILES
+bk -r check -a
+GOT=`cat BitKeeper/log/NFILES`
+test "$WANT" = "$GOT" || {
+	echo failed to update NFILES
+	echo WANT=$WANT
+	echo GOT=$GOT
+	exit 1
+}
+echo OK
+
+cp -rp "$HERE/project" "$HERE/clean"
+echo $N Make sure that it complains if a file is missing, -a case ...$NL
+bk _mv d1/sub1/SCCS/s.a d1/sub1/SCCS/junk.a
+bk -r check -a > OUT 2>&1
+if [ $? -eq 0 ]; then echo failed to exit non-zero; cat OUT; exit 1; fi
+if [ ! -s OUT ]; then echo failed; cat OUT; exit 1; fi
+echo OK
+
+echo $N Make sure that it complains if a file is missing, - case ....$NL
+echo d1/sub1/a | bk check - > OUT 2>&1
+if [ $? -eq 0 ]; then echo failed to exit non-zero; cat OUT; exit 1; fi
+if [ ! -s OUT ]; then echo failed; cat OUT; exit 1; fi
+echo OK
+
+echo $N Make sure that it is happy when we put it back ..............$NL
+bk _mv d1/sub1/SCCS/junk.a d1/sub1/SCCS/s.a
+bk -r check -a > OUT 2>&1 || {
+	exit failed to exit cleanly
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure it fixes locked files w/o a gfile with -f .........$NL
+bk get -eg $Q BitKeeper/etc/config
+bk -r check -af > OUT 2>&1 || {
+	echo should have exited cleanly
+	exit 1
+}
+bk _test -f d1/sub1/SCCS/p.a && {
+	echo failed to unlock the file
+	exit 1
+}
+echo OK
+
+echo $N Make sure it complains about locked files w/ RO gfile........$NL
+bk edit $Q d1/sub1/a
+echo "new stuff" > d1/sub1/a
+chmod 444 d1/sub1/a
+bk -r check -a > OUT 2>&1 && {
+	echo should have exited with a failure
+	exit 1
+}
+grep -q 'is locked but not writable' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure unedit will fix the above problem .................$NL
+bk unedit d1/sub1/a
+bk -r check -a > OUT 2>&1 || {
+	echo should have exited cleanly
+	exit 1
+}
+echo OK
+
+echo $N Make sure it fixes locked files w/ unchanged RO gfile........$NL
+bk edit $Q d1/sub1/a
+bk get $Q -r+ -p d1/sub1/a > d1/sub1/a
+chmod 444 d1/sub1/a
+bk -r check -a > OUT 2>&1 || {
+	echo should have exited with ok status
+	exit 1
+}
+echo OK
+
+echo $N Make sure it complains unlocked files with rw gfile .........$NL
+bk get $Q d1/sub1/a
+chmod +w d1/sub1/a
+bk --config=autofix:off -r check -a > OUT 2>&1
+bk _test -f d1/sub1/SCCS/P.a && fail -f OUT should not have created lock file
+test -w d1/sub1/a || fail -f OUT should not have unedited file
+grep -q 'writable but not locked.' OUT || fail -f OUT
+echo OK
+
+echo $N Make sure it fixes unlocked files with rw gfile with -f .....$NL
+bk -r check -af > OUT 2>&1
+bk _test -f d1/sub1/SCCS/p.a || {
+	echo should have created lock file
+	cat OUT
+	exit 1
+}
+test -w d1/sub1/a || {
+	echo should not have unedited file
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure it autofixes unlocked files with rw gfile .........$NL
+bk edit $Q BitKeeper/etc/config
+echo "autofix:yes" >> BitKeeper/etc/config
+bk _rm d1/sub1/SCCS/p.a
+bk -r check -a > OUT 2>&1
+bk _test -f d1/sub1/SCCS/p.a || {
+	echo should have created lock file
+	cat OUT
+	exit 1
+}
+test -w d1/sub1/a || {
+	echo should not have unedited file
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure it removes p.files when no gfile ..................$NL
+rm d1/sub1/a
+bk _test -f d1/sub1/SCCS/p.a || {
+	echo whoops, where did the p.file go
+	exit 1
+}
+bk -r check -a > OUT 2>&1
+bk _test -f d1/sub1/SCCS/p.a && {
+	echo should have removed d1/sub1/SCCS/p.a
+	exit 1
+}
+echo OK
+
+echo $N No remove w/o gfile when -i/-x ..............................$NL
+bk edit $Q -x+ d1/sub1/a
+rm d1/sub1/a
+bk -r check -a > OUT 2>&1 && {
+	echo should have failed
+	exit 1
+}
+bk _test -f d1/sub1/SCCS/p.a || {
+	echo should not have removed d1/sub1/SCCS/p.a
+	cat OUT
+	exit 1
+}
+grep -q 'd1/sub1/a has merge.include.exclude but no gfile.' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure it complains about file/dir conflicts .............$NL
+bk unedit $Q d1/sub1/a
+mkdir d1/sub1/a
+bk -r check -a > OUT 2>&1 && {
+	echo should have exited with a failure
+	cat OUT
+	exit 1
+}
+grep -q 'File/directory conflict: d1/sub1/a' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+rmdir d1/sub1/a
+echo OK
+
+echo $N Make sure it complains about copied files ...................$NL
+cd "$HERE"
+commercial other
+echo hi > foo
+bk commit $Q -yFOO
+bk new $Q foo || fail
+bk commit $Q -yFOO
+cd "$HERE"/project
+bk _cp ../other/SCCS/s.foo SCCS/s.foo
+bk -r check -a 2>ERR && fail -f ERR should fail
+grep -q \
+"check: File foo doesn't have any data that matches the local ChangeSet file" \
+	ERR || fail -f ERR
+bk admin -D foo
+bk sfiles -P > /dev/null
+bk -r check -a || fail
+echo OK
+
+echo $N Make sure commit refuses to commit out of sync files ........$NL
+cd "$HERE/clean/d3/sub2"
+for i in a b c
+do	bk stripdel -qCr+ $i
+done
+bk stripdel -qCr+ a
+for i in a b c
+do	bk edit $Q $i
+	echo error >> $i
+	bk delta $Q -y'out of sync' $i || fail
+done
+bk commit $Q -y'out of sync' > OUT 2>&1 && {
+	echo should have failed the commit
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure check detects checksum problems ...................$NL
+cd "$HERE/project"
+echo "foobar" > ff
+bk new $Q ff
+bk edit $Q ff
+bk delta -yfoobar $Q ff
+bk _scat ff | sed 's/foobar/foobaz/' > ff.tmp2
+bk _mv ff.tmp2 SCCS/s.ff
+bk check -c ff 2> /dev/null && {
+	echo check should have failed
+	exit 1
+}
+bk _rm SCCS/s.ff
+echo OK
+
+test X"$_BKFILE_REGRESSIONS" = Xyes && {
+echo $N Make sure check detects checksum problems \(binfile\)..........$NL
+cd "$HERE/project"
+echo "foobar" > ff
+bk new $Q ff
+bk edit $Q ff
+bk delta -yfoobar $Q ff
+bk _mv SCCS/s.ff ff.tmp
+chmod +w ff.tmp
+perl - <<'EOF' || fail
+$/ = undef;
+open(F, "ff.tmp");
+binmode(F);
+$ff = <F>;
+close (F);
+$/ = "\n";
+$bad = 0;
+foreach $i (8 .. length($ff)-1) {
+	$new = $ff;
+	next if substr($new, $i, 1) eq "X";
+	substr($new, $i, 1) = "X";
+	open(F, "> .bk/SCCS/ff,s");
+	binmode(F);
+	print F $new;
+	close(f);
+     	open(C, "bk check -c ff 2>&1 |");
+	$s = '';
+	$cnt = 0;
+	while (<C>) {
+	      $s .= $_;
+	      $cnt++ if /^(crc error found|crc error block|correctable|offset $i was 58 should)/;
+	}
+	if ($cnt < 3) {
+	   	print "bad output at $i\n";
+		print $s;
+		exit 1;
+	}
+	close(C);
+}
+EOF
+bk _rm SCCS/s.ff ff.tmp
+echo OK
+}
+
+echo $N Make sure check complains if cset marks are missing .........$NL
+cd "$HERE"
+bk clone $Q project bad || fail
+cd bad
+bk admin -FSCCS d1/a  || fail
+bk _rm d1/SCCS/d.a || fail
+bk -r check -a >OUT 2>ERRS && {
+	echo check should have failed
+	exit 1
+}
+grep -q 'has pending deltas but no d.file' ERRS || {
+	echo bad error message
+	cat ERRS
+	exit 1
+}
+bk _test -f d1/SCCS/d.a || fail
+echo OK
+
+echo $N Show that check will repair dfile errors ....................$NL
+bk _rm d1/SCCS/d.a || fail
+bk _touch d1/SCCS/d.b || fail
+bk _rm BitKeeper/etc/SCCS/x.dfile || fail
+# no error because no marker
+bk -r check -a || fail
+bk _test -f d1/SCCS/d.a || fail		# add missing
+bk _test -f d1/SCCS/d.b && fail		# remove extra
+bk _test -f BitKeeper/etc/SCCS/x.dfile || fail	# restore marker
+cd "$HERE"
+rm -rf bad
+echo OK
+
+echo $N Make sure check knows about .bk_skip ........................$NL
+cd "$HERE"
+bk clone $Q project clone || fail
+cd clone
+# this one should print a warning
+touch d1/sub1/.bk_skip
+bk -r check -a >OUT 2>ERRS && fail
+rm d1/sub1/.bk_skip
+[ -s ERRS ] || {
+	echo ".bk_skip didn't cause a warning; output was"
+	cat OUT
+	echo "error output was empty!"
+	exit 1
+}
+grep -v 'sfiles: d1/sub1/.bk_skip when .bk/d1/sub1 exists' ERRS |
+     grep -v '^Missing file' |
+     grep -v 'At least some of the chk3' |
+     grep -v 'or a .bk_skip file' > ERRS2
+test -s ERRS2 && fail -f ERR2 wrong error messages
+echo OK
+
+test -d $TESTDATA/cset-gzipped && {
+echo $N Make sure check works with compressed ChangeSet files........$NL
+cd "$HERE"
+bk clone $Q $TESTDATA/cset-gzipped p || {
+	echo "failed"
+	exit 1
+}
+cd p
+bk -r check -a || {
+	echo "failed"
+	exit 1
+}
+echo OK
+}
+true
+
+echo $N Check without a ChangeSet sfile should give an error ........$NL
+cd "$HERE"
+rm -rf clone
+bk clone $Q project clone || fail
+cd clone
+bk _rm SCCS/s.ChangeSet
+bk -r check -a >OUT 2>ERRS
+[ -s ERRS ] || {
+	echo "check without a ChangeSet sfile didn't cause an error"
+	cat OUT
+	exit 1
+}
+# restore repo
+bk _cp ../project/SCCS/s.ChangeSet SCCS/s.ChangeSet
+echo OK
+
+echo $N bk check should detect new sfiles in a .bk_skip or -prune ...$NL
+# In a remapped repo, there should be no .bk/path/to if -f path/to/.bk_skip
+cd "$HERE"
+commercial proj2
+mkdir tmp
+touch tmp/.bk_skip
+touch tmp/foo
+bk new $Q tmp/foo
+bk -r check -a 2>ERR && fail -f ERR
+grep -v '^Missing file' ERR |
+     grep -v 'At least some of the chk3' |
+     grep -v 'or a .bk_skip file' > ERRS2
+echo sfiles: tmp/.bk_skip when .bk/tmp exists > WANT
+cmpfiles ERRS2 WANT
+rm tmp/.bk_skip
+echo OK
+
+echo $N bk check should detect copied sfile .........................$NL
+echo "hi" > foo
+bk new $Q foo
+bk commit $Q -yfoo
+bk _cp SCCS/s.foo SCCS/s.foo2
+bk -r check -ac 2> "$HERE/out"
+grep -q "Are one of these files copied?" "$HERE/out" || fail -f "$HERE/out"
+echo OK
+
+echo $N bk check with partial_check should notice path conflicts ....$NL
+commercial proj3
+bk edit $Q BitKeeper/etc/config
+(grep -v partial_check BitKeeper/etc/config; echo partial_check:yes) > c
+cat c > BitKeeper/etc/config
+test Xyes = X"`bk config partial_check`" || fail
+echo hi > foo
+bk new $Q -ycomment foo || fail
+bk commit $Q -ycomment || fail
+mkdir foo
+echo problem > foo/bar
+bk new $Q -ycomment2 foo/bar || fail
+bk commit -q -ycomment2 2> ERR && {
+	echo commit should have failed
+	exit 1
+}
+cat <<EOF > WANT
+===============================================================================
+File/directory conflict: foo
+The name above is both a directory and a revision controlled file.
+The revision controlled file can not be checked out because the directory
+is where the file wants to be.  To correct this, either 
+    move the directory to a different name
+or
+    remove the revision controlled file foo with "bk rm"
+or
+    move the revision controlled file to someplace else with "bk mv".
+===============================================================================
+A path-conflict was found while trying to commit
+  ./foo/bar|1.1
+conflicts with existing:
+  ./foo|1.1
+The commit is aborted.
+EOF
+cmpfiles WANT ERR
+echo OK
+
+echo $N bk check with errors should delete checked file .............$NL
+cd "$HERE"
+cd proj4	# created earlier
+bk edit $Q BitKeeper/etc/config
+echo partial_check:yes! >> BitKeeper/etc/config
+echo hi > foo
+bk new $Q -ycomment foo || fail
+bk commit $Q -ycomment || fail
+bk force_repack $Q || fail   # make sure we are repacked
+echo 1 > BitKeeper/log/checked
+bk admin -pbusted foo
+bk --config=autofix:off -r check -ac 2>ERR && fail -f ERR should fail
+# checked file should be gone
+test -f BitKeeper/log/checked && fail
+echo OK
+
+echo $N Ancient check file should be needs check ....................$NL
+echo 1 > BitKeeper/log/checked
+bk needscheck || {
+	echo failed, WTF
+	cat BitKeeper/log/checked
+	exit 1
+}
+echo OK
+
+echo $N No check file should be needs check .........................$NL
+rm BitKeeper/log/checked
+bk needscheck || {
+	echo failed, WTF
+	exit 1
+}
+echo OK
+
+echo $N Up to date check file should be no check ....................$NL
+perl -le 'print scalar(time)' > BitKeeper/log/checked
+bk needscheck && {
+	echo failed, WTF
+	cat BitKeeper/log/checked
+	exit 1
+}
+echo OK
+
+echo $N Check in a subdir because I forgot that one .................$NL
+mkdir subdir
+cd subdir
+bk needscheck && {
+	echo failed, WTF
+	exit 1
+}
+rm ../BitKeeper/log/checked
+bk needscheck || {
+	echo failed, WTF2
+	exit 1
+}
+echo OK
+
+echo $N bk check with no errors should update checked file ..........$NL
+cd "$HERE/proj4"
+perl -le 'print scalar(time)' > BitKeeper/log/checked
+echo 1 > WANT
+cp WANT BitKeeper/log/checked
+bk admin -pfoo foo
+bk -r check -ac 2>ERR || {
+	echo check should not have failed
+	cat ERR
+	exit 1
+}
+cmp -s WANT BitKeeper/log/checked && {
+	echo should have updated the file
+	cat GOT
+	exit 1
+}
+echo OK
+
+if [ "$PLATFORM" != "WIN32" ]; then
+echo $N Try our pre-outgoing trigger that auto checks ...............$NL
+cd "$HERE/proj4"
+test -d  BitKeeper/triggers || mkdir  BitKeeper/triggers
+cat > BitKeeper/triggers/pre-outgoing.check <<EOF
+#!/bin/sh
+
+# only if we need a check
+bk needscheck || exit 0
+
+# and not when another one of these triggers are running
+test -f BitKeeper/tmp/autocheck.lock && exit 0
+
+# and not when we can't tell ourselves that another is running
+test -w BitKeeper/tmp || exit 0
+
+touch BitKeeper/tmp/autocheck.lock
+
+# Run full check in background
+bk sh <<SUBEOF >&- 2>&- &
+# Uncomment if you want to prove to yourself the locking works
+# sleep 1
+bk -r check -ac > /dev/null 2>&1
+rm -f BitKeeper/tmp/autocheck.lock
+SUBEOF
+
+# now return to user and run in parallel with clone
+exit 0
+EOF
+chmod +x BitKeeper/triggers/pre-outgoing.check
+rm BitKeeper/log/checked
+cd ..
+bk clone $Q proj4 proj4.clone
+cd proj4
+while test -f BitKeeper/tmp/autocheck.lock
+do	# echo waiting
+	bk _usleep 100000
+done
+bk needscheck && {
+	echo failed to run check
+	exit 1
+}
+echo OK
+fi
+
+echo $N Check should clean up any extra dfiles ......................$NL
+cd "$HERE"/proj2
+bk _rm -f SCCS/s.foo2	# fixup
+bk _touch SCCS/d.foo
+bk -r check -a || fail
+bk _test -f SCCS/d.foo && {
+	echo should have deleted dfile
+	exit 1
+}
+echo OK
+
+echo $N Test repocheck in a standalone and nested repo ..............$NL
+mkdir src
+cd src
+bk repocheck -q || fail
+BK_NOTTY= bk repocheck 2> ERR || fail -f ERR
+grep -q '100%.*OK$' ERR || fail -f ERR
+cd "$HERE"
+nested nest
+mkdir src
+cd src
+bk repocheck -q || fail
+BK_NOTTY= bk repocheck > OUT 2> ERR || fail -f ERR
+# stderr has the check output
+# === Checking /build/.regression lm/sandbox/nest ===
+# gcc                                100% |==============================| OK
+# gdb                                100% |==============================| OK
+# .                                  100% |==============================| OK
+grep -q 'gcc.*OK$' ERR || fail -f ERR
+# Bork the repo and see that it says it is borked
+rm -fr ../gcc
+bk repocheck -q 2> ERR && fail -f ERR
+grep -q "check: Not populated: gcc" ERR || 
+grep -q "missing components!" ERR ||
+fail -f ERR
+echo OK
+
+echo $N Test check fixes missing directories in remapped repo .......$NL
+cd "$HERE"
+bk clone $Q --hide-sccs-dirs project proj-remapped
+cd proj-remapped
+bk -r clean
+rmdir d1/sub1
+bk -r check -acf || fail
+echo OK
+
+echo $N Try to create a cset with a path conflict ...................$NL
+cd ../project
+bk mv d2/a foo2 || fail
+bk mv d2/b d2/a || fail
+echo 'd2/SCCS/s.a|+' | bk commit -q -ybad - 2> ERR && fail -f ERR should fail
+cat <<EOF > WANT
+A path-conflict was found while trying to commit
+  ./d2/a|1.6
+conflicts with existing:
+  ./foo2|1.5
+  with pending rename from ./d2/a
+Must include other renames in commit.
+The commit is aborted.
+EOF
+cmpfiles WANT ERR
+bk commit $Q -ygood
+echo OK
+
+echo $N Setup what looks like a path conflict but is a gone delta ...$NL
+bk edit $Q BitKeeper/etc/gone
+bk log -r+ -nd:KEY: d2/a >> BitKeeper/etc/gone
+bk stripdel $Q -Cr+ d2/a
+bk stripdel $Q -Cr+ foo2
+bk names d2/a foo2
+bk check || fail
+bk unedit BitKeeper/etc/gone
+bk undo $Q -fsr+ || fail
+echo OK
+
+echo $N Setup what looks like missing merge but all are gone ........$NL
+# take a repo with a 'foo', clone, rm and gone foo in both, pull
+cd ../other
+bk clone $Q . ../other2
+bk rm foo
+bk commit $Q -yno-foo
+bk _rm -fr BitKeeper/deleted
+bk -r check -ag | bk gone $Q -
+bk commit $Q -yno-foo
+cd ../other2
+bk rm foo
+bk commit $Q -yno-foo
+bk _rm -fr BitKeeper/deleted
+bk -r check -ag | bk gone $Q -
+bk commit $Q -yno-foo || fail
+bk pull $Q || fail
+echo OK
+
+echo $N Setup a path conflict in resolve ............................$NL
+cd ..
+bk clone $Q project copy || fail
+cd copy
+bk mv d2/b foobar || fail		# commit this move
+bk commit $Q -ymv1 || fail
+bk mv foobar something_else || fail	# leave this move pending
+cd ../project
+echo hi > foobar
+bk new $Q foobar || fail		# create a new foobar
+bk commit $Q -ynew || fail
+cd ../copy
+bk pull -q 2>ERR && fail -f ERR should fail
+cat <<EOF > WANT
+A path-conflict was found while committing a merge
+  ./something_else|1.6
+  with pending rename from ./foobar
+conflicts with existing:
+  ./foobar|1.1
+Must include other renames in commit.
+The commit is aborted.
+Commit aborted, no changes applied.
+resolve: RESYNC directory left intact.
+====================================================
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N See that an unmarked delta gets marked ......................$NL
+cd "$HERE"
+commercial nomark
+touch foo
+bk new $Q foo
+bk _cp SCCS/s.foo no-mark
+bk commit $Q -yfoo
+bk _cp no-mark SCCS/s.foo
+# Okay, what's check say?
+bk -r check -ac 2> ERR && fail -f ERR
+cat << EOF > WANT
+===============================================================================
+check: foo has pending deltas but no d.file, repairing.
+===============================================================================
+foo: adding and/or removing missing csetmarks
+EOF
+cmpfiles WANT ERR
+# All fixed
+bk -r check -ac || fail
+echo OK
+
+echo $N Setup check/clone race ......................................$NL
+cd "$HERE"
+bk clone $Q --sccsdirs project project.noremap
+cd project.noremap
+mkdir d4
+bk mv d3/sub/a d4/anew || fail
+bk commit $Q -ymv || fail
+
+bk repocheck -q &
+CPID1=$!
+bk clone $Q --no-hardlinks . ../junk &
+CPID2=$!
+bk repocheck -q &
+CPID3=$!
+bk clone $Q --no-hardlinks . ../junk2 &
+CPID4=$!
+wait $CPID1 || fail
+wait $CPID2 || fail
+wait $CPID3 || fail
+wait $CPID4 || fail
+echo OK
+
+echo $N Test a bad graph structure ..................................$NL
+cd "$HERE"/project
+touch badgraph
+bk new $Q badgraph
+bk edit $Q badgraph
+bk delta $Q -fynull badgraph
+BRANCH=`bk prs -r+ -hnd:KEY: badgraph`
+bk _get $Q -e -r1.1 badgraph
+bk delta $Q -fynull badgraph
+TRUNK=`bk prs -r1.1.1 -hnd:KEY: badgraph`
+bk _get $Q -e -r1.1.1 badgraph
+bk delta $Q -fynull badgraph
+PARENT=`bk prs -r1.1.1 -hnd:KEY: badgraph`
+bk edit $Q badgraph
+bk delta $Q -fynull badgraph
+MERGE=`bk prs -r1 -hnd:KEY: badgraph`
+bk _get $Q -e -M1 -r1.1.1 badgraph
+bk delta $Q -fynull badgraph
+TIP=`bk prs -r1.1.1 -hnd:KEY: badgraph`
+# With fix, it will run renumber, which won't fix
+# Renumber will assert normally, but not in regressions.
+bk check badgraph 2> GOT
+cat <<EOF > WANT
+badgraph: need to swap:
+	trunk: $TRUNK
+	branch: $BRANCH
+badgraph|1.1.1.3: 1.1.1.2/1.3 graph corrupted.
+Please write support@bitkeeper.com
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test multi tip commit .......................................$NL
+cd "$HERE/project.noremap"
+bk pull $Q -R ../proj4 || fail
+bk _cp RESYNC/SCCS/s.ChangeSet SAVE
+bk _cp SCCS/1.ChangeSet SAVE1
+bk _cp SCCS/2.ChangeSet SAVE2
+bk resolve $Q || fail
+bk repocheck -q || fail
+bk _cp SAVE SCCS/s.ChangeSet
+bk _cp SAVE1 SCCS/1.ChangeSet
+bk _cp SAVE2 SCCS/2.ChangeSet
+bk repocheck $Q 2> ERR && fail -f ERR should fail
+grep -q "unmerged leaf" ERR || fail
+echo OK
+
+echo $N Show a check in the RESYNC with local repo having dups ......$NL
+cd "$HERE"
+commercial good
+bk clone $Q . ../has-dups
+touch foo
+bk new $Q foo
+bk commit $Q -ynewfile
+cd ../has-dups
+touch bar
+bk new $Q bar
+KEY=`bk prs -r+ -hnd:KEY: bar`
+bk _cp SCCS/s.bar bu
+bk commit $Q -ynewfile bar
+bk _cp bu SCCS/s.bar
+bk sfiles -P bar > remark
+# verify that we get an error on commit
+bk commit -q -ynewfile-again 2> GOT && fail -f GOT
+cat <<EOF > WANT
+Duplicate delta found in ChangeSet
+	Rev: 1.1  Key: $KEY
+	Both keys in file SCCS/s.bar
+	Same key found in ChangeSet:1.3,1.2
+Please write support@bitkeeper.com with the above
+error about duplicate deltas
+The commit is aborted.
+EOF
+cmpfiles WANT GOT
+# Do again overriding check
+CRC=`bk crypto -h "$KEY" "rick approves"`
+echo "$KEY $CRC" > BitKeeper/etc/ignore-poly
+bk commit $Q -ynewfile-again || fail
+# Show that a -pp check fails even if key in ignore-poly
+bk -r check -pp 2> GOT && fail -f GOT
+grep -q "Duplicate delta found in ChangeSet" GOT || fail -f GOT
+rm BitKeeper/etc/ignore-poly
+# Show that normal check sqawks but doesn't fail
+bk -r check 2> GOT || fail -f GOT
+grep -q "Duplicate delta found in ChangeSet" GOT || fail -f GOT
+# Show that we can quiet the message, and still not fail
+echo "$KEY $CRC" > BitKeeper/etc/ignore-poly
+bk -r check || fail
+# Now, on with the checkAll test ...
+bk pull $Q -R
+# What used to happen next ...
+# bk --cd=RESYNC -r check -aR 2> GOT && fail -f GOT
+# echo "delta $KEY missing?" > WANT
+# cmpfiles WANT GOT
+rm BitKeeper/etc/ignore-poly
+# Check passes because it is incremental and the duplicated key in the
+# changeset file is for bar, and bar is not in resync, so not seen.
+bk --cd=RESYNC -r check -aR || fail
+bk --config='partial_check:yes' resolve -q 2> GOT || fail
+cat <<EOF > WANT
+Warning: Duplicate delta found in ChangeSet
+	Rev: 1.1  Key: $KEY
+	Both keys in file SCCS/s.bar
+	Same key found in ChangeSet:1.1.1.2,1.1.1.1
+Please write support@bitkeeper.com with the above
+warning about duplicate deltas
+EOF
+cmpfiles WANT GOT
+# Full check hits warning
+bk repocheck -q 2> GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test two new files with same rootkey ........................$NL
+# This is why checkKeys() has a sccs_addUniqStr for the rootkey
+cd "$HERE/proj2"
+touch twin1
+bk new $Q twin1
+bk _cp SCCS/s.twin1 SCCS/s.twin2
+bk edit $Q twin2
+_BK_MV_OK=1 bk delta $Q -fyrename twin2
+bk -r check 2> ERR && fail -f ERR
+grep -q "Same key" ERR || fail -f ERR
+echo OK
+
+test -d "$TESTDATA/key_format2" && {
+echo $N Test KEY_FORMAT2 code .......................................$NL
+# Hit a problem with /home/bk/homepage ; test repo is a csetprune of that repo
+# export the license
+cd "$HERE/project"
+bk cat BitKeeper/etc/config > "$BK_DOTBK"/config
+# check it
+bk --cd="$TESTDATA/key_format2" repocheck $Q || fail
+echo OK
+}
+
+echo $N Show that bk flags bad pfiles ...............................$NL
+cd "$HERE"
+bk clone $Q good badpfile || fail
+cd badpfile
+bk edit $Q foo || fail
+bk repocheck $Q || fail
+echo junk > f
+bk _mv f SCCS/p.foo
+bk repocheck -q 2>ERR && fail -f ERR should fail
+echo "check: can't read pfile for foo" > WANT
+cmpfiles ERR WANT
+echo OK
+
+echo $N Switching checkout modes should not refetch gfile............$NL
+bk _rm SCCS/p.foo
+rm -f foo
+bk admin -FSCCS foo || fail
+bk get $Q foo || fail
+test -d SCCS && bk _touch -t 10000 SCCS/s.foo
+bk _touch -t 10002 foo
+chmod ug+w foo
+# trim ctime off stat info
+bk _lstat foo | sed 's/|[0-9]*|foo$/|foo/' > WANT
+chmod -w foo
+bk --config=checkout:edit repocheck $Q || fail
+bk _lstat foo | sed 's/|[0-9]*|foo$/|foo/' > GOT
+cmpfiles WANT GOT
+echo OK

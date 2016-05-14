@@ -1,0 +1,85 @@
+# Copyright 2005-2009,2013-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Make sure pull print error if takepatch failed ..............$NL
+commercial proj
+bk  edit $Q BitKeeper/etc/config
+echo "checkout: edit" >> BitKeeper/etc/config
+bk delta $Q -ycheckout_edit BitKeeper/etc/config
+for i in 1 2 3 4 5 6 7 8 9 10 
+do
+	echo "Hi" > foo$i
+	bk new $Q foo$i
+done
+bk commit $Q -yfoo
+bk clone $Q "$HERE/proj" "$HERE/copy"
+cd "$HERE/copy"
+for i in 1 2 3 4 5 6 7 8 9 10 
+do
+	bk edit $Q foo$i
+	echo "Hello" > foo$i
+	bk delta $Q -y foo$i
+done
+bk commit $Q -yHello
+cd "$HERE/proj"
+bk edit $Q foo5
+echo "Bye" > foo5
+bk pull "$HERE/copy" >"$HERE/out" 2>&1
+grep -q "takepatch exited 1" "$HERE/out" || {
+	echo failed; exit 1; }
+echo OK
+
+echo $N Make sure push print error if takepatch failed ..............$NL
+cd "$HERE/copy"
+rm -f "$HERE/out"
+bk push "$HERE/proj" > "$HERE/out" 2>&1
+grep -q "takepatch (.*) exited 1" "$HERE/out" || {
+	echo failed; exit 1; }
+echo OK
+
+echo $N Make sure resolve fails if RESYNC is not complete ...........$NL
+cd ../proj
+bk unedit $Q foo5 || fail
+bk pull -R $Q ../copy || fail
+cd RESYNC
+bk _mv SCCS/s.foo5 ../FOO5 || fail
+bk -r check -aR 2>ERR && {
+	echo check -R should have failed
+	exit 1
+}
+grep -q "Missing file.*foo5" ERR || fail
+cd ..
+bk resolve 2>ERR && {
+	echo should have failed
+	exit 1
+}
+grep -q "Missing file.*foo5" ERR || fail
+echo OK
+
+echo $N Make sure resolve fails if RESYNC is missing deltas .........$NL
+bk _mv FOO5 RESYNC/SCCS/s.foo5
+cd RESYNC
+bk stripdel $Q -Cr+ foo5 || fail
+bk -r check -aR 2>ERR && {
+	echo check -R should have failed
+	exit 1
+}
+grep -q "Missing delta.*foo5" ERR || fail
+echo OK
+
+echo $N Pull from a non-existent source..............................$NL
+bk pull bk://work/this_repo_does_not_exist >OUT 2>&1 && fail -f should have failed
+grep -q WARNING: OUT && fail -f OUT locking problems
+echo OK
+

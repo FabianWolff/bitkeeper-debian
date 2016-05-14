@@ -1,0 +1,802 @@
+# Copyright 2009-2010,2012-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Setup .......................................................$NL
+cd "$HERE"
+commercial bam_server
+cd ..
+fresh_commercial standalone1
+bk bam server $Q ../bam_server
+echo bam > bam
+_BK_BAM_V2=1 bk new $Q -b bam
+echo file1 >file1
+bk new -q file1 || fail
+bk commit -q -y'add file1' || fail
+bk bam push $Q || fail
+bk bam clean -a $Q || fail
+cd "$HERE"
+fresh_commercial standalone2
+cd "$HERE"
+nested nested1
+# test attach where product has no BAM dir initially
+test -d BitKeeper/BAM && fail product BAM directory there
+bk attach -q "$HERE/standalone1" component1 || fail
+RSTRING=`bk --cd=component1 prs -r1.0 -hnd':RANDOM:' ChangeSet`
+test X"$RSTRING" = X0 && fail zero random string
+bk -e -r check -ac || fail
+test -d component1/BitKeeper/BAM && fail BAM directory still there
+cd component1
+bk bam check $Q || fail
+cd "$HERE"
+nested nested2
+cd "$HERE"
+bk bkd -q -aPORT -ikill || fail
+P=`cat PORT`
+trap "bk _kill bk://localhost:$P" 0
+echo OK
+
+echo $N Test not in a repo error ....................................$NL
+cd "$HERE"
+bk attach --force "$HERE/standalone2" 2>GOT && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+grep -q 'not in a product' GOT || {
+	echo unexpected output
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test not in a product error .................................$NL
+cd "$HERE/standalone1"
+bk attach --force "$HERE/standalone2" 2>GOT && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+grep -q 'not in a product' GOT || {
+	echo unexpected output
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Attach to inside a non-existent dir .........................$NL
+cd "$HERE/nested1"
+bk attach --force -q "$HERE/standalone1" "$HERE/does-not-exist" 2>GOT && {
+	echo should have failed
+	exit 1
+}
+echo OK
+
+echo $N Attach to path under a non-existent dir .....................$NL
+cd "$HERE/nested1"
+bk attach --force -q "$HERE/standalone1" "$HERE/does-not-exist/a/b/c" 2>GOT && {
+	echo should have failed
+	exit 1
+}
+echo OK
+
+echo $N Attach to inside a non-repo .................................$NL
+cd "$HERE"
+mkdir not-a-repo || fail
+bk attach --force -q "$HERE/standalone1" "$HERE/not-a-repo" 2>GOT && {
+	echo should have failed
+	exit 1
+}
+echo OK
+
+echo $N Attach to path under a non-repo .............................$NL
+bk attach --force -q "$HERE/standalone1" "$HERE/not-a-repo/a/b/c" 2>GOT && {
+	echo should have failed
+	exit 1
+}
+echo OK
+
+echo $N Attach to inside a non-product ..............................$NL
+cd "$HERE"
+bk attach --force -q "$HERE/standalone1" "$HERE/standalone2" 2>GOT && {
+	echo should have failed
+	exit 1
+}
+echo OK
+
+echo $N Attach to path under a non-product ..........................$NL
+cd "$HERE"
+bk attach --force -q "$HERE/standalone1" "$HERE/standalone2/a/b/c" 2>GOT && {
+	echo should have failed
+	exit 1
+}
+echo OK
+
+echo $N Test non-local destination error ............................$NL
+cd "$HERE/nested1"
+bk attach --force "$HERE/standalone2" bk://localhost/bad 2>GOT && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+grep -q 'destination must be local' GOT || {
+	echo unexpected output
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test attaching a product error ..............................$NL
+cd "$HERE/nested1"
+bk attach --force "$HERE/nested2" 2>GOT && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+grep -q 'cannot attach a product' GOT || {
+	echo unexpected output
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test attaching a component in same product error ............$NL
+cd "$HERE/nested1"
+bk attach --force component1 component2 2>GOT && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+grep -q 'clone of a component is not allowed' GOT || {
+	echo unexpected output
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test attaching a component in different product error .......$NL
+cd "$HERE/nested2"
+bk attach --force "$HERE/nested1/component1" 2>GOT && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+grep -q 'clone of a component is not allowed' GOT || {
+	echo unexpected output
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test -C in clone command error ..............................$NL
+cd "$HERE"
+bk clone -C nested1 bad 2>GOT && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+grep -q '\-C valid only in attach command' GOT || {
+	echo unexpected output
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test -C in detach command error .............................$NL
+cd "$HERE/nested1"
+bk detach -C component1 bad 2>GOT && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+grep -q '\-C valid only in attach command' GOT || {
+	echo unexpected output
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test attach -N errors .......................................$NL
+cd "$HERE"
+bk clone -N standalone1 bad 2>GOT && fail
+grep -q "\-N valid only in attach command" GOT || fail
+cd nested1
+touch not-a-dir
+bk attach --force -N not-a-dir 2>GOT && fail
+grep -q "not a BitKeeper repository" GOT || fail
+mkdir not-a-repo
+cd not-a-repo
+bk attach --force -N not-a-dir 2>GOT && fail
+grep -q "not a BitKeeper repository" GOT || fail
+cd ..
+bk detach -N component1 ../bad 2>GOT && fail
+grep -q "\-N valid only in attach command" GOT || fail
+bk attach --force -N -Burl ../standalone1 2>GOT && fail
+grep -q "\-N illegal with other options" GOT || fail
+bk attach --force -N -p ../standalone1 2>GOT && fail
+grep -q "\-N illegal with other options" GOT || fail
+bk attach --force -N -r1.1 ../standalone1 2>GOT && fail
+grep -q "\-N illegal with other options" GOT || fail
+bk attach --force -N -sbad ../standalone1 2>GOT && fail
+grep -q "\-N illegal with other options" GOT || fail
+bk attach --force -N bk://localhost/bad 2>GOT && fail
+grep -q "source must be local" GOT || fail
+bk attach --force -N ../standalone1 bad 2>GOT && fail
+grep -q "only one repo valid with -N" GOT || fail
+echo OK
+
+echo $N Test component already there error ..........................$NL
+cd "$HERE/nested1"
+bk attach --force "$HERE/standalone1" component1 2>GOT 1>&1 && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+grep -q 'component1 exists and is not empty' GOT || {
+	echo unexpected output
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test duplicate attach error .................................$NL
+cd "$HERE/nested1"
+bk attach "$HERE/standalone1" duplicate 2>GOT 1>&1 && {
+	echo should have failed
+	cat GOT
+	exit 1
+}
+grep -q 'duplicate: already attached at component1' GOT || {
+	echo unexpected output
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N Test duplicate attach works after a newroot .................$NL
+cd "$HERE"
+bk clone $Q standalone1 standalone1_newroot
+cd standalone1_newroot
+bk newroot $Q
+cd "$HERE/nested1"
+bk attach $Q -C "$HERE/standalone1_newroot" duplicate || fail
+bk here rm $Q -f duplicate
+rm -fr duplicate
+echo OK
+
+echo $N Basic attach functionality ..................................$NL
+cd "$HERE/nested2"
+echo bam > bam
+bk new $Q -b bam
+test -d BitKeeper/BAM || fail product BAM directory not there
+bk commit $Q -ybam
+# test attach where product has BAM dir initially
+bk attach --force -q "$HERE/standalone1" component1 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk -e -r check -ac || fail
+test -d component1/BitKeeper/BAM && fail BAM directory still there
+bk comps | grep -q component1 || fail
+cd component1 || fail
+bk cat file1 >GOT || fail
+cat <<EOF >WANT
+file1
+EOF
+cmpfiles GOT WANT
+test "`bk log -d:REV: -r+ ChangeSet`" = "1.2" || {
+	echo bad cset rev
+	exit 1
+}
+echo OK
+
+echo $N Check 'attach <dir> <dir>' functionality ......................$NL
+cd "$HERE"
+bk clone -q standalone1 nested2/dir1 || fail
+cd nested2
+bk attach --force -q dir1 component2 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk comps | grep -q component2 || fail
+cd component2 || fail
+bk cat file1 >GOT || fail
+cat <<EOF >WANT
+file1
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Check 'attach <dir> <path>' functionality .....................$NL
+cd "$HERE/nested2"
+bk attach --force -q dir1 a/b/component2b 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk comps | grep -q component2b || fail
+cd a/b/component2b || fail
+bk cat file1 >GOT || fail
+cat <<EOF >WANT
+file1
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Check 'attach <dir> <fullpath>' functionality .................$NL
+cd "$HERE/nested2"
+bk attach --force -q dir1 "$HERE/nested2/c/d/component2c" 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk comps | grep -q component2c || fail
+cd c/d/component2c || fail
+bk cat file1 >GOT || fail
+cat <<EOF >WANT
+file1
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Check 'attach <fullpath> <dir>' functionality .................$NL
+cd "$HERE/nested2"
+bk attach --force -q "$HERE/standalone1" component3 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk comps | grep -q component3 || fail
+cd component3 || fail
+bk cat file1 >GOT || fail
+cat <<EOF >WANT
+file1
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Check 'attach <fullpath> <path>' functionality ................$NL
+cd "$HERE/nested2"
+bk attach --force -q "$HERE/standalone1" e/f/component3b 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk comps | grep -q component3b || fail
+cd e/f/component3b || fail
+bk cat file1 >GOT || fail
+cat <<EOF >WANT
+file1
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Check 'attach <fullpath> <fullpath>' functionality ............$NL
+cd "$HERE/nested2"
+bk attach --force -q "$HERE/standalone1" "$HERE/nested2/component4" 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk comps | grep -q component4 || fail
+cd component4 || fail
+bk cat file1 >GOT || fail
+cat <<EOF >WANT
+file1
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Check 'attach <remote>' functionality .........................$NL
+cd "$HERE/nested2"
+bk attach --force -q "bk://localhost:$P/standalone1" 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk comps | grep -q standalone1 || fail
+cd standalone1 || fail
+bk cat file1 >GOT || fail
+cat <<EOF >WANT
+file1
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Check 'attach <remote> <dir>' functionality ...................$NL
+cd "$HERE/nested2"
+bk attach --force -q "bk://localhost:$P/$HERE/standalone1" component5 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk comps | grep -q component5 || fail
+cd component5 || fail
+bk cat file1 >GOT || fail
+cat <<EOF >WANT
+file1
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Check 'attach <dir> nested/<dir>' functionality ...............$NL
+cd "$HERE"
+bk attach --force $Q standalone1 nested2/component5.5 || fail
+cd nested2
+bk comps | grep -q component5.5 || fail
+echo OK
+
+echo $N Check 'attach <dir> nested/trad/<dir>' functionality ..........$NL
+cd "$HERE"
+bk clone $Q standalone1 nested2/traditional
+bk attach --force $Q standalone1 nested2/traditional/component5.6 2> ERR && fail -f ERR
+# XXX poor error message in this case
+cat <<EOF > WANT
+Not a product
+No lockers found
+
+EOF
+cmpfiles ERR WANT
+cd nested2
+bk comps | grep -q traditional/component5.6 && fail
+echo OK
+
+echo $N Check attach -C .............................................$NL
+cd "$HERE/nested2"
+bk attach --force -q -C "$HERE/standalone1" component6 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk gfiles -p >GOT || fail
+cat <<EOF >WANT
+component6/ChangeSet
+EOF
+cmpfiles GOT WANT
+bk commit -q -y'attach component6' || fail
+bk comps | grep -q component6 || fail
+echo OK
+
+echo $N Check attach -C and commit with others ......................$NL
+cd "$HERE/nested2"
+bk attach --force -q -C "$HERE/standalone1" component6a 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk gfiles -p >GOT || fail
+cat <<EOF >WANT
+component6a/ChangeSet
+EOF
+cmpfiles GOT WANT
+bk attach --force -q -C "$HERE/standalone1" component6b 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk gfiles -p >GOT || fail
+cat <<EOF >WANT
+component6a/ChangeSet
+component6b/ChangeSet
+EOF
+cmpfiles GOT WANT
+bk commit -q -y'attach component6a and component6b' || fail
+bk comps | grep -q component6a || fail
+bk comps | grep -q component6b || fail
+echo OK
+
+echo $N Check attach -r .............................................$NL
+cd "$HERE/nested2"
+bk attach --force -q -r1.1 "$HERE/standalone1" component7 2>GOT 1>&2 || {
+	echo should have worked
+	cat GOT
+	exit 1
+}
+bk comps | grep -q component7 || fail
+cd component7 || fail
+test "`bk log -d:REV: -r+ ChangeSet`" = "1.1" || {
+	echo bad rev
+	exit 1
+}
+echo OK
+
+echo $N Show attach in place of a file in the product ...............$NL
+cd "$HERE"
+commercial stand2
+cd ../nested2
+bk edit $Q BitKeeper/etc/config
+echo 'partial_check: on!' >> BitKeeper/etc/config
+bk ci $Q -ypartial BitKeeper/etc/config || fail
+bk commit $Q -ypartial || fail
+bk repocheck -q || fail
+bk rm bam || fail
+bk attach -q "$HERE"/stand2 bam 2>ERR && fail should have failed
+cat <<EOF > WANT
+A path-conflict was found while trying to commit
+  component at ./bam
+conflicts with existing:
+  ./BitKeeper/deleted/RAND|1.1
+  with pending rename from ./bam
+Must include other renames in commit.
+The commit is aborted.
+EOF
+sed 's/deleted\/.*|/deleted\/RAND|/' < ERR > ERR2
+cmpfiles ERR2 WANT
+test -f bam && fail bam should be gone
+echo OK
+
+echo $N Show attach in place of dir in the product ..................$NL
+mkdir foo
+echo hi > foo/bar
+bk new $Q foo/bar
+bk commit $Q -yfoo || fail
+bk rmdir foo
+bk attach -q "$HERE"/stand2 foo 2>ERR  && fail should have failed
+cat <<EOF > WANT
+A path-conflict was found while trying to commit
+  component at ./foo
+conflicts with existing:
+  ./BitKeeper/deleted/RAND|1.1
+  with pending rename from ./foo/bar
+Must include other renames in commit.
+The commit is aborted.
+EOF
+sed 's/deleted\/.*|/deleted\/RAND|/' < ERR > ERR2
+cmpfiles ERR2 WANT
+test -d foo && fail foo should be gone
+echo OK
+
+echo $N Show attach in place of a file in the component .............$NL
+cd gcc
+echo hi > foo
+mkdir bar
+echo hi > bar/foo
+bk new $Q foo bar/foo || fail
+bk commit $Q -ysetup || fail
+bk rm foo || fail
+
+# it would be nice if this failed
+bk attach -q "$HERE"/stand2 foo || fail
+
+bk repocheck -j2 $Q 2> ERR && fail -f should fail
+cat <<EOF > WANT
+check in 'gcc' exited 64, error output:
+A path-conflict was found in existing csets
+  component at ./foo
+conflicts with existing:
+  ./BitKeeper/deleted/RAND|1.1
+  with pending rename from ./foo
+Must include other renames in commit.
+EOF
+sed 's/deleted\/.*|/deleted\/RAND|/' < ERR > ERR2
+cmpfiles ERR2 WANT
+echo OK
+
+echo $N Show attach in place of a dir in the component ..............$NL
+bk gate -r $Q || fail
+bk portal -r $Q || fail
+bk undo $Q -r+ -f || fail
+bk portal $Q . || fail
+bk rmdir bar || fail
+# it would be nice if this failed
+bk attach -q "$HERE"/stand2 bar || fail
+bk repocheck -j2 $Q 2> ERR && fail -f should fail
+cat <<EOF > WANT
+check in 'gcc' exited 64, error output:
+A path-conflict was found in existing csets
+  component at ./bar
+conflicts with existing:
+  ./BitKeeper/deleted/RAND|1.1
+  with pending rename from ./bar/foo
+Must include other renames in commit.
+EOF
+sed 's/deleted\/.*|/deleted\/RAND|/' < ERR > ERR2
+cmpfiles ERR2 WANT
+echo OK
+
+echo $N Collide an rmdir with a new comp and resolve ................$NL
+cd "$HERE"
+rm -rf project copy master
+# REPO B:  make a directory/file under a gcc
+nested project
+cd gcc
+mkdir -p pre/src/deep
+touch pre/src/foo
+bk new $Q pre/src/foo
+bk commit $Q -ygcc/pre/src/foo
+# Make repo A start from this point
+bk --cd="$HERE" clone $Q --upgrade project copy
+# In B, make a new file under same component
+touch pre/src/deep/bar
+bk new $Q pre/src/deep/bar
+bk commit $Q -ygcc/pre/src/deep/bar
+# In repo A, rmdir pre/src and replace with component (This is Jackie's repo)
+cd "$HERE/copy/gcc"
+bk rmdir pre/src
+bk commit $Q -yrmdir
+bk portal $Q .
+bk setup -f pre/src
+bk setup -f pre/src/deep
+bk portal $Q -r
+# bk clone $Q . ../master
+# bk unpopulate pre/src
+cd ..
+cat <<EOF | bk pull -q -T 2> ERR || fail -f ERR
+
+mr
+bar
+q
+EOF
+printf "resolve: RESYNC directory left intact.
+====================================================
+resolve: 1 unresolved conflicts, starting manual resolve process for:
+	gcc/| 1 unresolved name conflict[s] |
+(create/comp conflict) pre/src/deep/bar>> ---------------------------------------------------------------------------
+Remote file:
+	\`\`pre/src/deep/bar''
+wants to be in same place as local directory
+	\`\`pre/src''
+---------------------------------------------------------------------------
+Commands are:
+
+  ?    - print this help
+  a    - abort the patch, DISCARDING all merges
+  ml   - move the local directory to someplace else
+  mr   - move the remote file to someplace else
+  q    - immediately exit resolve
+  rl   - remove the local directory
+  rr   - remove the remote file
+  vr   - view the remote file
+  x    - explain the choices
+
+(create/comp conflict) pre/src/deep/bar>> Move file to: " > WANT
+cmpfiles WANT ERR
+echo OK
+
+echo $N Collide an rmdir with a new comp and move to same name ......$NL
+bk unpull $Q -sf
+cat <<EOF | bk pull -q -T 2> ERR && fail -f ERR
+mr
+pre/src/deep/bar
+q
+EOF
+cat <<EOF > WANT
+resolve: RESYNC directory left intact.
+====================================================
+resolve: 1 unresolved conflicts, starting manual resolve process for:
+	gcc/| 1 unresolved name conflict[s] |
+(create/comp conflict) pre/src/deep/bar>> Move file to: pre/src/deep/SCCS/s.bar conflicts with another component (pre/src)
+(create/comp conflict) pre/src/deep/bar>> 1 unresolved component:
+ gcc
+pull: Unresolved components.
+resolve: RESYNC directory left intact.
+====================================================
+EOF
+cmpfiles WANT ERR
+echo OK
+
+echo $N Collide an rmdir with a new comp and move to same dir .......$NL
+bk abort $Q -f
+cat <<EOF | bk pull -q -T 2> ERR && fail -f ERR
+mr
+pre/src/zoo
+q
+EOF
+cat <<EOF > WANT
+resolve: RESYNC directory left intact.
+====================================================
+resolve: 1 unresolved conflicts, starting manual resolve process for:
+	gcc/| 1 unresolved name conflict[s] |
+(create/comp conflict) pre/src/deep/bar>> Move file to: pre/src/SCCS/s.zoo conflicts with another component (pre/src)
+(create/comp conflict) pre/src/deep/bar>> 1 unresolved component:
+ gcc
+pull: Unresolved components.
+resolve: RESYNC directory left intact.
+====================================================
+EOF
+cmpfiles WANT ERR
+echo OK
+
+echo $N Collide a file that is a portion of a component path ........$NL
+bk abort $Q -f
+cat <<EOF | bk pull -q -T 2> ERR && fail -f ERR
+mr
+pre
+q
+EOF
+cat <<EOF > WANT
+resolve: RESYNC directory left intact.
+====================================================
+resolve: 1 unresolved conflicts, starting manual resolve process for:
+	gcc/| 1 unresolved name conflict[s] |
+(create/comp conflict) pre/src/deep/bar>> Move file to: SCCS/s.pre conflicts with another component (pre/src)
+(create/comp conflict) pre/src/deep/bar>> 1 unresolved component:
+ gcc
+pull: Unresolved components.
+resolve: RESYNC directory left intact.
+====================================================
+EOF
+cmpfiles WANT ERR
+echo OK
+
+echo $N Reverse the pull where pull populates .......................$NL
+bk gate $Q .
+cd "$HERE"/project
+cat <<EOF > IN
+q
+EOF
+
+# this does fail, but the error message is pretty poor
+cat IN | bk pull -q -T ../copy 2>ERR && fail -f ERR should fail
+cat <<EOF > WANT
+pull: ./gcc/pre/src not empty
+pull: ./gcc/pre/src/deep not empty
+pull: problem populating components.
+EOF
+cmpfiles WANT ERR
+echo OK
+
+echo $N Now pull without populating new component ...................$NL
+bk gate -r $Q
+bk portal -r $Q
+bk here set $Q ./gcc ./gdb
+
+cat IN | bk pull -q -T ../copy 2>ERR && fail -f ERR should fail
+cat <<EOF > WANT
+A path-conflict was found while committing a merge
+  component at ./pre/src/deep
+conflicts with existing:
+  ./pre/src/deep/bar|1.1
+EOF
+head -4 ERR > ERR2
+cmpfiles WANT ERR2
+echo OK
+
+echo $N Attach -N an old repo and see that pfile gets fixed .........$NL
+cd "$HERE"
+# bkmerge stores the pfile in a different format.
+# Note: if no --no-hardlinks then a mostly empty BAM dir mucks things up
+bk clone $Q --no-bk-merge --no-hardlinks standalone1 newcomp
+cd newcomp
+bk edit $Q file1
+bk delta $Q -fynull file1
+bk _get $Q -e -r1.1 file1
+bk delta $Q -fynull file1
+bk edit $Q -M file1
+bk delta $Q -fymerge file1
+bk edit $Q -r1.1 file1
+cd ../copy
+bk abort $Q -f
+bk portal $Q .
+mv ../newcomp .
+cd newcomp
+bk _cp SCCS/p.file1 pfile.orig
+grep -q '^1.3 1.4 .* -x1.2,1.3$' pfile.orig || fail -f pfile.orig
+bk attach $Q -N .
+bk check file1
+bk _cp SCCS/p.file1 pfile.attach
+grep -q '^1.3 1.4 .* -X1.3,1.1.1.1,1.2$' pfile.attach || fail -f pfile.attach
+# Rider: While we are here, break the pfile and fix it.
+bk _cp pfile.orig SCCS/p.file1
+bk check file1 2>ERR && fail -f ERR
+echo "Wrong p.file format in file1 (want bk)" > WANT
+cmpfiles WANT ERR
+# If it does happen in the field, good to have a way to fix it
+bk check -ff file1 2>ERR || fail -f ERR
+echo "file1: p.file fixed" >> WANT
+cmpfiles WANT ERR
+bk _cp SCCS/p.file1 pfile.fixed
+grep -q '^1.3 1.4 .* -X1.3,1.1.1.1,1.2$' pfile.fixed || fail -f pfile.fixed
+echo OK

@@ -1,0 +1,1272 @@
+#monotonic
+If a file is marked as monotonically increasing, and that file has "dangling
+deltas", i.e., deltas which are ahead of the top changeset, then the monotonic
+flag may not be removed unless the dangling deltas are removed first.  You
+may remove those deltas with the following command:
+
+    bk log -hnd'$if(:DANGLING:){:GFILE:|:I:}' <file> | bk stripdel -dC -
+
+and then you may remove the MONOTONIC flag.
+$
+#chk1
+A file is marked as gone (in BitKeeper/etc/gone) but is present in your
+repository, possibly missing some deltas.  This can happen if a different 
+repository had lost the file, marked it as gone so that "bk repocheck" 
+would pass, and then your repository was updated with that information.
+Since your repository still has the file, it may be possible to restore
+it in the other repository if you wish.
+
+The other case is that someone is trying to destroy all instances of the
+file's revision history.  Suppose a large file were added by mistake,
+perhaps a derived (compiled) file or binary.  
+
+Examine the files listed and if it is clear that the file is obsolete, remove
+the revision history from your repository to be consistent with your parent.
+
+If it is clear that the file is valuable then you should have the
+owner of the other repository restore the file from your repository.
+After the file is restored, remove the file identifier (root key) from
+the BitKeeper/etc/gone file.  If you have only part of the revision
+history then remove the root key from the BitKeeper/etc/gone but add
+the missing keys with a
+
+	bk -r check -aggg | bk gone -
+
+$
+#chk2
+A pointer to a delta was found in the ChangeSet file but the delta was
+not found in the corresponding file.  This should only happen if one or
+more files have been lost in a repository, or copied from another repository,
+but they were incomplete.
+
+To get the list of missing deltas, run "bk -r check -agg".
+
+To see if any of the deltas exist in another repository, use "bk findkey".
+
+If the deltas exist in another repository it is possible to migrate them
+into your repository.  The process to do this is to generate the list of 
+changesets which contain the missing deltas, make a patch, and apply the
+patch.  You should probably contact support@bitkeeper.com for help
+with this the first time you try this process.
+
+If the deltas cannot be found in any other repository, then you will
+not be able to completely reproduce that changeset.  You can make
+BitKeeper stop complaining about the problem by running
+
+	bk -r check -agg | bk gone -
+
+and then committing the changeset.
+$
+#chk3
+One or more files are recorded as existing by the ChangeSet file but were
+not found in the repository.  This can happen if the files were deleted,
+either accidentally or on purpose.
+
+If the files exist in another repository it is possible to add them back
+to your repository.  The process is to find the files, copy them into
+your repository, and strip off any extra deltas which should not be part
+of your repository.  You should probably contact support@bitkeeper.com
+for help with this the first time you try this process.
+
+If the files cannot be found, or if the files were deliberately removed,
+then the file identifiers (root keys) need to be added to the gone file.
+Do this by running
+
+	bk -r check -ag | bk gone -
+
+and then committing the changeset.
+$
+#chk4
+Your repository has a file with an illegal revision numbering.
+vision numbering.  Please write to support@bitkeeper.com for assistance.
+$
+#chk5
+The ChangeSet file retrieved from your parent appears to be behind the
+files in this repository.  If this repository had changesets that were
+committed here but not pulled elsewhere then the changeset will need to
+be recreated, contact support@bitkeeper.com for assistance.
+
+The repair was NOT complete.
+$
+#chk6
+Your repository tip was not found in any of the specified repositories
+(or your parent[s] if no repositories were specified).
+
+This probably is because the ChangeSet files in those repositories are
+older (behind) the files in this repository.
+
+If you search in another repository <url> with
+
+	bk -@<url> findkey #BKARG# ChangeSet
+
+and it finds the key, then you should contact support@bitkeeper.com for
+assistance.
+$
+#chk7
+Your repository has an corrupted graph structure in a merge delta.
+A list of files impacted and their graphs is in 'BitKeeper/tmp/mergedups'.
+
+Please send a copy of that file to support@bitkeeper.com for assistance.
+Run 'bk help chk7' to see this message again.
+$
+#shadow
+If a repository is remapped (no SCCS dirs visible), it is possible to 
+hide a sub directory by 
+
+	rm -rf subdir
+	touch subdir
+
+and BK will appear to "lose" all the revision history below "subdir".
+The history is still there, BK has been been blocked from seeing the
+subtree by the creation of a file where there should be a directory.
+
+You need to go examine the file at
+
+	#BKARG# 
+
+and remove it or move it to the side in order to restore the "lost"
+history.
+$
+#cset1
+An attempt was made to include or exclude a merge changeset.
+This is not currently supported.
+If you would like to be able to exclude one side
+of the merge, then please contact support@bitkeeper.com.
+$
+#write_perms
+One or more directories which need updating do not have write permission.
+Please examine the list and fix the permissions.
+
+You can restart the resolve with a 
+
+    bk resolve
+
+after fixing the permissions.
+$
+#saw_blanknonl
+The file #BKARG# is corrupted because of a bug in
+BitKeeper version 3.0.1 and earlier.  It was caused by a 
+file on Windows that has a carriage return as the last 
+character of the file without a following new line.
+Please contact the BitKeeper support team by running 'bk support'
+to request help in repairing this file.
+$
+#setup_1
+
+You are about create a new repository.  You may do this exactly once
+for each package stored in BitKeeper.  If there already is a BitKeeper
+repository for this package, you should do
+
+    bk clone package_dir my_package_dir
+
+If you create a new package rather than cloning a copy, you will not
+be able to exchange work between the two packages.
+
+$
+#setup_3
+Please fill out the configuration template in your editor.
+This is used for support purposes as well as licensing.
+$
+#takepatch-chksum
+Error: A checksum in the patch for the ChangeSet file does not match
+the checksum of the data in the patch.
+Please verify the integrity of the source and destination repositories
+by running "bk repocheck" in each.  If that passes, and a pull still
+fails, run in the source repository "bk -R checksum ChangeSet".  If the
+source repository has a problem that cannot be fixed, please run
+"bk support" and fill out the form.  If the source repository has no
+problems, and you were doing a push or pull, try the operation again. 
+If you were running takepatch, then generate a new patch file from the
+source repository using the same method as you have.  If the problem
+occurs again, please run "bk support" and fill in the details. 
+$
+#takepatch-collapsed
+This patch contains the following cset, which is listed in the
+BitKeeper/etc/collapsed file as being replaced:
+   #BKARG#
+
+This usually indicates that the cset has been collapsed with the 
+'bk collapse' command and replaced by a new cset containing the
+same functionality.  It appears that cset #BKARG#2# in this tree
+is the cset that replaced the cset in the incoming patch.
+
+If you really do want this new patch in the tree, rerun pull or
+takepatch with the -D option.
+$
+#tp1
+When a file is modified in the destination repository and an incoming
+patch also modifies that file, the incoming patch is not applied; the
+pull/push is aborted.  The reason for this is that BitKeeper has no
+way of performing a "bk unpull" if it auto-merges your uncommitted work;
+there is no audit trail to use to unpull the work.
+
+In order to complete the pull or push, the pending work in the destination
+repository must be committed first.
+$
+#bugtemplate
+BitKeeper Bug Report
+--------------------
+
+Please fill in the fields below as much as possible.  We parse this
+automatically, so please follow the format guidelines.
+
+Fields marked with [whatever] are single line fields.
+
+The Description, Suggestions, and Contact sections can be multi line.
+
+------------------------------------------------------------------------------
+
+Bug/RFE:
+	[a bug is obvious, RFE is a request for enhancement]
+
+Severity:
+	[5 - annoying, 1 - cannot use BitKeeper until this is fixed]
+
+Priority:
+	[5 - fix sometime, 1 - fix RIGHT NOW]
+
+Program:
+	[cset, co, delta, etc.  If you know which one caused the problem]
+
+Release:
+	#BKEXEC# bk version | head -1
+
+OS:
+	#BKEXEC# uname -a
+
+Synopsis:
+	[one line: i.e., sfiles dumps core when running on CP/M]
+
+Description:
+	Please tell us:
+	- what you were doing
+	- what happened
+	- can you make it happen again, if so, how?
+	- what you think went wrong
+	- machine / OS / etc. on which the bug occurred
+	- anything else that you think might be useful
+	Take as much space as you need, but leave a blank line
+	between this and the next field.
+
+Suggestions:
+	Any suggested fix is most welcome.
+	Take as much space as you need, but leave a blank line
+	between this and the next field.
+
+Interest list:
+	[emails of others who care about this like so: a@foo.com,b@foo.com]
+
+Contact info:
+	Your contact information here.
+	A phone number and a time to call is useful if we need more
+	information.
+	You can also specify a preferred email address.
+	Take as much space as you need, but leave a blank line between
+	this and the ----- below.
+
+------------------------------------------------------------------------------
+$
+#supporttemplate
+BitKeeper Support Request
+-------------------------
+
+Please fill in the fields below as much as possible.  We parse this
+automatically, so please follow the format guidelines.
+
+Fields marked with [whatever] are single line fields.
+
+The Description, Suggestions, and Contact sections can be multi line.
+
+------------------------------------------------------------------------------
+
+Program:
+	[cset, co, delta, etc.  If you know which caused the problem]
+
+Release:
+	#BKEXEC# bk version | head -1
+
+OS:
+	#BKEXEC# uname -a
+
+Synopsis:
+	[one line: i.e., sfiles dumps core when running on CP/M]
+
+Description:
+	Please tell us what support you would like.
+	In general, this is what helps us help you:
+	- what you were doing
+	- what happened
+	- can you make it happen again, if so, how?
+	- what you think went wrong
+	- machine / OS / etc on which the bug occurred
+	- anything else that you think might be useful
+	Take as much space as you need, but leave a blank line
+	between this and the next field.
+
+Interest list:
+	[emails of others who care about this like so: a@foo.com,b@foo.com]
+
+Contact info:
+	Your contact information here.
+	A phone number and a time to call is useful if we need more
+	information.
+	You can also specify a preferred email address.
+	Take as much space as you need, but leave a blank line between
+	this and the ----- below.
+
+------------------------------------------------------------------------------
+$
+#duplicate_IDs
+You have two files with the same ID.  You must determine why,
+and correct that situation before this ChangeSet can be created.
+$
+#undo_error
+
+BitKeeper is unable to undo the requested changeset[s].  This is
+usually because undoing the requested list of changesets would leave the
+repository in an error state.  Please look at the error message below
+and try to find a set of ChangeSets which will work.  The typical
+problems are:
+
+    - Removing a delta in the middle of the history which leaves
+      a parent-less child delta.
+    - The merge delta and a portion of a branch is deleted which
+      leaves two open branches in the ChangeSet file.
+    - Removing a delta which is included by another delta.
+
+It is frequently helpful to look at the ChangeSet file using revtool to
+get a feel for which changesets must be undone together to leave a clean
+tree.
+
+The error caused by this undo is:
+$
+#undo_error2
+BitKeeper is unable to undo the requested changeset[s] because they
+are already committed in the product repository.
+
+The error caused by this undo is:
+$
+#config_preamble
+This is the BitKeeper configuration for this package.
+
+Please fill in the "description:" and "email:" fields, BK/Web needs those.
+For the rest of the fields you may use the defaults.
+
+$
+#config_setup
+The setup program is used when creating the initial package stored 
+in BitKeeper.  Running this tool will create the master repository.
+You may do this exactly once for each package stored in BitKeeper.  
+
+If this package is already stored somewhere in BitKeeper, get out
+of this tool and do the following:
+
+        bk clone package_dir my_workarea
+
+instead.
+
+$
+#config_undoc
+
+Undocumented #BKARG#1#.
+
+Default: #BKARG#2#
+
+$
+#config_description
+
+Name of the project, such as "BitKeeper source management system",
+"Linux kernel" or "MySQL database system".  Used when listing 
+repositories.
+
+Default: #BKARG#
+
+$
+#config_email
+
+Email address of the person or alias that should get administrative 
+questions about this project.  Currently only used by BK/Web.
+
+Default: #BKARG#
+
+$
+#config_compression
+
+Default compression algorithm for stored s.files in
+compatibility mode repositories is gzip.
+If you want no compression, set this to "none".
+
+Default: #BKARG#
+
+$
+#config_autofix
+
+Default is to autofix problems found by check.
+If you want to manually fix them, set this to "no".
+
+Default: #BKARG#
+
+$
+#config_BAM
+
+Default is to enable the Binary Asset Manager.
+If you want to use the older uuencoded binaries, set this to "no".
+
+$
+#config_stats_after_pull
+
+If stats_after_pull is set to 'on', BitKeeper will print diffstat
+output after a pull.
+
+Default: #BKARG#
+
+$
+#config_clone_default
+
+When cloning a product, limit the components cloned to the alias
+specified.
+
+Default: #BKARG#
+
+$
+#config_auto_populate
+
+Automatically populate missing components as needed to perform a safe
+pull.  Unless you have very large components and slow networks this 
+should be set to on.
+
+Default: #BKARG#
+
+$
+#config_eoln
+
+When checking out text files in operating systems with different
+conventions, which End-Of-Line marker to use. The options are:
+
+  native  - Use \n on Unix systems and \r\n on Windows
+  windows - Always use \r\n
+  unix    - Always use \n
+
+Default: #BKARG#
+
+$
+#config_no_graphverify
+
+Old BK computed checksums using a set based method and new bk
+computes using a graph based system.  Checksum can look back
+and see that they compute the same thing.  In some rare cases,
+involving an exclude of a merge cset, the two sums might not match.
+
+This option skips running the graph based checksum test on old or
+all depending on how it is set.
+
+  0 (or off)   - run graph verify test on all (the default)
+  1 (or on)    - skip running the verify on all
+  Other number - interpret as a time_t and only run verify on newer csets
+
+Default: #BKARG#
+
+$
+#config_check_frequency
+
+When partial_check is enabled, BitKeeper will perform a full check
+every check_frequency number of days. 
+
+Default: #BKARG#
+
+$
+#config_sync
+
+If sync is set to 'on', BitKeeper will call fsync() after writing
+data to the filesystem.  On some Linux systems fsync() has significant
+performance problems (google it).
+
+Default: #BKARG#
+
+$
+#config_parallel
+
+BitKeeper can automatically run multiple processes to take advantage
+of the multi-core architectures of today. The parallel variable
+can be set to 0 to prevent this, to a number greater than zero to use
+that number of parallel processes, or to the value 'on' to let
+BitKeeper determine what the best value is.
+
+Default: #BKARG#
+
+$
+#config_keyword
+
+Controls whether BitKeeper will expands keywords embedded in new
+files.  The values are 'sccs' or 'rcs', with an optional ', expand1'
+(i.e., 'sccs, expand1' or 'rcs, expand1').
+
+The 'expand1' says "expand only the first line found containing keywords"
+and is supported because sometimes the keyword string is a legitimate 
+part of the source and shouldn't be expanded.
+
+Note that this is a property of the file at the time of creation. The
+setting is persistent and can be changed using 'bk admin'.
+
+Keywords are only expanded in 'checkout:get' mode.
+
+Default: #BKARG#
+
+$
+#config_triggers
+
+Where to look for triggers. Different paths are separated by the '|'
+character. Besides path names (such as /etc/bktriggers), the following
+special values are supported:
+
+  $NONE		- Do not run any triggers
+  $PRODUCT	- Run the triggers in the product's BitKeeper/triggers
+  		  directory (ignored in a non-nested collection)
+  $BK_DOTBK	- Run the triggers in the user's
+  		  ~/.bk/BitKeeper/triggers directory.
+  $BK_BIN	- Run the triggers in `bk bin`/BitKeeper/triggers	
+  .		- Run the triggers in `bk root -S`/BitKeeper/triggers
+
+Default: #BKARG#
+
+$
+#config_checkout
+
+BitKeeper supports the following check out modes (which defines what
+permissions/state versioned files are in after a clone/delta/commit):
+
+  edit		- check out files locked such that they are writable
+  get		- check out files in read-only mode (can be higher
+  		  performance in large repos; also supports keywords)
+  last		- preserve the previous state of the file
+  none		- do not check out any files
+
+Most users are least surprised by checkout:edit, it is what they expect.
+
+If this is a repository full of big binary files then checkout:none or
+checkout:last is better, especially when combined with BAM.
+
+Default: #BKARG#
+
+$
+#config_BAM_checkout
+
+If your repository has BAM files this variable works like the checkout:
+variable but is applied only to the BAM files.  This gives you a way to
+have all the text files in one mode and all the BAM files in another mode.
+
+  edit		- check out files locked such that they are writable
+  get		- check out files in read-only mode 
+  last		- preserve the previous state of the file
+  none		- do not check out any files
+
+Default: #BKARG#
+
+$
+#config_clock_skew
+
+The clock skew field controls how recent a file has to be before
+BitKeeper will not trust the timestamp database.  It defaults to
+a week and that default was chosen to overcome clock drift problems
+on network file systems.  If you know your clocks are 100% accurate
+and your workflow is such that many of your files change all the 
+time, then setting the clock skew down to a day or two (172800)
+will improve performance.  For most people, the default is fine.
+
+Default: #BKARG#
+
+$
+#config_partial_check
+
+With partial_check set to on, repositories are checked no more than once
+every check_frequency days.  This is a performance win for large
+repositories.
+
+Customers who have reason to believe that their data may be corrupted
+by hardware or software problems (bad memory, bad disks, bugs in the
+file system, etc.) should set this field to "off".
+
+Default: #BKARG#
+
+$
+#warn_poly
+Warning: this repository has been found to have deltas which
+belong to multiple csets (not an error, but annoying).
+This happens if a repository with uncommitted deltas is copied
+and then committed in both copies.
+Please use only 'bk clone <from> <to>' to copy a repository.
+$
+#reserved_name
+BitKeeper is unable to create a file with the following path name:
+        #BKARG#
+This usually happens if your path name contains a reserved name used on
+the destination file system.  Known reserved names for FAT/NTFS/Samba/CIFS
+file system are as follows:
+        "aux", "con", "prn", "nul", "lpt?", "?:"
+Please rename the file and retry (see also "bk helptool mv")
+Note: You must perform the rename in the sending repository.
+$
+#setuptool_step_BadUser
+You are logged in as '#BKARG#'. You may not create repositories when
+logged in as Administrator or root. Please log in as another user
+before trying to create a repository.
+$
+#setuptool_step_Begin
+You are about to create a new repository. Creating a new repository is
+something which is done if the data which you wish to manage is not
+already under BitKeeper control in a different repository. If there
+already is a BitKeeper repository for this package, you should do the 
+following:
+
+bk clone package_dir my_package_dir
+
+If you create a new repository rather than cloning a copy you will not
+be able to exchange work between the existing and new repositories.
+In other words, a repository is set up only once; after that you use
+bk clone to get a copy of the repository
+
+
+If you are ready to create a new BitKeeper repository, press Next.
+$
+#setuptool_step_RepoInfo
+The following information uniquely identifies this repository. The fields
+highlighted in blue are required to be non-empty.
+$
+#setuptool_step_Finish
+There is now enough information to create the repository. Please review the 
+following information. If it is correct, press the Finish button to create 
+your repository.
+
+The config file that is created will be saved as a standard revision controlled
+file at BitKeeper/etc/config; it can be edited later to make changes. See the
+config-etc man page for detailed information on the format and options that
+are supported. 
+$
+#setuptool_step_CheckoutMode
+BitKeeper supports check out modes of "none", "get", or "edit".
+These modes control how the files will appear (or not appear) in your
+repository after a clone or a commit.
+
+If you depend on expanded keywords ($Author$ or %P% being expanded to
+the user who made the most recent checkin) or if you anticipate a large
+(more than 50,000) number of files then use "get".  This mode expands
+keywords and can perform better at the cost of users needing to run
+"bk edit" to change a file from read-only to read-write.
+
+If keywords and/or performance are not a concern and you want the
+convenience of all files being writable all the time then use "edit".
+
+A value of "none" will clear the working file from the repository after a
+"bk ci".   Use this mode if your repository has some files which do not
+need to be checked out all the time (this value is rarely used, it is
+for advanced users).
+$
+#setuptool_step_Clock_Skew
+Because you have chosen to run in checkout:edit mode we suggest that you
+use a database of information to speed up operations that look
+for modified files.  There is a performance/safety tradeoff because
+network based file servers can make file timestamps incorrect.
+To overcome this, BitKeeper does not trust recent timestamps on files.
+(By default timestamps have to be more than a week old for BitKeeper
+to trust them.  You can modify this value; see bk help config-etc.)
+
+The safety risk is zero if the set of systems you use (both clients and
+servers) have clocks that are correct.  For example, if you run NTP to
+synchronize your clocks there is no risk.  
+
+For large trees, the performance improvements for some commands are
+substantial--as much as 10 times faster.
+$
+#setuptool_step_Partial_Check
+By default, BitKeeper does a full repository integrity check after each
+update.  The integrity check validates both internal BitKeeper metadata
+as well as file checksums.  The integrity checks have been shown to
+catch hardware problems such as bad memory chips, bad disk drives, as
+well as software problems such as NFS inserting blocks of nulls in the
+middle of files.
+
+If you have a large repository (more than 5,000 files and/or more than
+100MB) then you may want to trade off safety for performance.  There is
+a partial check mode in which BitKeeper only does full checks once every
+24 hours.  Subsequent checks validate the metadata and file integrities
+only for files which are updated.
+
+We recommend that you start in full check mode and turn on partial check
+later if needed.
+$
+#bitkeeper.init
+#!/bin/sh
+#
+# chkconfig: 2345 24 84
+# description: BitKeeper server for work
+
+# Source networking configuration.
+if [ -f /etc/sysconfig/network ]
+then	. /etc/sysconfig/network
+
+	# Check that networking is up.
+	[ ${NETWORKING} = "no" ] && exit 0
+fi
+[ -x /usr/bin/bk ] || exit 0
+VAR=/var/bitkeeper
+
+case "$1" in
+    start_msg)	echo "Start BitKeeper daemons"
+		;;
+    stop_msg)	echo "Stop BitKeeper daemons"
+		;;
+    restart)	$0 stop
+		$0 start
+		;;
+    start)	cd $VAR || exit 1
+		test -f repositories || {
+			echo Nothing advertised
+			exit 0
+		}
+		while read user dir opts
+		do	(
+			cd $dir || exit 1
+			F=`basename $dir`
+			CMD="bk bkd -d $opts -l$VAR/log.$F -P$VAR/pid.$F"
+			su -c "$CMD" $user 2>> $VAR/errors
+			echo Started $CMD in $dir as $user
+			)
+		done < repositories
+	    	;;
+
+    stop)	
+		cd $VAR || exit 1
+		echo Shutting down BitKeeper daemons
+		for i in pid.*
+		do	kill `cat $i`
+			rm $i
+		done
+		;;
+
+    status)	cd $VAR || exit 1
+		for i in pid.*
+		do	echo This pid should be running: `cat $i`
+		done
+		ps -axf | grep bkd
+		
+		;;
+
+    *)		echo "Usage: bitkeeper {start|stop}"
+    		exit 1
+		;;
+esac
+
+exit 0
+$
+#other-error
+The error code returned from BitKeeper was:
+	#BKARG#
+Please send mail to support@bitkeeper.com to request assistance.
+$
+#bkd-err-other
+The remote BitKeeper daemon for this connection had an error.
+The error code returned from BitKeeper was:
+	#BKARG#
+Please send email to support@bitkeeper.com for assistance.
+$
+#gui-support-submitter
+Please enter your valid email address here so we can reach you
+to provide support.
+$
+#gui-support-summary
+One line: i.e., "sfiles dumps core when running on CP/M"
+$
+#gui-support-program
+cset, co, delta, etc -- if you are having problems with a specific one
+$
+#gui-support-os
+On what operating system did the problem occur?
+$
+#gui-support-release
+What release of bitkeeper do you have installed?
+$
+#gui-support-description
+Please tell us:
+    - What you were doing.
+    - What happened.
+    - Can you make it happen again. If so, how?
+    - What you think went wrong.
+    - Anything else that you think might be useful
+$
+#gui-support-interest
+Email addresses of others who care about this problem.
+If more than one, then as a comma separated list, such as:
+user1@mywork.com,user2@mywork.com
+$
+#gui-support-attachment
+Please attach any files that may help responding to your request.
+$
+#gui-support-projemail
+Email address where to send this support request.
+$
+#gui-support-project
+For what project is support being requested?
+$
+#gui-support-help
+Please fill in all the fields that you can. You may use the TAB key
+to move between fields. As you move to each field this help window
+will change to describe what it is that you should put in the field.
+Some fields are automatically filled in and may not be editable, but
+are displayed so you can see what will be sent to the BitKeeper support
+team.
+Required fields may appear with a different background color.
+$
+#gui-bug-type
+The two choices are: Bug or Request for Enhancement
+$
+#gui-bug-severity
+5 - annoying. 1 - cannot use BK until this is fixed
+$
+#gui-bug-priority
+5 - fix sometime. 1 - fix RIGHT NOW
+$
+#gui-bug-program
+cset, co, delta, etc. If you know which cause the problem
+$
+#gui-bug-suggestion
+Any suggested fix is most welcome. Take as much space as you need.
+$
+#gui-bug-projemail
+Email address where to send this bug submission.
+#gui-bug-project
+For what project is this bug being submitted?
+$
+#gui-bug-attachment
+Please enter the path of a file that will be attached to the bug report.
+You can either type the path, or use the button to the right of the field
+to select the file using a standard file open dialog. 
+
+You can only attach one file to the bug report. Attaching directories or
+symbolic links is not supported.
+$
+#unrelated_repos
+You are trying to #BKARG# an unrelated package.
+Please check the names and try again.
+$
+#no_repo
+You are trying to synchronize with directory that does not contain a
+BitKeeper repository, it is empty.  Please check the names and try again.
+$
+#missing_dfile
+check: #BKARG# has pending deltas but no d.file, repairing.
+$
+#missing_rsh
+Cannot find #BKARG#.
+
+The programs rsh/ssh are not bundled with the BitKeeper distribution.
+The recommended way for transferring BitKeeper files on Windows is via the
+bkd daemon.  If you have a bkd daemon configured on the remote host, try
+
+    bk push/pull bk://HOST:PORT
+
+If you prefer to transfer BitKeeper files via a rsh/ssh connection,
+you can install the rsh/ssh programs separately.  Please note that the
+rsh command bundled with Windows NT is not compatible with Unix.
+$
+#unknown_proxy
+Unknown proxy entry: "#BKARG"
+If this is a legal proxy entry please file a bug report.
+$
+#http_delay
+Note: since httpd batches a large block of output together before it
+sends back a reply, this can take a while, please wait...
+$
+#win_trailing_dot
+#BKARG#:
+warning: trailing dot in file name will be stripped by the Windows
+file system.
+$
+#file_dir_conflict
+File/directory conflict: #BKARG#1#
+The name above is both a #BKARG#2# and a revision controlled file.
+The revision controlled file can not be checked out because the #BKARG#2#
+is where the file wants to be.  To correct this, either 
+    move the #BKARG#2# to a different name
+or
+    remove the revision controlled file #BKARG#1# with "bk rm"
+or
+    move the revision controlled file to someplace else with "bk mv".
+$
+#case_conflict
+Sfio has detected a name conflict between the following files:
+    #BKARG#1#
+    #BKARG#2#
+This usually happens when you transfer a file from a case-sensitive file
+system (e.g. Unix) to a case insensitive file system (e.g FAT, NTFS)
+Please rename one of the files and retry (see also "bk helptool mv")
+Note: You must do the rename (bk mv) in the sending repository.
+$
+#read_locked
+WARNING: process #BKARG#1# is exiting and it has left the repository at
+#BKARG#2# read locked.
+This is the result of a process that has been killed or is a bug.
+The stale lock will be removed.
+$
+#write_locked
+ERROR: process #BKARG#1# is exiting and it has left the repository at
+#BKARG#2# write locked.
+This is the result of a process that has been killed or is a bug.
+$
+#symlink
+You are attempting to create this symlink on a win32 file system:
+#BKARG#
+This file type is not supported on this platform.
+$
+#smerge_examples
+Summary of bk smerge output formats
+default		(3 way format (shows gca))
+    <<<<<<< gca slib.c 1.642.1.6
+    		  sc = sccs_init(file, INIT_NOCKSUM|INIT_SAVEPROJ, s->proj);
+    		  assert(sc->tree);
+    		  sccs_sdelta(sc, sc->tree, file);
+    <<<<<<< local slib.c 1.645
+    		  sc = sccs_init(file, INIT_NOCKSUM|INIT_SAVEPROJ, s->proj);
+    		  assert(HASGRAPH(sc));
+    		  sccs_sdelta(sc, sccs_ino(sc), file);
+    <<<<<<< remote slib.c 1.642.2.1
+    		  sc = sccs_init(file, INIT_NOCKSUM|INIT_SAVEPROJ, p);
+    		  assert(sc->tree);
+    		  sccs_sdelta(sc, sc->tree, file);
+    >>>>>>>
+
+-g	(Shows local and remove files as a diff from the GCA)
+    <<<<<<< local slib.c 1.642.1.6 vs 1.645
+    		  sc = sccs_init(file, INIT_NOCKSUM|INIT_SAVEPROJ, s->proj);
+    -             assert(sc->tree);
+    -             sccs_sdelta(sc, sc->tree, file);
+    +             assert(HASGRAPH(sc));
+    +             sccs_sdelta(sc, sccs_ino(sc), file);
+    <<<<<<< remote slib.c 1.642.1.6 vs 1.642.2.1
+    -             sc = sccs_init(file, INIT_NOCKSUM|INIT_SAVEPROJ, s->proj);
+    +             sc = sccs_init(file, INIT_NOCKSUM|INIT_SAVEPROJ, p);
+    		  assert(sc->tree);
+    		  sccs_sdelta(sc, sc->tree, file);
+    >>>>>>>
+
+-2	(2 way format (like diff3))
+    <<<<<<< local slib.c 1.645
+    		  sc = sccs_init(file, INIT_NOCKSUM|INIT_SAVEPROJ, s->proj);
+    		  assert(HASGRAPH(sc));
+    		  sccs_sdelta(sc, sccs_ino(sc), file);
+    <<<<<<< remote slib.c 1.642.2.1
+    		  sc = sccs_init(file, INIT_NOCKSUM|INIT_SAVEPROJ, p);
+    		  assert(sc->tree);
+    		  sccs_sdelta(sc, sc->tree, file);
+    >>>>>>>
+
+-n	(newonly (like -2 except marks added lines))
+    <<<<<<< local slib.c 1.642.1.6 vs 1.645
+    		  sc = sccs_init(file, INIT_NOCKSUM|INIT_SAVEPROJ, s->proj);
+    +             assert(HASGRAPH(sc));
+    +             sccs_sdelta(sc, sccs_ino(sc), file);
+    <<<<<<< remote slib.c 1.642.1.6 vs 1.642.2.1
+    +             sc = sccs_init(file, INIT_NOCKSUM|INIT_SAVEPROJ, p);
+    		  assert(sc->tree);
+    		  sccs_sdelta(sc, sc->tree, file);
+    >>>>>>>
+$
+#tp_changeset_exists
+You are trying to create a ChangeSet file in a repository which already
+has one.  This usually means you are trying to apply a patch intended
+for a different repository.  You can find the correct repository by
+running the following command at the top of each repository until you
+get a match with the changeset ID at the top of the patch:
+
+    bk -R log -hr1.0 -nd':KEY:' ChangeSet
+
+$
+#tp_gone_error
+File #BKARG#
+is marked as gone in this repository and therefor cannot accept updates.
+The fact that you are getting updates indicates that the file is not gone
+in the other repository and could be restored in this repository.
+If you want to "un-gone" the file(s) using the s.file from a remote
+repository, please contact support@bitkeeper.com for assistance.
+$
+#tp_noconflicts
+takepatch was instructed not to accept conflicts into this tree.
+Please make sure all pending deltas are committed in this tree,
+resync in the opposite direction and then reapply this patch.
+$
+#tp_notfirst
+takepatch: when creating a package, as you are currently doing, you need a
+patch which includes all of the history.  Please try again, with one of
+
+	bk makepatch -r.. 
+or
+	bk send -r.. user@host.com
+
+takepatch has not cleaned up your destination, you need to do that.
+$
+#tp_portrename
+takepatch: porting work on top of a component rename is not supported
+in this version of BitKeeper.
+	Path conflict - "#BKARG#1#" and "#BKARG#2#"
+Please write support@bitkeeper.com and include this message.
+$
+#tp_portself
+You are trying to port changesets that were made in another clone of
+this nested collection, which is an error.  Instead, you need to find
+a repository that contains the changeset[s] you are trying to port and
+pull them.
+To see if a repository has the needed changesets, run this command:
+	bk -@<URL> r2c -r'#BKARG#2#' '#BKARG#1#'
+Once you find a repository containing the changeset do a:
+	bk pull -r<REV> <URL>
+instead of the port.
+$
+#tp_ahead
+takepatch: can't find parent ID
+	#BKARG#1#
+	in #BKARG#2#
+This patch is ahead of your tree, you need to get an earlier patch first.
+Look at your tree with a "bk changes" and do the same on the other tree,
+and get a patch that is based on a common ancestor.
+$
+#tp_badpath
+The location vs recorded location don't match.  The file is currently
+here	"#BKARG#"
+but has	"#BKARG#2#"
+as its recorded pathname.  If the file is where you want it to be,
+then update its name with the following command:
+
+    bk edit #BKARG#
+    bk ci -yRename #BKARG#
+
+If the file should be in the other location then restore it to that
+location by running 
+
+    bk names #BKARG#
+
+The patch has been saved in the PENDING directory and may be reapplied
+after you fix the name problem.
+
+$
+#tp_nothingtodo
+takepatch: nothing to do in patch, which probably means a patch version
+mismatch.  You need to make sure that the software generating the patch is
+the same as the software accepting the patch.  This typically means you 
+need to upgrade the sending or receiving BitKeeper software.
+$
+#tp_noversline
+takepatch: the version line in #BKARG# is missing
+or does not match the format understood by this program.  You need to
+make sure that the software generating the patch is the same as the
+software accepting the patch.  This typically means you need to upgrade
+the sending or receiving BitKeeper software.
+$
+#tp_badXsum
+takepatch: patch checksum is invalid#BKARG#.
+The patch was probably corrupted in transit, sometimes mailers do this.
+Please get a new copy and try again.
+$
+#tp_uncommitted
+takepatch: #BKARG# has uncommitted changes.
+Please commit pending changes with "bk commit" and reapply the patch.
+$
+#pull_in_progress
+-----------------------------------------------------------------
+It looks like there was a pull in progress. These errors could
+be caused by the components being out-of-sync with the product.
+Try running 'bk resolve' to finish the pull, or a 'bk abort' to
+cancel it.
+-----------------------------------------------------------------
+$
+#pull_poly
+-----------------------------------------------------------------
+The pull includes component csets that are already in your
+repository as part of a different product cset.
+
+This can happen when more than one portal is used to port from
+other projects.
+
+The BitKeeper support team recommends that you only use one portal to
+avoid this error.  Please write support@bitkeeper.com for assistance.
+-----------------------------------------------------------------
+$
+#no_pull_part1
+Remote does not understand "pull_part1" command.  There are two
+possible causes:
+    a) Remote bkd has disabled "pull" command.
+    b) We are talking to an old 1.x bkd.
+If it is the former, talk to whoever owns that repository.
+If it is the latter, upgrade to a more recent version of BitKeeper.
+$
+#upgrade_remote
+You need to upgrade the version of BitKeeper in the remote repository, it
+is so old it is no longer supported.
+$
+#restore_failed
+Unable to complete the restore of your repository.  Please examine the 
+list of errors above and figure out why it was not restored.  Once you
+have corrected those errors, you may finish the restore by running 
+
+    bk restore #BKARG#
+
+$
+#restore_checking
+Your repository should be restored to its previous state.
+We are running a full consistency check to verify this, please wait.
+$
+#restore_check_failed
+The integrity check failed after the backup was restored.
+This almost always means that the repository had a problem before
+the previous operation (i.e., clone -r, undo, pull, resolve) started.
+Please examine the error messages produced by check and see if you can
+fix them.  If not, contact support@bitkeeper.com for technical support.
+$
+#case_folding
+BitKeeper has detected a "Case-Folding file system". e.g. FAT and NTFS.
+What this means is that your file system ignores case differences when it
+looks for directories and files.  This also means that it is not possible
+to rename a path correctly if there exists a similar path with only
+upper/lower case differences.
+
+BitKeeper wants to update this file:
+    #BKARG#
+Your file system is changing the name as follows:
+    #BKARG# -> #BKARG#2#
+BitKeeper considers this an error, since this may not be what you have
+intended.  The recommended work around for this problem is as follows:
+a) Exit from this resolve session.
+b) Run "bk mv" to move the directory or file with upper/lower case
+   changes to a temporary location.
+c) Run "bk mv" again to move from the temporary location to
+   #BKARG#
+d) Run "bk commit" to record the new location in a changeset.
+e) Run "bk resolve" or "bk pull" again.
+f) You should also inform owners of other repositories to avoid using 
+   similar names.
+$
+#win32-mailer-error
+Can not find a working mailer.
+
+If you have access to a SMTP server, you can install the "blat" mailer
+with the following command:
+
+	blat -install <smtp_server_address> <your email address>
+
+If you have a non-standard connection, you can supply a bk_mail.bat
+file to connect BitKeeper to your mail server; the bk_mail.bat file
+should accept the three arguments, as follows:
+
+	bk_mail.bat file recipient subject
+
+(recipient is a comma separated list if there is more than one)
+
+You should put the bk_mail.bat file in the BitKeeper directory.
+The bk_mail.bat command should exit with status zero when the mail is
+sent successfully.
+$
+#upgrade-badperms
+The current user does not have permissions to replace the version of
+BitKeeper installed at:
+	#BKARG#
+Please rerun the upgrade command from an account with the needed
+permissions.
+$
+#upgrade-nomsys
+The upgrade command may not be run from an Msys shell, the removal of the
+existing BitKeeper will fail.  Please try again from a command shell.
+$
+#upgrade-install-other-platform
+If the upgrade command is given the -a option to request the binary
+for another architecture, then installation is not allowed, please
+add -d and try again.
+$
+#upgrade-pre-bundle
+You are trying to upgrade a Mac OS X bundled application to a version
+of BitKeeper that did not support bundles. Please use the -fd flags to
+download the old installer, manually remove the bundle located at
+	 #BKARG#
+and run the installer.
+$
+#comments-badfmt
+Illegal format for input to the 'bk comments' command.  Lines should
+match this format:
+   ### Comments for <file1>|<rev1>
+   New comments
+
+   ### Comments for <file2>|<rev2>
+   Other changes
+$
+#missing_parent
+This repository has no parent.  You must set a parent with "bk parent" or
+specify a repository on the command line for this command to work.
+$
+#no-pull-dash-r
+pull: remote version of BitKeeper is not capable of
+responding to the '-r' option.  Either upgrade the
+remote version of BitKeeper, or use:
+  bk clone -r<rev> <remote-URL> <local-temp-repo>
+  bk pull <local-temp-repo>
+$
+#repo_feature
+The current repository relies on a feature that is not supported by
+this BitKeeper release.  This repository requires:
+
+	#BKARG#
+
+and you will need to upgrade to a BitKeeper version which supports
+the '#BKARG#' feature[s].
+
+In general, a "bk upgrade" should be sufficient.
+$
+#remote_bk_missing_feature
+The remote BitKeeper binary is missing a feature that the local 
+BitKeeper or repository requires.  The missing feature is:
+
+	#BKARG#
+
+and you will need to upgrade the remote BitKeeper in order to 
+complete the current operation.
+
+In general, a "bk upgrade" should be sufficient.
+$
+#bkd_missing_feature
+The current repository has a feature that is not supported by
+the remote bkd.  This repository requires:
+
+	#BKARG#
+
+and you will need to upgrade the remote BitKeeper to a version which
+supports the '#BKARG#' feature[s].
+
+In general, a "bk upgrade" should be sufficient.
+$
+#bk_missing_feature
+The remote repository has a feature that is not supported by this
+BitKeeper release.  That repository requires:
+
+	#BKARG#
+
+and you will need to upgrade to a BitKeeper version which supports
+the '#BKARG#' feature[s].
+
+In general, a "bk upgrade" should be sufficient.
+$
+#test-args
+lead:#BKARG##BKARG#1##BKARG#2# #BKARG#3#BKARG#2#BKARG#:trail
+$
+#no_shortkey
+This version of Bitkeeper doesn't support repositories with short keys.
+
+Please send mail to support@bitkeeper.com to request assistance.
+$
+#bisect_script_error
+ # BISECT FAILED
+ #
+ # The script you provided should work (exit zero) 
+ # for revision '#BKARG#1#' and fail (exit non-zero)
+ # for revision '#BKARG#2#'. As this was not the case,
+ # bisect was aborted.
+ #
+ # Please fix your script and run bisect again.
+ #
+ # BISECT DID NOT RUN
+$

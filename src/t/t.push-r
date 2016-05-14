@@ -1,0 +1,98 @@
+# Copyright 2008,2010,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#
+
+echo $N Push -r needs to work with multiple destinations ............$NL
+commercial project
+touch foo
+bk new $Q foo
+bk commit $Q -yfoo
+cd ..
+bk clone $Q project copy
+cd copy
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q --tag=TRUNK -yfoo
+cd ../project
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q --tag=BRANCH -yfoo
+bk clone $Q . ../copy2
+bk pull $Q ../copy
+bk tag $Q T1
+bk edit $Q foo
+bk delta $Q -fyfoo foo
+bk commit $Q -yfoo
+bk changes -afk -rTRUNK..T1 > ../COPY_KEYS
+bk changes -afk -rBRANCH..T1 > ../COPY2_KEYS
+bk push $Q -rT1 ../copy ../copy2 || {
+	echo failed
+	exit 1
+}
+cd ../copy
+checkfiles BitKeeper/etc/csets-in ../COPY_KEYS
+cd ../copy2
+checkfiles BitKeeper/etc/csets-in ../COPY2_KEYS
+echo OK
+
+echo $N Simple tag graph push -r test ....,..........................$NL
+cd "$HERE/project"
+bk tag $Q -rT1 T1_PULL_THIS_TO_TEST_LEAF_MARKED
+bk changes -akrT1 > ../KEY
+bk tag $Q T2
+bk tag $Q -rT1 NOT_THIS
+bk push $Q -rT1 ../copy ../copy2 || {
+	echo failed
+	exit 1
+}
+cd ../copy
+bk changes -akr+ > KEY
+checkfiles ../KEY KEY
+bk changes -rNOT_THIS -ndx 2> ERR && {
+	echo failed: NOT_THIS tag sent
+	exit 1
+}
+grep -q "no such delta.*NOT_THIS" ERR || {
+	echo wrong error message
+	cat ERR
+	exit 1
+}
+cd ../copy2
+bk changes -akr+ > KEY2
+checkfiles ../KEY KEY2
+bk changes -rNOT_THIS -ndx 2> ERR && {
+	echo failed: NOT_THIS tag sent
+	exit 1
+}
+grep -q "no such delta.*NOT_THIS" ERR || {
+	echo wrong error message
+	cat ERR
+	exit 1
+}
+# XXX: How to test if top tag is marked as a leaf node?
+echo OK
+
+echo $N Test push -r\$TAGKEY..........................................$NL
+cd "$HERE"
+commercial proj3
+bk clone $Q . ../copy3 || fail
+cd ../copy3
+bk tag $Q atag || fail
+KEY=`bk changes -L -qand:MD5KEY:`
+bk push $Q -r$KEY || fail
+bk changes -L -qa > OUT || fail
+touch EMPTY
+cmpfiles EMPTY OUT || fail should be empty
+echo OK

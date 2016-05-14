@@ -1,0 +1,1063 @@
+# Copyright 2008-2011,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Setup some nested repos .....................................$NL
+fresh_commercial standalone
+cd ..
+nested project
+mv ../standalone .
+cd standalone
+ROOT=`bk root`
+PWD1=`bk pwd -s`
+PWD2=`bk pwd -s "$ROOT"`
+test "$PWD1" = "$PWD2" || fail
+cd ..
+mkdir -p a/b
+touch c
+bk setup -cc -f a/b/c || fail
+mkdir a/b/c/d
+bk setup -cc -f a/b/c/d/e || fail
+mkdir a/b/c1
+echo hi > a/b/c1/f
+bk new $Q a/b/c1/f
+echo hi > a/b/f
+bk new $Q a/b/f
+echo hi > a/b/c/d/f
+bk new $Q a/b/c/d/f
+mkdir a/b/c/d/e/f
+echo hi > a/b/c/d/e/f/f
+bk new $Q a/b/c/d/e/f/f
+cd a/b/c/d/e
+bk commit -S -ynew $Q || fail
+cd ../..
+bk commit -S -ynew $Q || fail
+cd ../../..
+bk commit -ynew $Q || fail
+bk alias new DEV gcc gdb
+echo OK
+
+# bk -e pwd
+# project/a/b/c
+# project/a/b/c/d/e
+# project/gcc
+# project/gdb
+# project
+#
+# Plus project/standalone is unattached
+
+echo $N bk gfiles sees stuff in product only ........................$NL
+bk gfiles > GOT
+cat <<EOF > WANT
+ChangeSet
+BitKeeper/etc/aliases
+BitKeeper/etc/attr
+BitKeeper/etc/collapsed
+BitKeeper/etc/config
+BitKeeper/etc/gone
+BitKeeper/etc/ignore
+a/b/f
+a/b/c/ChangeSet
+a/b/c/d/e/ChangeSet
+a/b/c1/f
+gcc/ChangeSet
+gdb/ChangeSet
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles -h filters out component changeset files ..........$NL
+bk gfiles -h | grep ChangeSet > GOT
+cat <<EOF > WANT
+ChangeSet
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles . .................................................$NL
+bk gfiles . > GOT
+cat <<EOF > WANT
+ChangeSet
+BitKeeper/etc/aliases
+BitKeeper/etc/attr
+BitKeeper/etc/collapsed
+BitKeeper/etc/config
+BitKeeper/etc/gone
+BitKeeper/etc/ignore
+a/b/f
+a/b/c1/f
+a/b/c/ChangeSet
+a/b/c/d/e/ChangeSet
+gcc/ChangeSet
+gdb/ChangeSet
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles a .................................................$NL
+bk gfiles a > GOT
+cat <<EOF > WANT
+a/b/f
+a/b/c1/f
+a/b/c/ChangeSet
+a/b/c/d/e/ChangeSet
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles -h a filters comp changesets ......................$NL
+bk gfiles -h a > GOT
+cat <<EOF > WANT
+a/b/f
+a/b/c1/f
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles a/b/c .............................................$NL
+bk gfiles a/b/c > GOT
+cat <<EOF > WANT
+a/b/c/ChangeSet
+a/b/c/BitKeeper/etc/attr
+a/b/c/BitKeeper/etc/collapsed
+a/b/c/BitKeeper/etc/config
+a/b/c/BitKeeper/etc/gone
+a/b/c/BitKeeper/etc/ignore
+a/b/c/d/f
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles a/b/c1.............................................$NL
+bk gfiles a/b/c1 > GOT
+cat <<EOF > WANT
+a/b/c1/f
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles a/b/f .............................................$NL
+bk gfiles a/b/f > GOT
+cat <<EOF > WANT
+a/b/f
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles -1 ................................................$NL
+bk gfiles -1 > GOT
+echo ChangeSet > WANT
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk -A in a nested product ...................................$NL
+bk -A > GOT
+cat <<EOF > WANT
+a/b/c/ChangeSet
+a/b/c/BitKeeper/etc/attr
+a/b/c/BitKeeper/etc/collapsed
+a/b/c/BitKeeper/etc/config
+a/b/c/BitKeeper/etc/gone
+a/b/c/BitKeeper/etc/ignore
+a/b/c/d/f
+a/b/c/d/e/ChangeSet
+a/b/c/d/e/BitKeeper/etc/attr
+a/b/c/d/e/BitKeeper/etc/collapsed
+a/b/c/d/e/BitKeeper/etc/config
+a/b/c/d/e/BitKeeper/etc/gone
+a/b/c/d/e/BitKeeper/etc/ignore
+a/b/c/d/e/f/f
+gcc/ChangeSet
+gcc/BitKeeper/etc/attr
+gcc/BitKeeper/etc/collapsed
+gcc/BitKeeper/etc/config
+gcc/BitKeeper/etc/gone
+gcc/BitKeeper/etc/ignore
+gdb/ChangeSet
+gdb/BitKeeper/etc/attr
+gdb/BitKeeper/etc/collapsed
+gdb/BitKeeper/etc/config
+gdb/BitKeeper/etc/gone
+gdb/BitKeeper/etc/ignore
+ChangeSet
+BitKeeper/etc/aliases
+BitKeeper/etc/attr
+BitKeeper/etc/collapsed
+BitKeeper/etc/config
+BitKeeper/etc/gone
+BitKeeper/etc/ignore
+a/b/f
+a/b/c1/f
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -U in a nested product ...................................$NL
+bk -U > GOT || fail
+grep -v ChangeSet WANT | grep -v BitKeeper > WANT2
+cmpfiles GOT WANT2
+echo OK
+
+echo $N bk --user-files in a nested product .........................$NL
+bk --user-files > GOT
+cmpfiles GOT WANT2
+echo OK
+
+echo $N bk -A -sDEV in a nested product .............................$NL
+bk -A -sDEV > GOT || fail
+cat <<EOF > WANT
+gcc/ChangeSet
+gcc/BitKeeper/etc/attr
+gcc/BitKeeper/etc/collapsed
+gcc/BitKeeper/etc/config
+gcc/BitKeeper/etc/gone
+gcc/BitKeeper/etc/ignore
+gdb/ChangeSet
+gdb/BitKeeper/etc/attr
+gdb/BitKeeper/etc/collapsed
+gdb/BitKeeper/etc/config
+gdb/BitKeeper/etc/gone
+gdb/BitKeeper/etc/ignore
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk --all-files -sDEV in a nested product ....................$NL
+bk --all-files -sDEV > GOT || fail
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -U -sDEV in a nested product .............................$NL
+bk -U -sDEV > GOT || fail
+grep -v ChangeSet WANT | grep -v BitKeeper > WANT2
+cmpfiles GOT WANT2
+echo OK
+
+echo $N bk -A vs find in a nested collection ........................$NL
+bk -A | sort > GOT
+mv standalone ..
+bk _find . -type f | grep SCCS/s | sed s,SCCS/s.,, | sort > WANT
+mv ../standalone .
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk -Ar in a nested product should error .....................$NL
+bk -Ar > OUT 2>&1 && {
+	echo failed
+	cat OUT
+	exit 1
+}
+grep -q 'bk: -A may not be combined with -r' OUT || {
+	echo bad message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N bk -Ur in a nested product should be like bk -R gfiles -U ...$NL
+bk gfiles -U > WANT
+bk -Ur > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -sDEV -Ur should be a foreach bk sfiles -U ............$NL
+bk -esDEV pwd -P | while read x
+do	(cd $x; bk sfiles -U)
+done > WANT
+bk -esDEV -Ur > GOT || fail
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk --each-repo -sDEV -Ur should be same as above ............$NL
+bk --each-repo -sDEV -Ur > GOT || fail
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk --each-repo --subset=DEV -Ur should be same as above .....$NL
+bk --each-repo --subset=DEV -Ur > GOT || fail
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk --each-repo -s -Ur is an error -- no arg .................$NL
+bk --each-repo -s -Ur 2> ERR && fail -f ERR
+grep -q 'bk -sALIAS: ALIAS cannot be omitted' ERR || fail -f ERR
+echo OK
+
+echo $N bk --each-repo --subset -Ur is an error -- no arg ...........$NL
+bk --each-repo --subset -Ur 2> ERR && fail -f ERR
+grep -q 'bk -sALIAS: ALIAS cannot be omitted' ERR || fail -f ERR
+echo OK
+
+echo $N bk -e pwd -P from the product ...............................$NL
+cat > WANT << EOF
+a/b/c
+a/b/c/d/e
+gcc
+gdb
+.
+EOF
+bk -e pwd -P > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -sc pwd -P from near a comp runs in that comp .........$NL
+echo a/b/c > WANT
+(cd a/b && bk -e -sc pwd -P) > GOT || fail
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -s. pwd -P from inside a comp runs in that comp .......$NL
+echo a/b/c > WANT
+(cd a/b/c/d && bk -e -s. pwd -P) > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -sDEV pwd -P from the product .........................$NL
+cat > WANT << EOF
+gcc
+gdb
+EOF
+bk -e -sDEV pwd -P > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -s^prOdUcT pwd -P from the product ....................$NL
+cat > WANT << EOF
+a/b/c
+a/b/c/d/e
+gcc
+gdb
+EOF
+bk -e -s^prOdUcT pwd -P > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e gfiles should not prefix - from product ...............$NL
+bk -e pwd -P | while read x
+do	(cd $x; bk gfiles)
+done > WANT
+bk -e gfiles > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -sDEV gfiles should not prefix - from product .........$NL
+bk -e -sDEV pwd -P | while read x
+do	(cd $x; bk gfiles)
+done > WANT
+bk -e -sDEV gfiles > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -s. gfiles from inside a comp runs that in that comp ..$NL
+(cd a/b/c && bk gfiles) > WANT
+(cd a/b/c/d && bk -e -s. gfiles) > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk gfiles -r in a nested collection includes standalone .....$NL
+bk gfiles -r > GOT
+cat <<EOF > WANT
+ChangeSet
+BitKeeper/etc/aliases
+BitKeeper/etc/attr
+BitKeeper/etc/collapsed
+BitKeeper/etc/config
+BitKeeper/etc/gone
+BitKeeper/etc/ignore
+a/b/f
+a/b/c/ChangeSet
+a/b/c/BitKeeper/etc/attr
+a/b/c/BitKeeper/etc/collapsed
+a/b/c/BitKeeper/etc/config
+a/b/c/BitKeeper/etc/gone
+a/b/c/BitKeeper/etc/ignore
+a/b/c/d/f
+a/b/c/d/e/ChangeSet
+a/b/c/d/e/BitKeeper/etc/attr
+a/b/c/d/e/BitKeeper/etc/collapsed
+a/b/c/d/e/BitKeeper/etc/config
+a/b/c/d/e/BitKeeper/etc/gone
+a/b/c/d/e/BitKeeper/etc/ignore
+a/b/c/d/e/f/f
+a/b/c1/f
+gcc/ChangeSet
+gcc/BitKeeper/etc/attr
+gcc/BitKeeper/etc/collapsed
+gcc/BitKeeper/etc/config
+gcc/BitKeeper/etc/gone
+gcc/BitKeeper/etc/ignore
+gdb/ChangeSet
+gdb/BitKeeper/etc/attr
+gdb/BitKeeper/etc/collapsed
+gdb/BitKeeper/etc/config
+gdb/BitKeeper/etc/gone
+gdb/BitKeeper/etc/ignore
+standalone/ChangeSet
+standalone/BitKeeper/etc/attr
+standalone/BitKeeper/etc/collapsed
+standalone/BitKeeper/etc/config
+standalone/BitKeeper/etc/gone
+standalone/BitKeeper/etc/ignore
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo ---- similar tests in a subdirectory in the product
+cd "$HERE/project/a"
+
+echo $N bk gfiles ...................................................$NL
+bk gfiles > GOT
+cat <<EOF > WANT
+b/f
+b/c/ChangeSet
+b/c/d/e/ChangeSet
+b/c1/f
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles . .................................................$NL
+bk gfiles . > GOT
+cat <<EOF > WANT
+b/f
+b/c1/f
+b/c/ChangeSet
+b/c/d/e/ChangeSet
+EOF
+cmpfiles GOT WANT
+echo OK
+
+
+echo $N bk gfiles b .................................................$NL
+bk gfiles b > GOT
+cat <<EOF > WANT
+b/f
+b/c1/f
+b/c/ChangeSet
+b/c/d/e/ChangeSet
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles b/c1 ..............................................$NL
+bk gfiles b/c1 > GOT
+cat <<EOF > WANT
+b/c1/f
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles b/f ...............................................$NL
+bk gfiles b/f > GOT
+cat <<EOF > WANT
+b/f
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk gfiles -r ................................................$NL
+bk gfiles -r > GOT
+cat <<EOF > WANT
+b/f
+b/c/ChangeSet
+b/c/BitKeeper/etc/attr
+b/c/BitKeeper/etc/collapsed
+b/c/BitKeeper/etc/config
+b/c/BitKeeper/etc/gone
+b/c/BitKeeper/etc/ignore
+b/c/d/f
+b/c/d/e/ChangeSet
+b/c/d/e/BitKeeper/etc/attr
+b/c/d/e/BitKeeper/etc/collapsed
+b/c/d/e/BitKeeper/etc/config
+b/c/d/e/BitKeeper/etc/gone
+b/c/d/e/BitKeeper/etc/ignore
+b/c/d/e/f/f
+b/c1/f
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N bk -A in a nested product subdirectory ......................$NL
+bk -A > GOT
+cat <<EOF > WANT
+b/c/ChangeSet
+b/c/BitKeeper/etc/attr
+b/c/BitKeeper/etc/collapsed
+b/c/BitKeeper/etc/config
+b/c/BitKeeper/etc/gone
+b/c/BitKeeper/etc/ignore
+b/c/d/f
+b/c/d/e/ChangeSet
+b/c/d/e/BitKeeper/etc/attr
+b/c/d/e/BitKeeper/etc/collapsed
+b/c/d/e/BitKeeper/etc/config
+b/c/d/e/BitKeeper/etc/gone
+b/c/d/e/BitKeeper/etc/ignore
+b/c/d/e/f/f
+../gcc/ChangeSet
+../gcc/BitKeeper/etc/attr
+../gcc/BitKeeper/etc/collapsed
+../gcc/BitKeeper/etc/config
+../gcc/BitKeeper/etc/gone
+../gcc/BitKeeper/etc/ignore
+../gdb/ChangeSet
+../gdb/BitKeeper/etc/attr
+../gdb/BitKeeper/etc/collapsed
+../gdb/BitKeeper/etc/config
+../gdb/BitKeeper/etc/gone
+../gdb/BitKeeper/etc/ignore
+../ChangeSet
+../BitKeeper/etc/aliases
+../BitKeeper/etc/attr
+../BitKeeper/etc/collapsed
+../BitKeeper/etc/config
+../BitKeeper/etc/gone
+../BitKeeper/etc/ignore
+b/f
+b/c1/f
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -U in a nested product subdirectory ......................$NL
+bk -U > GOT
+grep -v ChangeSet WANT | grep -v BitKeeper > WANT2
+cmpfiles GOT WANT2
+echo OK
+
+echo $N bk -A -sDEV in a nested product subdirectory ................$NL
+bk -A -sDEV > GOT
+cat <<EOF > WANT
+../gcc/ChangeSet
+../gcc/BitKeeper/etc/attr
+../gcc/BitKeeper/etc/collapsed
+../gcc/BitKeeper/etc/config
+../gcc/BitKeeper/etc/gone
+../gcc/BitKeeper/etc/ignore
+../gdb/ChangeSet
+../gdb/BitKeeper/etc/attr
+../gdb/BitKeeper/etc/collapsed
+../gdb/BitKeeper/etc/config
+../gdb/BitKeeper/etc/gone
+../gdb/BitKeeper/etc/ignore
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -U -sDEV in a nested product subdirectory ................$NL
+bk -U -sDEV > GOT
+grep -v ChangeSet WANT | grep -v BitKeeper > WANT2
+cmpfiles GOT WANT2
+echo OK
+
+
+echo $N bk -Ar in a nested product subdirectory should error ........$NL
+bk -Ar > OUT 2>&1 && {
+	echo failed
+	cat OUT
+	exit 1
+}
+grep -q 'bk: -A may not be combined with -r' OUT || {
+	echo bad message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N bk -Ur in a prod subdir should be like bk -R gfiles -U ......$NL
+bk -R gfiles -U > WANT
+bk -Ur > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -sDEV -Ur should be a foreach bk sfiles -U ............$NL
+bk -e -sDEV pwd -P | while read x
+do	(cd ../$x; bk sfiles -U)
+done > WANT
+bk -e -sDEV -Ur > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -s pwd -P from a product subdirectory .................$NL
+cat > WANT << EOF
+a/b/c
+a/b/c/d/e
+gcc
+gdb
+.
+EOF
+bk -e pwd -P > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -sDEV pwd -P from product subdirectory ................$NL
+cat > WANT << EOF
+gcc
+gdb
+EOF
+bk -e -sDEV pwd -P > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e gfiles should not prefix - from product subdirectory ..$NL
+cd ..
+bk -e pwd -P | while read x
+do	(cd $x; bk gfiles)
+done > WANT
+cd a
+bk -e gfiles > GOT
+cmpfiles ../WANT GOT
+echo OK
+
+echo $N bk -e -sDEV gfiles should not prefix - from product subdir ..$NL
+cd ..
+bk -e -sDEV pwd -P | while read x
+do	(cd $x; bk gfiles)
+done > WANT
+cd a
+bk -e -sDEV gfiles > GOT
+cmpfiles ../WANT GOT
+echo OK
+
+# project/a/b/c/d/e
+cd "$HERE/project/a/b/c/d/e"
+echo ---- similar tests in a deeply nested component
+
+echo $N bk -A in a nested component .................................$NL
+bk -P -A > GOT
+cat <<EOF > WANT
+a/b/c/ChangeSet
+a/b/c/BitKeeper/etc/attr
+a/b/c/BitKeeper/etc/collapsed
+a/b/c/BitKeeper/etc/config
+a/b/c/BitKeeper/etc/gone
+a/b/c/BitKeeper/etc/ignore
+a/b/c/d/f
+a/b/c/d/e/ChangeSet
+a/b/c/d/e/BitKeeper/etc/attr
+a/b/c/d/e/BitKeeper/etc/collapsed
+a/b/c/d/e/BitKeeper/etc/config
+a/b/c/d/e/BitKeeper/etc/gone
+a/b/c/d/e/BitKeeper/etc/ignore
+a/b/c/d/e/f/f
+gcc/ChangeSet
+gcc/BitKeeper/etc/attr
+gcc/BitKeeper/etc/collapsed
+gcc/BitKeeper/etc/config
+gcc/BitKeeper/etc/gone
+gcc/BitKeeper/etc/ignore
+gdb/ChangeSet
+gdb/BitKeeper/etc/attr
+gdb/BitKeeper/etc/collapsed
+gdb/BitKeeper/etc/config
+gdb/BitKeeper/etc/gone
+gdb/BitKeeper/etc/ignore
+ChangeSet
+BitKeeper/etc/aliases
+BitKeeper/etc/attr
+BitKeeper/etc/collapsed
+BitKeeper/etc/config
+BitKeeper/etc/gone
+BitKeeper/etc/ignore
+a/b/f
+a/b/c1/f
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -U in a nested component .................................$NL
+bk -P -U > GOT
+grep -v ChangeSet WANT | grep -v BitKeeper > WANT2
+cmpfiles GOT WANT2
+echo OK
+
+echo $N bk -A -sDEV in a nested component ...........................$NL
+bk -A -sDEV > GOT
+cat <<EOF > WANT
+../../../../../gcc/ChangeSet
+../../../../../gcc/BitKeeper/etc/attr
+../../../../../gcc/BitKeeper/etc/collapsed
+../../../../../gcc/BitKeeper/etc/config
+../../../../../gcc/BitKeeper/etc/gone
+../../../../../gcc/BitKeeper/etc/ignore
+../../../../../gdb/ChangeSet
+../../../../../gdb/BitKeeper/etc/attr
+../../../../../gdb/BitKeeper/etc/collapsed
+../../../../../gdb/BitKeeper/etc/config
+../../../../../gdb/BitKeeper/etc/gone
+../../../../../gdb/BitKeeper/etc/ignore
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -U -sDEV in a nested component ...........................$NL
+bk -U -sDEV > GOT
+grep -v ChangeSet WANT | grep -v BitKeeper > WANT2
+cmpfiles GOT WANT2
+echo OK
+
+echo $N bk -Ar in a nested component should error ...................$NL
+bk -Ar > OUT 2>&1 && {
+	echo failed
+	cat OUT
+	exit 1
+}
+grep -q 'bk: -A may not be combined with -r' OUT || {
+	echo bad message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N bk -Ur in a nested comp should be like bk -R gfiles -U ......$NL
+bk gfiles -U > WANT
+bk -Ur > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -sDEV -Ur should be a foreach bk sfiles -U ............$NL
+bk -e -sDEV pwd | while read x
+do	(cd "$x"; bk sfiles -U)
+done > WANT
+bk -e -sDEV -Ur > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e pwd -P from a component ...............................$NL
+cat > WANT << EOF
+a/b/c
+a/b/c/d/e
+gcc
+gdb
+.
+EOF
+bk -e pwd -P > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -sDEV pwd -P from component ...........................$NL
+cat > WANT << EOF
+gcc
+gdb
+EOF
+bk -e -sDEV pwd -P > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e gfiles should not prefix - from component .............$NL
+bk -e pwd | while read x
+do	(cd "$x"; bk gfiles)
+done > WANT
+bk -e gfiles > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N bk -e -sDEV gfiles should not prefix - from component .......$NL
+bk -e -sDEV pwd | while read x
+do	(cd "$x"; bk gfiles)
+done > WANT
+bk -e -sDEV gfiles > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo ---- standalone tests
+echo $N bk -A in a non-nested tree should match bk -gr ..............$NL
+cd "$HERE"
+commercial non-nested
+for i in a b c d e f 
+do	echo $i > $i
+	bk new $Q $i
+done
+bk -A > A
+bk -gr > B
+cmpfiles A B
+echo OK
+
+echo $N bk -U in a non-nested tree should match bk -Ugr .............$NL
+bk -U > A
+bk -Ugr > B
+cmpfiles A B
+echo OK
+
+echo $N bk -e in a non-nested tree works if ., HERE, or nothing .....$NL
+bk -Ur > A
+bk -e -s. -Ur > B
+cmpfiles A B
+bk -e -sHERE -Ur > B
+cmpfiles A B
+bk -e -sPRODUCT -Ur > B
+cmpfiles A B
+bk -e -s. -Ur > B
+cmpfiles A B
+bk -e -s. -shere -Ur > B
+cmpfiles A B
+bk -e -s. -sproduct -Ur > B
+cmpfiles A B
+echo OK
+
+echo $N bk -e -sXXX in a non-nested tree fails if anything else .....$NL
+bk -e -sother -U 2> ERR && fail -f ERR
+cat <<EOF > WANT
+bk -e: illegal alias used in traditional repository:
+	other
+EOF
+echo OK
+
+echo $N bk -A -salias in product.....................................$NL
+cd "$HERE"/project
+bk setup -f " a leading space"
+bk alias new $Q BEGINWITHA " a leading space" a/b/c a/b/c/d/e
+bk -A -sgcc > OUT
+bk gfiles gcc > WANT
+cmpfiles OUT WANT
+# filter dups
+bk -A -sgcc -sgcc > OUT
+cmpfiles OUT WANT
+bk -A -sgcc -sgcc _cat > OUT
+cmpfiles OUT WANT
+bk -A -sgcc -sa/b/c > OUT
+bk gfiles a/b/c gcc > WANT
+cmpfiles OUT WANT
+bk -A -sgcc -sa/b/c _cat > OUT
+cmpfiles OUT WANT
+bk -A -sall > OUT
+bk gfiles " a leading space" a/b/c a/b/c/d/e gcc gdb > WANT
+bk gfiles -h >> WANT
+cmpfiles OUT WANT
+# filter non-obvious dups
+bk -A -sBEGINWITHA -sall > OUT
+cmpfiles OUT WANT
+# make sure product first, given that space sorts before '.'
+# filter product dups.
+bk -A -sBEGINWITHA -sPRODUCT -sPRODUCT > OUT
+bk gfiles " a leading space" a/b/c a/b/c/d/e > WANT
+bk gfiles -h >> WANT
+cmpfiles OUT WANT
+bk -A -sbad 2> ERR && fail -f ERR
+cat <<EOF > WANT
+bk: bad must be either a glob, key, alias, or component.
+EOF
+cmpfiles ERR WANT
+echo OK
+
+echo $N White box command parsing -- save output of catlines ........$NL
+bk -ccccccccccccccccccA > GOT || fail
+test -s GOT && fail -f GOT edited files unexpected 1
+bk -ccccccccccccccccccA log -r+ > GOT || fail
+test -s GOT && fail -f GOT edited files unexpected 2
+echo OK
+
+
+echo $N Show that bk -A handles sigpipe correctly ...................$NL
+bk -A | head -1 > FOO
+echo OK
+
+echo $N Show relative paths in -s -U ................................$NL
+cd a/b
+bk -s./c -U > GOT || fail
+cat <<EOF > WANT
+c/d/f
+EOF
+cmpfiles GOT WANT
+# this works because -r implies a cd2root inside the nested_each
+bk -es./c -Ugr > GOT || fail
+echo d/f > WANT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test relative pathnames for \'bk -Ugr\' .......................$NL
+cd c/d
+bk -Ugr _debugargs > GOT || fail
+sed "s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT
+0: _debugargs
+1: -
+cwd: ROOT/project/a/b/c
+start_cwd: ROOT/project/a/b/c
+stdin:
+d/f
+EOF
+cmpfiles GOT2 WANT
+echo OK
+
+echo $N Test relative pathnames for \'bk -e\' .........................$NL
+bk -e _debugargs > GOT || fail
+sed "s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT
+0: _debugargs
+cwd: ROOT/project/ a leading space
+start_cwd: ROOT/project/ a leading space
+0: _debugargs
+cwd: ROOT/project/a/b/c
+start_cwd: ROOT/project/a/b/c
+0: _debugargs
+cwd: ROOT/project/a/b/c/d/e
+start_cwd: ROOT/project/a/b/c/d/e
+0: _debugargs
+cwd: ROOT/project/gcc
+start_cwd: ROOT/project/gcc
+0: _debugargs
+cwd: ROOT/project/gdb
+start_cwd: ROOT/project/gdb
+0: _debugargs
+cwd: ROOT/project
+start_cwd: ROOT/project
+EOF
+cmpfiles GOT2 WANT
+echo OK
+
+echo $N Test relative pathnames for \'bk -U\' .........................$NL
+bk -U _debugargs > GOT || fail
+sed "s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT
+0: _debugargs
+1: -
+cwd: ROOT/project/a/b/c/d
+start_cwd: ROOT/project/a/b/c/d
+stdin:
+f
+... 3 more lines ...
+EOF
+cmpfiles GOT2 WANT
+echo OK
+
+echo $N Test relative pathnames for \'bk -e -Ugr\' ....................$NL
+bk -e -Ugr _debugargs > GOT || fail
+sed "s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT
+0: _debugargs
+1: -
+cwd: ROOT/project/ a leading space
+start_cwd: ROOT/project/ a leading space
+stdin:
+0: _debugargs
+1: -
+cwd: ROOT/project/a/b/c
+start_cwd: ROOT/project/a/b/c
+stdin:
+d/f
+0: _debugargs
+1: -
+cwd: ROOT/project/a/b/c/d/e
+start_cwd: ROOT/project/a/b/c/d/e
+stdin:
+f/f
+0: _debugargs
+1: -
+cwd: ROOT/project/gcc
+start_cwd: ROOT/project/gcc
+stdin:
+0: _debugargs
+1: -
+cwd: ROOT/project/gdb
+start_cwd: ROOT/project/gdb
+stdin:
+0: _debugargs
+1: -
+cwd: ROOT/project
+start_cwd: ROOT/project
+stdin:
+a/b/f
+... 1 more lines ...
+EOF
+cmpfiles GOT2 WANT
+echo OK
+
+echo $N Test relative pathnames for \'bk -es./relative -Ugr\' .........$NL
+bk -es../../c -Ugr _debugargs > GOT || fail
+sed "s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT
+0: _debugargs
+1: -
+cwd: ROOT/project/a/b/c
+start_cwd: ROOT/project/a/b/c
+stdin:
+d/f
+EOF
+cmpfiles GOT2 WANT
+echo OK
+
+echo $N Test relative pathnames for \'bk -es./relative -Ugr\<dir\>\' ....$NL
+bk -es../../c -Ugr.. _debugargs 2> GOT && fail -f GOT
+echo 'bk: -e may not be combined with -r<dir>' > WANT
+cmpfiles GOT WANT
+echo OK
+
+echo $N Test relative pathnames for \'bk -es./relative bk -Ugr\<dir\>\' .$NL
+bk -es../../c bk -Ugr.. _debugargs > GOT || fail -f GOT
+sed "s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT
+0: _debugargs
+1: -
+cwd: ROOT/project/a/b
+start_cwd: ROOT/project/a/b
+stdin:
+f
+... 1 more lines ...
+EOF
+cmpfiles GOT2 WANT
+echo OK
+
+echo $N Test relative pathnames for \'bk -R\' .........................$NL
+bk -R _debugargs > GOT || fail
+sed "s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT
+0: _debugargs
+cwd: ROOT/project/a/b/c
+start_cwd: ROOT/project/a/b/c
+EOF
+cmpfiles GOT2 WANT
+echo OK
+
+echo $N Test relative pathnames for \'bk -P\' .........................$NL
+bk -P _debugargs > GOT || fail
+sed "s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT
+0: _debugargs
+cwd: ROOT/project
+start_cwd: ROOT/project
+EOF
+cmpfiles GOT2 WANT
+echo OK
+
+echo $N Test relative pathnames for \'bk -U\' in standalone ...........$NL
+cd "$HERE"/non-nested
+mkdir src
+cd src
+echo hi > foo
+bk new $Q foo
+bk -U _debugargs > GOT || fail
+sed "s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT
+0: _debugargs
+1: -
+cwd: ROOT/non-nested/src
+start_cwd: ROOT/non-nested/src
+stdin:
+../a
+... 6 more lines ...
+EOF
+cmpfiles GOT2 WANT
+echo OK
+
+echo $N Test start_cwd for \'bk -e\' in standalone ....................$NL
+bk -e _debugargs > GOT || fail
+sed "s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT
+0: _debugargs
+cwd: ROOT/non-nested
+start_cwd: ROOT/non-nested
+EOF
+cmpfiles GOT2 WANT
+echo OK

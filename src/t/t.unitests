@@ -1,0 +1,120 @@
+# Copyright 2008,2011-2012,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Run C-based unit tests ......................................$NL
+commercial project
+# BK_DTRACE defined to a file to test for fh leaks
+BK_DTRACE="$HERE/LOG" bk -R _unittests || fail
+echo OK
+
+echo $N Test getopt parsing .........................................$NL
+bk _getopt_test -ff -xargx -x argx2 -yargy -z -zargz \
+   --aliasf --aliasx=argx --aliasx argx2 --aliasy=argy --aliasz --aliasz=argz \
+   --longf --longx=argx --longx argx2 --longy=argy --longz --longz=argz \
+   > OUT || fail
+cat <<EOF > WANT
+Got option f
+Got option f
+Got optarg argx with -x
+Got optarg argx2 with -x
+Got optarg argy with -y
+Got optarg (none) with -z
+Got optarg argz with -z
+Got option f
+Got optarg argx with -x
+Got optarg argx2 with -x
+Got optarg argy with -y
+Got optarg (none) with -z
+Got optarg argz with -z
+Got optarg (none) with --402
+Got optarg argx with --403
+Got optarg argx2 with --403
+Got optarg argy with --404
+Got optarg (none) with --405
+Got optarg argz with --405
+nav[1] = -f
+nav[2] = -f
+nav[3] = -xargx
+nav[4] = -xargx2
+nav[5] = -yargy
+nav[6] = -z
+nav[7] = -zargz
+nav[8] = -f
+nav[9] = -xargx
+nav[10] = -xargx2
+nav[11] = -yargy
+nav[12] = -z
+nav[13] = -zargz
+nav[14] = --longf
+nav[15] = --longx=argx
+nav[16] = --longx
+nav[17] = argx2
+nav[18] = --longy=argy
+nav[19] = --longz
+nav[20] = --longz=argz
+EOF
+cmpfiles OUT WANT
+echo OK
+
+echo $N Test getopt errors ..........................................$NL
+bk _getopt_test -b 2> ERR && fail -f
+head -1 ERR > ERR2
+echo 'bad option -b' > WANT
+cmpfiles ERR2 WANT
+
+bk _getopt_test -x 2> ERR && fail -f
+head -1 ERR > ERR2
+echo '-x missing argument' > WANT
+cmpfiles ERR2 WANT
+
+# Arguably wrong, in the spirit of 'grep -e "-pattern that starts with -" x'
+# Both short and long form of ":" don't allow new words that begin with '-'
+bk _getopt_test -x -f 2> ERR && fail -x
+head -1 ERR > ERR2
+echo '-x missing argument' > WANT
+cmpfiles ERR2 WANT
+
+bk _getopt_test -y d 2> ERR && fail -f
+head -1 ERR > ERR2
+echo '-y missing argument' > WANT
+cmpfiles ERR2 WANT
+
+bk _getopt_test --bad d 2> ERR && fail -f
+head -1 ERR > ERR2
+echo 'bad option --bad' > WANT
+cmpfiles ERR2 WANT
+
+bk _getopt_test --aliasf=foo 2> ERR && fail -f
+head -1 ERR > ERR2
+echo 'bad option --aliasf=foo' > WANT
+cmpfiles ERR2 WANT
+
+bk _getopt_test --aliasx -f 2> ERR && fail -f
+head -1 ERR > ERR2
+echo '--aliasx missing argument' > WANT
+cmpfiles ERR2 WANT
+
+bk _getopt_test --aliasy foo 2> ERR && fail -f
+head -1 ERR > ERR2
+echo '--aliasy missing argument' > WANT
+cmpfiles ERR2 WANT
+
+echo OK
+
+echo $N Test --config ...............................................$NL
+bk --config 2>ERR && fail
+bk --config=foo 2>ERR && fail
+bk --config=foo:bar config foo > OUT || fail
+test `cat OUT` = bar || fail
+echo OK

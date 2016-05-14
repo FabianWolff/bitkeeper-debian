@@ -1,0 +1,56 @@
+.so ../bk-macros
+.TH "HOWTO-bkd" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    =================== Quickstart Admin =========================
+.SH NAME
+bk Howto-bkd \- howto: configuring the \*(BK daemon
+.SH DESCRIPTION
+.LP
+Here are examples how to configure the
+.B bk
+daemon for both read-only and
+read-write modes.  We show how to export all repositories on a system
+in both read-write and read-only mode and we show how to export only
+a specific repository in read-write and read-only mode.
+.DS
+# Configure \*(BK daemon for read-only 
+# access for all repositories
+bk bkd -d -xpush
+
+# Configure \*(BK daemon for read-write 
+# access for all repositories
+bk bkd -d
+
+# Access a specific repository when multiple 
+# ones are being exported
+bk clone bk://host.domain/some/dir/master ~/my_tree
+
+# Configure a specific \*(BK repository 
+# for read-write access
+cd /master/repository
+bk bkd -d -p6666 -xcd
+
+# Configure a specific \*(BK repository 
+# for read-only access
+cd /master/repository
+bk bkd -d -p4444 -xcd -xpush
+
+# Access a repository bound to a specific port
+bk clone bk://host.domain:6666 ~/my_tree
+.DE
+.LP
+With the BK/Web feature, you can
+use a web browser to access the
+.B bkd
+web interface.
+For example, to access the
+.B bkd
+above listening on port 6666, you can use the \s-1URL\s0:
+.DS
+http://host.domain:6666/
+.DE
+.SH "SEE ALSO"
+.SA bkd
+.SA Howto
+.SH CATEGORY
+.B Overview
+.\" help://qs_admin

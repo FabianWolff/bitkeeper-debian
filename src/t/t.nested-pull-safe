@@ -1,0 +1,570 @@
+# Copyright 2010-2013 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -e
+
+echo $N Demo the auto-populate problem ..............................$NL
+# The essence of Oscar's pull
+nested baseline
+bk clone $Q -s./gcc . ../all
+touch gcc/foo
+bk new $Q gcc/foo
+bk commit $Q -f
+bk clone $Q -s. . ../prod
+cd ../all
+touch gcc/foo
+bk new $Q gcc/foo
+bk commit $Q -f
+cd ../prod
+printf "rr\ny\n" | bk pull -q --auto-populate ../all 2> ERR || fail -f ERR
+grep -q "(create/sfile conflict) foo>>" ERR || fail -f ERR
+cd "$HERE"
+echo OK
+
+echo $N Set up repositories for testing covers.......................$NL
+BK_CONFIG="autopopulate: on"
+export BK_CONFIG
+nested setcover
+bk setup -Cf gas
+bk alias set -C V0 PRODUCT
+bk alias set -C V1         gdb
+bk alias set -C V2     gcc
+bk alias set -C V3     gcc gdb
+bk alias set -C V4 gas
+bk alias set -C V5 gas     gdb
+bk alias set -C V6 gas gcc
+bk alias set -C V7 gas gcc gdb
+bk alias set -C CL7to0 gas gcc gdb
+bk alias set -C CR7to0 gas gcc gdb
+bk alias set -C CL1to3         gdb
+bk here set ALL
+bk commit $Q -ysetup
+bk clone $Q . ../src
+bk clone $Q -sPRODUCT ../src ../dest
+cd ../src
+bk alias set -C CR7to0 PRODUCT
+touch gcc/foo gdb/foo
+bk new $Q gcc/foo gdb/foo
+bk commit $Q -ychange
+echo OK
+
+echo $N If missing comp is served only by one, use it ...............$NL
+# V1 has lower price than v7, but gcc only in v7, so pick it first.
+cd "$HERE/src"
+bk here set V1 V7
+cd ../dest
+bk pull -q || fail
+bk here > GOT
+cat >WANT <<EOF
+PRODUCT
+V7
+EOF
+cmpfiles WANT GOT
+bk unpull -qf
+echo OK
+
+echo $N If cover is bigger, but contains extra, pick smaller cov ....$NL
+# V7 covers 2, but with 1 extra; V2 and V1 each cover 1, but no extra
+cd "$HERE/src"
+bk here set V7 V2 V1
+cd ../dest
+bk here set -qf PRODUCT
+bk pull -q || fail
+bk here > GOT
+cat >WANT <<EOF
+PRODUCT
+V1
+V2
+EOF
+cmpfiles WANT GOT
+bk unpull -qf
+echo OK
+
+echo $N If extra is the same, pick the bigger cover .................$NL
+# V7 covers 2, with 1 extra; V6 and V5 each cover 1, with 1 extra
+cd "$HERE/src"
+bk here set V7 V6 V5
+cd ../dest
+bk here set -qf PRODUCT
+bk pull -q || fail
+bk here > GOT
+cat >WANT <<EOF
+PRODUCT
+V7
+EOF
+cmpfiles WANT GOT
+bk unpull -qf
+echo OK
+
+echo $N If extra and cover are the same, pick smaller ...............$NL
+# V6 is unique (gcc), so it will bring in gas, V1 will be picked as smaller
+cd "$HERE/src"
+bk here set V6 V5 V1
+cd ../dest
+bk here set -qf PRODUCT
+bk pull -q || fail
+bk here > GOT
+cat >WANT <<EOF
+PRODUCT
+V1
+V6
+EOF
+cmpfiles WANT GOT
+bk unpull -qf
+echo OK
+
+echo $N No extra, and cover are the same, pick smaller ..............$NL
+# gas(V4) is now local as opposed to extra, V1 will still be picked as smaller
+bk here set -qf V4
+# Test that config var autopopulate is checked when in a component
+# Also check that while the autoconfig was turned off while in the
+# component, the setting that is used is the product's setting.
+cd gas
+echo "autopopulate: off" >> BitKeeper/log/config
+bk config autopopulate > GOT.conf
+echo off > WANT.conf
+cmpfiles WANT.conf GOT.conf
+bk pull -q || fail
+cd ..
+bk here > GOT
+cat >WANT <<EOF
+PRODUCT
+V1
+V4
+V6
+EOF
+cmpfiles WANT GOT
+bk unpull -qf
+echo OK
+
+echo $N Local alias chg from all to none, bring over remote .........$NL
+# gas(V4) is now local as opposed to extra, V1 will still be picked as smaller
+bk here set $Q CR7to0
+bk pull -q || fail
+bk here > GOT
+cat >WANT <<EOF
+CR7to0
+PRODUCT
+V1
+V6
+EOF
+cmpfiles WANT GOT
+bk unpull -qf
+echo OK
+
+echo $N If local alias def changes, maybe bring over comp ...........$NL
+# With no alias defined, bring over components
+cd "$HERE/src"
+bk here set CL7to0
+cd ../dest
+bk here set -qf PRODUCT
+bk alias set $Q CL7to0 PRODUCT
+bk pull -q || fail
+bk here > GOT
+cat >WANT <<EOF
+./gcc
+./gdb
+PRODUCT
+EOF
+cmpfiles WANT GOT
+bk unpull -qf
+echo OK
+
+echo $N Verify what a pull failure looks like .......................$NL
+# If we can't satisfy the request, pull will fail
+# Note: this throws unique data away - put at end of test cycle
+# Also note: this can be fixed: We don't need gcc to satisfy safe,
+# but we don't know that when computing cover
+cd "$HERE/src"
+bk here set -qf CL1to3
+cd ../dest
+bk here set -qf PRODUCT
+bk alias set $Q CL1to3 gcc gdb
+bk pull -q 2>ERR && fail -f ERR
+grep -q 'pull: No other sources for ./gcc known' ERR || fail -f ERR
+echo OK
+
+###
+echo $N Show a hard case where it fails..............................$NL
+cd "$HERE"
+nested np
+for i in 00 01 02 03 04 05 06 07 08 09 10 11 12 13
+do
+	bk setup -Cf $i
+done
+bk alias set -C A 00 01 02 03 04 05 06 07
+bk alias set -C B 08 09 10 11
+bk alias set -C C 12 13
+bk alias set -C D gcc
+bk alias set -C E gdb
+bk alias set -C F 00 02 04 06 08 10 12 gcc
+bk alias set -C G 01 03 05 07 09 11 13 gdb
+bk commit $Q -ysetup
+bk gate $Q -r
+cd "$HERE"
+bk clone $Q -sPRODUCT np np_clone
+cd "$HERE/np"
+touch foo
+bk new $Q foo
+bk commit $Q -ychange
+bk here set A B C D E F G
+cd "$HERE/np_clone"
+bk pull -q 2>ERR || fail
+bk here >GOT
+cat >WANT <<EOF
+F
+G
+EOF
+bk diff -q --ignore-trailing-cr WANT GOT >OUT && \
+	fail -f OUT you fixed a bug
+echo failed \(bug np-hard\)
+
+unset BK_CONFIG
+
+echo $N Set up repos.................................................$NL
+cd "$HERE"
+nested gate
+bk setup -C -f doc
+bk setup -C -f man
+bk commit $Q --tag=NOTOOLS -y"no tools" || fail -f OUT
+bk setup -C -f tools
+bk alias set -C GCC gcc tools
+bk alias set -C GDB gdb tools
+bk alias set -C DOC doc man tools
+bk alias set -C DEV gcc gdb man tools
+bk commit $Q -y"add aliases"
+# clean up the here file, perhaps bk setup
+# should notice it's ALL and not add the
+# keys to the HERE file?
+bk here set -f all
+cd "$HERE"
+bk clone -sGCC $Q gate child-1
+cd "$HERE/gate/gcc"
+touch afile
+bk new $Q afile
+bk commit -S $Q -y.
+cd ../gdb
+touch afile
+bk new $Q afile
+bk commit -S $Q -y.
+cd ..
+bk commit $Q -y.
+cd "$HERE"
+bk clone $Q gate project
+cd child-1
+bk parent -q ../project
+cd ../project
+bk gate $Q -r
+echo OK
+
+echo $N Pulling from gate should be unsafe...........................$NL
+cd "$HERE/child-1"
+bk here > WANT
+bk pull $Q ../gate 2>ERR || fail -f ERR
+bk here > GOT
+cmpfiles WANT GOT
+bk unpull $Q -f
+# bug? unpull will not remove aliases
+bk here set -f $Q GCC
+echo OK
+
+echo $N Test pull from non-gate ok, as long as we have gate..........$NL
+bk here > WANT
+bk pull $Q || fail should have worked
+bk here > GOT
+cmpfiles WANT GOT
+bk unpull $Q -f
+echo OK
+
+echo $N Test pull from non-gate with gate but old urllist............$NL
+bk here > WANT
+mv BitKeeper/log/urllist BitKeeper/log/urllist.old
+# strip gate information from urllist
+cat BitKeeper/log/urllist.old | \
+	awk -F\| '/^[@]/ {print; next;} /[^@]/ {print $1"|"$2}' \
+	> BitKeeper/log/urllist
+bk pull $Q || fail should have worked
+bk here > GOT
+cmpfiles WANT GOT
+bk unpull $Q -f
+# restore urllist file
+cp BitKeeper/log/urllist.old BitKeeper/log/urllist
+echo OK
+
+echo $N Repeat without -q ...........................................$NL
+bk pull > OUT 2>ERR || fail should work
+cat <<EOF > WANT
+.                                  100% |==============================| OK
+pull: searching $HERE/gate...ok (gate)
+1/2 gcc                              1 changeset,   no merges in   3 files
+2/2 .                                1 changeset,   no merges in   2 files
+EOF
+perl -pe 's/.*\r//' ERR > ERR2
+cmpfiles WANT ERR2
+bk unpull $Q -f
+# restore urllist file
+mv BitKeeper/log/urllist.old BitKeeper/log/urllist
+echo OK
+
+echo $N Test pull from non-gate works, when no gate..................$NL
+# clear out urllist
+rm ../project/BitKeeper/log/urllist
+mv BitKeeper/log/urllist BitKeeper/log/urllist.old
+bk pull -q 2>ERR && fail -f ERR
+cat >WANT <<EOF
+
+The following components are present in the remote, were not
+found in any gates, and will need to be populated to make
+the pull safe:
+	doc
+	gdb
+	man
+Please re-run the pull using the --auto-populate option in order
+to get them automatically.
+EOF
+cmpfiles WANT ERR
+bk pull --auto-populate $Q 2>ERR || fail -f ERR
+bk here > GOT
+cat <<EOF >WANT
+DEFAULT
+GCC
+PRODUCT
+EOF
+cmpfiles WANT GOT
+bk unpull -qf || fail
+# restore it
+mv BitKeeper/log/urllist.old BitKeeper/log/urllist
+echo OK
+
+echo $N Test pull --safe from gate...................................$NL
+cd "$HERE/child-1"
+bk here > WANT
+bk pull --safe $Q ../gate 2>ERR || fail
+bk here > GOT
+cmpfiles WANT GOT
+bk unpull -qf || fail
+echo OK
+
+echo $N Test pull --unsafe from non-gate.............................$NL
+bk pull $Q --unsafe ../project || fail
+bk changes -qR > OUT || fail -f OUT did not pull
+test -s OUT && fail -f OUT expected empty
+echo OK
+
+echo $N Test pull --safe when alias redefined to include all rmt ....$NL
+cd ../project
+bk alias add GCC ALL
+cd ../child-1
+bk pull $Q --safe || fail
+cd ../project
+bk undo -qsfr+
+echo OK
+
+echo $N Test pull --safe when new comp added and both sides full ....$NL
+cd "$HERE"
+bk clone $Q -rNOTOOLS project pulltools
+cd pulltools
+bk pull $Q --safe
+echo OK
+
+echo $N Make sure we do not bring unchanged aliases..................$NL
+cd "$HERE"
+# project needs to be a gate so that it's okay to not populate DOC
+(cd project && bk gate -q .)
+bk clone $Q -sGCC -sDOC project gcc-and-doc
+bk clone $Q -sGCC project just-gcc
+cd gcc-and-doc/gcc
+bk edit $Q afile
+echo content >afile
+bk ci -y. $Q afile
+bk commit -S -y. $Q
+bk -P commit -y. $Q
+cd "$HERE/just-gcc"
+bk pull -q ../gcc-and-doc || fail
+cat >WANT <<EOF
+GCC
+PRODUCT
+EOF
+bk here > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Make sure we do the right thing when an alias changes........$NL
+# XXXREV used in later test marked with XXX
+cd "$HERE/project"
+XXXREV=`bk changes -r+ -nd:REV:`
+cd "$HERE"
+bk clone $Q -sGCC project repo-1
+bk clone $Q -sGDB project repo-2
+# make a cset in gcc
+cd repo-1/gcc
+bk edit $Q afile
+echo more stuff > afile
+bk ci $Q -y. afile
+bk commit -S $Q -y.
+bk -P commit $Q -y.
+# change the meaning of GCC in repo-2
+cd "$HERE/repo-2"
+bk alias add $Q GCC gdb
+bk push $Q ../project
+bk here set -f $Q PRODUCT
+# now pull GCC, note there are no changes to gdb in remote
+bk pull --auto-populate -q ../repo-1 2>ERR || fail -f ERR
+bk here > GOT
+cat <<EOF >WANT
+GCC
+PRODUCT
+EOF
+cmpfiles WANT GOT
+bk comps -h > GOT
+cat <<EOF >WANT
+./gcc
+./gdb
+./tools
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Setup a pull where a remote alias changes locally ...........$NL
+cd "$HERE"
+# XXX create a non-gate based on what repo-1 was when it was created
+# from project
+bk clone -r$XXXREV $Q project nongate
+cd nongate
+bk gate $Q -r
+bk clone $Q -s. . ../just-prod
+touch foo
+bk new $Q foo
+bk commit $Q -yremote
+cd ../just-prod
+bk pull $Q --unsafe ../repo-1 || fail
+cd ../repo-1/tools
+echo hi > junk
+bk new $Q junk
+cd ..
+bk commit $Q -yjunk || fail
+bk alias set $Q GCC ./gcc ./gdb ./tools || fail
+cd ../repo-2
+bk alias set $Q GCC ./gcc || fail
+bk here set -f $Q GCC || fail
+bk pull --auto-populate $Q ../repo-1 2> ERR || fail -f ERR
+bk here >GOT
+cat <<EOF >WANT
+./tools
+GCC
+PRODUCT
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test again with pull -r auto-pop to see comps listed ........$NL
+bk here set -f $Q ./tools || fail
+bk unpull $Q -sf
+BK_GETLINE=1 bk pull $Q -r1.7 --auto-populate ../repo-1 2> ERR || fail -f ERR
+bk here >GOT
+cat <<EOF >WANT
+./gcc
+./tools
+PRODUCT
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test --auto-populate from a gate for components w/conflicts..$NL
+cd "$HERE"
+bk clone $Q gate gate2
+cd gate2
+bk gate $Q .
+cd ..
+bk clone $Q gate child-2
+cd gate/gcc
+touch bfile
+bk new $Q bfile
+bk commit $Q -y"gcc/bfile"
+cd "$HERE"
+cd child-2/gcc
+touch cfile
+bk new $Q cfile
+bk commit $Q -y"gcc/cfile"
+cd ..
+bk push $Q ../gate2 || fail
+bk here set $Q GDB || fail
+bk pull -q 2>ERR && fail -f ERR should have failed
+cat <<EOF > WANT
+
+The following components need to be merged, are not present in this
+repository, and will need to be populated to complete the pull:
+	gcc
+Please re-run the pull using the --auto-populate option in order
+to get them automatically.
+EOF
+cmpfiles WANT ERR
+bk pull --auto-populate >GOT 2>&1 || fail should have worked
+perl -pe "s/.*\r//;s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF >WANT2
+Pull file://ROOT/gate
+  -> file://ROOT/child-2
+.                                  100% |==============================| OK
+
+The following components need to be merged, are not present in this
+repository, and will need to be populated to complete the pull:
+	gcc
+Adding the following aliases/components:
+	ALL
+pull: searching ROOT/gate...ok (gate)
+1/5 doc                            100% |==============================| OK
+pull: searching ROOT/gate2...ok (gate)
+Source ROOT/gate2
+2/5 gcc                            100% |==============================| OK
+Source ROOT/gate
+3/5 man                            100% |==============================| OK
+pull: searching ROOT/gate...ok (gate)
+4/5 gcc                              1 changeset,    1 merge  in   2 files
+5/5 .                                1 changeset,    1 merge  in   1 file
+EOF
+cmpfiles WANT2 GOT2
+echo OK
+
+echo $N Demo the existing scenario that pull urllist will fix .......$NL
+bk unpull $Q -sf
+bk here set $Q GDB || fail
+# create a product only gate
+bk clone $Q -s. ../gate ../gate3
+bk --cd=../gate3 gate $Q .
+# still shows the first error
+bk pull -q ../gate3 2>ERR && fail -f ERR should have failed
+cmpfiles WANT ERR
+# works same as before (using pull-urllist)
+bk pull --auto-populate ../gate3 > GOT 2>&1 || fail
+perl -pe "s/.*\r//;s,$HERE,ROOT," < GOT > GOT2
+cat <<EOF > WANT2
+Pull file://ROOT/gate3
+  -> file://ROOT/child-2
+.                                  100% |==============================| OK
+
+The following components need to be merged, are not present in this
+repository, and will need to be populated to complete the pull:
+	gcc
+Adding the following aliases/components:
+	gcc
+pull: searching ROOT/gate...ok (gate)
+pull: searching ROOT/gate2...ok (gate)
+Source ROOT/gate2
+1/3 gcc                            100% |==============================| OK
+pull: searching ROOT/gate...ok (gate)
+2/3 gcc                              1 changeset,    1 merge  in   2 files
+3/3 .                                1 changeset,    1 merge  in   1 file
+EOF
+cmpfiles WANT2 GOT2
+echo OK

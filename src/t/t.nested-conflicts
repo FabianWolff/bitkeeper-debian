@@ -1,0 +1,148 @@
+# Copyright 2011 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Set up the repos.............................................$NL
+nested parent
+cd gcc
+touch ../prod a b c real-collide null-collide
+bk new $Q ../prod a b c real-collide null-collide
+cd ..
+bk commit $Q -yfiles
+bk clone $Q . ../copy
+cd gcc
+bk edit $Q ../prod real-collide null-collide
+echo parent > real-collide
+bk delta $Q -fynull ../prod real-collide null-collide
+bk mv ../prod ../product
+bk mv c d
+bk mv b c
+bk mv a b
+bk mv d a
+cd ..
+bk commit $Q -yfiles
+cd ../copy
+cd gcc
+bk edit $Q ../prod real-collide null-collide
+echo copy > real-collide
+bk delta $Q -fynull ../prod real-collide null-collide
+bk mv a d
+bk mv b a
+bk mv c b
+bk mv d c
+cd ..
+bk commit $Q -yfiles
+bk pull $Q -R 
+echo OK
+
+echo $N Test out conflicts with various verbosity ...................$NL
+REAL=`bk getuser -r`
+bk conflicts > GOT
+test $? = 1 || fail
+cat <<EOF > WANT
+gcc/a (renamed) LOCAL=c REMOTE=b
+gcc/b (renamed) LOCAL=a REMOTE=c
+gcc/c (renamed) LOCAL=b REMOTE=a
+gcc/real-collide
+prod (renamed) LOCAL=prod REMOTE=product
+EOF
+cmpfiles WANT GOT
+grep -q 'No files are in conflict' GOT && {
+	echo should not have said no conflicts
+	exit 1
+}
+#
+bk conflicts -v > GOT
+test $? = 1 || fail
+cat <<EOF > WANT
+    GCA path:     gcc/a
+    Local path:   gcc/c
+    Remote path:  gcc/b
+    GCA path:     gcc/b
+    Local path:   gcc/a
+    Remote path:  gcc/c
+    GCA path:     gcc/c
+    Local path:   gcc/b
+    Remote path:  gcc/a
+gcc/real-collide has 1 conflict block
+    GCA path:     prod
+    Local path:   prod
+    Remote path:  product
+EOF
+cmpfiles WANT GOT
+#
+bk conflicts -vv > GOT
+test $? = 1 || fail
+cat <<EOF > WANT
+    GCA path:     gcc/a
+    Local path:   gcc/c
+    Remote path:  gcc/b
+    GCA path:     gcc/b
+    Local path:   gcc/a
+    Remote path:  gcc/c
+    GCA path:     gcc/c
+    Local path:   gcc/b
+    Remote path:  gcc/a
+gcc/real-collide has 1 conflict block
+   1 local lines by bk/$REAL
+   1 remote lines by bk/$REAL
+    GCA path:     prod
+    Local path:   prod
+    Remote path:  product
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test out conflicts with command line file named .............$NL
+# The argument is probed in each component as though path relative
+# from the component root.  That's odd.  It is also the remote's
+# name space.  Anyway, demo it:
+bk conflicts a > GOT
+test $? = 1 || fail
+cat <<EOF > WANT
+gcc/c (renamed) LOCAL=b REMOTE=a
+EOF
+cmpfiles WANT GOT
+bk conflicts -v a > GOT
+test $? = 1 || fail
+cat <<EOF > WANT
+    GCA path:     gcc/c
+    Local path:   gcc/b
+    Remote path:  gcc/a
+EOF
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test that it will tell us no conflicts when there are none...$NL
+cd "$HERE/parent"
+bk conflicts > GOT
+test $? = 0 || fail
+echo "No files are in conflict" > WANT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test exit code 2 if not in a repo or if a bad option ........$NL
+cd "$HERE"
+bk conflicts 2> GOT
+test $? = 2 || fail
+echo 'You must be in a BK repository' > WANT
+cmpfiles WANT GOT
+cd copy
+bk conflicts -x 2> GOT
+test $? = 2 || fail
+cat <<EOF > WANT
+Invalid option '-x'
+usage:	bk conflicts [-dDfrvS] [<file> ...]
+EOF
+cmpfiles WANT GOT
+echo OK

@@ -1,0 +1,311 @@
+# Copyright 2001-2006,2009,2011-2012,2015-2016 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Because some proxy disallow proxy to localhost
+unsetHttpProxy
+
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+mkdir src
+cd src
+echo foo > 'F!O#O$ B%A^R&RR(R)RR'
+echo bam > bam
+echo h > h.h
+bk ci $Q -i 'F!O#O$ B%A^R&RR(R)RR' h.h
+bk new $Q -b bam
+if bk _test ! -f SCCS/s.'F!O#O$ B%A^R&RR(R)RR'; then echo failed to create history; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 15 ]; then echo wrong pending result $P; bk pending; exit 1; fi
+bk commit $S -yCset
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo failed to clear pending list; bk pending; exit 1; fi
+bk level 3
+echo OK
+cores
+
+echo $N rClone via pipe .............................................$NL
+cd "$HERE"
+if [ X$PLATFORM = X"WIN32" ]; then SLASH="//"; else SLASH="/"; fi
+bk _rclone $Q "$HERE/project" file:$SLASH"$HERE/copy" || { echo failed; exit 1; }
+bk _test -f copy/src/SCCS/s.'F!O#O$ B%A^R&RR(R)RR' || { echo failed; exit 1; }
+cmpfiles project/BitKeeper/log/features copy/BitKeeper/log/features
+
+bk _rclone $Q -r1.1 "$HERE/project" "$HERE/copy2" || { echo failed; exit 1; }
+[ -d copy2 ] || { echo failed; exit 1; }
+bk _test ! -f copy2/src/SCCS/s.'F!O#O$ B%A^R&RR(R)RR' || { echo failed; exit 1; }
+cd "$HERE/copy2"
+if [ "`bk level`" != "Repository level is 3" ]; then echo failed; exit 1; fi
+echo OK
+
+# In this test we call the rclone code via the bk clone interface
+echo $N rClone via bk:// ............................................$NL
+cd "$HERE"
+(cd project && bk repocheck -q)
+test -f project/BitKeeper/log/checked || fail
+rm -rf copy copy2
+BK_CONFIG='partial_check:on!' bk bkd -q -aPORT -ikill || fail
+P=`cat PORT`
+bk clone $Q "$HERE/project" bk://localhost:$P/"$HERE/copy"
+bk _test -f copy/src/SCCS/s.'F!O#O$ B%A^R&RR(R)RR' || { echo failed; exit 1; }
+cd "$HERE/copy"
+if [ "`bk level`" != "Repository level is 3" ]; then echo failed; exit 1; fi
+echo OK
+
+echo $N Make sure we honored partial check ..........................$NL
+bk cmdlog -av > GOT
+grep -q "check " GOT && {
+	bk _kill http://localhost:$P 
+	echo failed
+	cat GOT
+	exit 1
+}
+echo OK
+
+echo $N rClone via http:// ..........................................$NL
+cd "$HERE"
+bk clone $Q "$HERE/project" http://localhost:$P/"$HERE/copy2"
+bk _test -f copy2/src/SCCS/s.'F!O#O$ B%A^R&RR(R)RR' || { echo failed; exit 1; }
+cd "$HERE/copy2"
+if [ "`bk level`" != "Repository level is 3" ]; then echo failed; exit 1; fi
+cd "$HERE"
+bk clone -r1.1 $Q project http://localhost:$P/copy3
+[ -d copy3 ] || { echo failed; exit 1; }
+bk _test ! -f copy3/src/SCCS/s.'F!O#O$ B%A^R&RR(R)RR' || { echo failed; exit 1; }
+bk clone -EBKU_TESTVAR=XYZ $Q project http://localhost:$P/copy4
+[ -d copy4 ] || { echo failed; exit 1; }
+bk _test -f copy4/src/SCCS/s.'F!O#O$ B%A^R&RR(R)RR' || { echo failed; exit 1; }
+echo OK
+# TODO test virtual host/root support
+
+echo $N rClone to illegal path ......................................$NL
+bk clone "$HERE/project" http://localhost:$P//tmp/foozz.$$ 2> OUT && {
+       echo should have failed
+       exit 1
+}
+grep -q 'illegal cd' OUT || {
+       echo bad error message
+       cat OUT
+       exit 1
+}
+bk _kill http://localhost:$P || fail
+echo OK
+
+echo $N rClone to bk://url without path should fail .................$NL
+mkdir EMPTY
+cd EMPTY
+bk bkd -q -a"$HERE/PORT" -ikill || fail
+P=`cat "$HERE/PORT"`
+cd ..
+bk clone "$HERE/project" bk://localhost:$P 2> OUT && {
+	echo should have failed
+	cat OUT
+	bk _kill http://localhost:$P
+	exit 1
+}
+grep -q 'needs a path component.' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N rClone to http://url without path should fail ...............$NL
+bk clone "$HERE/project" http://localhost:$P 2> OUT && {
+	echo should have failed
+	cat OUT
+	bk _kill http://localhost:$P
+	exit 1
+}
+grep -q 'needs a path component.' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N rClone to bk://url with . path should work ..................$NL
+bk clone "$HERE/project" bk://localhost:$P/. 2> OUT || {
+	echo should have worked
+	cat OUT
+	bk _kill http://localhost:$P
+	exit 1
+}
+test -d EMPTY/BitKeeper/etc || {
+	echo did not create repo
+	bk _kill http://localhost:$P
+	exit 1
+}
+echo OK
+
+echo $N rClone to bk://url with non-. path should work ..............$NL
+bk clone "$HERE/project" bk://localhost:$P/REPO 2> OUT || {
+	echo should have worked
+	cat OUT
+	bk _kill http://localhost:$P
+	exit 1
+}
+test -d EMPTY/REPO/BitKeeper/etc || {
+	echo did not create repo
+	bk _kill http://localhost:$P
+	exit 1
+}
+echo OK
+
+bk _kill http://localhost:$P || fail
+
+echo $N Stress rclone in part2 ......................................$NL
+# Rider: use different -j parallel - for later test
+cd "$HERE"/project
+bk --config='partial_check:on' --config='checkout:edit' \
+    _rclone $Q -r+ -j1 . ../bork-part2-1 || fail
+test -f ../bork-part2-1/src/h.h -a -f ../bork-part2-1/src/bam \
+    || fail checkout failed
+bk --config='partial_check:on' --config='checkout:edit' \
+    _rclone $Q -r+ -j2 . ../bork-part2-2 || fail
+test -f ../bork-part2-2/src/h.h -a -f ../bork-part2-2/src/bam \
+    || fail checkout failed
+echo OK
+
+echo $N Stress rclone in part3 ......................................$NL
+# Rider: use default parallel level - for later test
+# Mimic Oscar's setup more or less: nested always -r<rev> so just send -r+
+cd "$HERE"/EMPTY/REPO
+bk edit $Q BitKeeper/etc/config
+echo "checkout: edit" >> BitKeeper/etc/config
+bk delta $Q -yedit BitKeeper/etc/config
+echo bam > bam
+bk new $Q -b bam
+bk commit $Q -f
+bk bam server $Q "$HERE/project"
+bk --config='partial_check:on' _rclone $Q -r+ . ../../bork-part3 || fail
+echo OK
+
+echo $N Verify level of parallel in the last two tests ..............$NL
+cd "$HERE"/bork-part2-1/BitKeeper/log
+# level 1 means no parallel
+test 0 = `grep "sfio -iq --Nway" cmd_log | wc -l` || fail
+cd "$HERE"/bork-part2-2/BitKeeper/log
+test 2 = `grep "sfio -iq --Nway --checkout = 0" cmd_log | wc -l` || fail
+test 2 = `grep "checkout -Tq --skip-bam - = 0" cmd_log | wc -l` || fail
+J=`bk _parallel -w`
+test $J -eq 1 && J=0
+cd "$HERE"/bork-part3/BitKeeper/log
+test $J = `grep "sfio -iq --Nway --checkout = 0" cmd_log | wc -l` || fail
+echo OK
+
+echo $N Make sure rclone respect checkout preference ................$NL
+cd "$HERE/project/BitKeeper/etc"
+bk edit $Q config
+echo "checkout:get!" >> config
+bk delta $Q -ynew_preference config
+bk commit $Q -ynew_preference
+if [ X$PLATFORM = X"WIN32" ]; then SLASH="//"; else SLASH="/"; fi
+bk _rclone $Q "$HERE/project" file:$SLASH"$HERE/copy5" || { echo failed; exit 1; }
+cd "$HERE/copy5"
+if [ ! -f src/bam -o ! -f src/h.h ]; then echo failed; exit 1; fi
+echo OK
+
+#BUG: 2003-03-04-002
+echo $N Clone with bad rev means no litter ..........................$NL
+cd "$HERE"
+bk clone -rfoo $Q project clone  2> ERR && {
+	echo Fail
+	echo No foo -- clone should fail
+	exit 1
+}
+grep -q "^file://.*/project: rev foo doesn't exist" ERR || fail
+test -d clone && {
+	echo Fail
+	echo dir created
+	exit 1
+}
+test -d RESYNC && {
+	echo Fail
+	echo bogus RESYNC created
+	# exit 1
+}
+echo OK
+
+echo $N rClone with bad rev means no litter .........................$NL
+cd "$HERE"
+bk _rclone -rfoo $Q project clone  2> ERR && {
+	echo Fail
+	echo No foo -- clone should fail
+	exit 1
+}
+cat <<EOF > WANT
+clone: rev foo doesn't exist
+EOF
+cmpfiles ERR WANT
+test -d clone && {
+	echo Fail
+	echo dir created
+	exit 1
+}
+test -d RESYNC && {
+	echo Fail
+	echo bogus RESYNC created
+	# exit 1
+}
+echo OK
+
+cd "$HERE/project"
+bk lock -U 2>/dev/null
+
+# This is not portable, as it depends on OS output for making a directory
+# in a read-only directory.  But has been run. Output fixed for 3.0.3
+# BugID: 2003-02-25-001
+# echo $N Clone with links and bad rev does not create dir ............$NL
+# mkdir readonly
+# chmod -w readonly
+# cd readonly
+# bk clone "$HERE/project" newrepo > ../OUT 2> ../ERR && {
+#	echo Fail
+#	echo Created repo in read-only directory
+# 	exit 1
+# }
+# cd "$HERE"
+# grep -q 'ermission denied' ERR || {
+# 	echo Fail
+# 	echo Unexpected message. Wanted 'Permission denied'. Got:
+# 	cat ERR
+# 	exit 1
+# }
+# echo OK
+
+cd "$HERE"
+bk bkd -q -a"$HERE/PORT" -ikill || fail
+P=`cat "$HERE/PORT"`
+trap "bk _kill http://localhost:$P" 0
+
+echo $N Setup an rclone in checkout:edit mode and test scandirs .....$NL
+echo "checkout:edit!" >> "`bk dotbk`"/config
+commercial newstuff
+echo 1 > file1
+echo 2 > file2
+bk new $Q file1 file2
+bk commit $Q -ynew || fail
+bk clone $Q . bk://localhost:$P/copy.new || fail
+cd ../copy.new
+echo newstuff >> file1
+bk -Uc > GOT
+cat <<EOF > WANT
+file1
+EOF
+cmpfiles WANT GOT
+echo OK

@@ -1,0 +1,274 @@
+# Copyright 2009-2011,2014-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# alias -- read and write the aliasdb
+
+echo $N Test default alias setup ....................................$NL
+nested project
+# That gives us gcc and gdb
+# and a default alias in the db defined to all
+echo DEFAULT > WANT
+bk alias > GOT
+cmpfiles WANT GOT
+# 
+echo ALL > WANT
+bk alias DEFAULT > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test illegal entries for alias in the list command ..........$NL
+# bad name - start with alpha, only alphanumeric, +, -, _, = (why '=' ?)
+bk alias '8foo' 2> ERR && fail
+grep -q "alias: invalid alias name: 8foo" ERR || fail -f ERR
+bk alias "foo#" 2> ERR && fail
+grep -q "alias: invalid alias name: foo#" ERR || fail -f ERR
+# valid but non-existent alias
+bk alias foo 2> ERR && fail
+grep -q "alias: no alias: foo" ERR || fail -f ERR
+# valid keyword, but not valid key 
+bk alias all 2> ERR && fail
+grep -q "use 'bk comps -sALL' to expand this reserved alias" ERR || fail -f ERR
+echo OK
+
+echo $N Test showing keys with the list command .....................$NL
+bk log -r1.0 -nd:KEY: ChangeSet gcc/ChangeSet gdb/ChangeSet | bk _sort > WANT
+bk alias -ek all > GOT
+cmpfiles WANT GOT
+bk alias -ek DEFAULT > GOT
+cmpfiles WANT GOT
+(echo .; echo gcc; echo gdb) | bk alias -ek - > GOT
+cmpfiles WANT GOT
+bk log -r1.0 -nd:MD5KEY: ChangeSet gcc/ChangeSet gdb/ChangeSet \
+    | bk alias -ek - > GOT
+cmpfiles WANT GOT
+cd gcc
+(bk alias -ek ..; bk alias -ek .; bk alias -ek ../gdb) | bk _sort > ../GOT
+cd ..
+cmpfiles WANT GOT
+bk alias -ek PRODUCT 'g*' > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Test showing paths with the list command ....................$NL
+printf "./.\n./gcc\n./gdb\n" > WANT
+bk alias -e all > GOT
+cmpfiles WANT GOT
+bk alias -e DEFAULT > GOT
+cmpfiles WANT GOT
+(echo .; echo gcc; echo gdb) | bk alias -e - > GOT
+cmpfiles WANT GOT
+bk log -r1.0 -nd:MD5KEY: ChangeSet gcc/ChangeSet gdb/ChangeSet \
+    | bk alias -e - > GOT
+cmpfiles WANT GOT
+cd gcc
+(bk alias -e ..; bk alias -e .; bk alias -e ../gdb) | bk _sort > ../GOT
+cd ..
+cmpfiles WANT GOT
+bk alias -e PRODUCT 'g*' > GOT
+cmpfiles WANT GOT
+echo OK
+
+echo $N Show that changing an alias in HERE will populate ...........$NL
+cd "$HERE"
+bk clone -l $Q project copy3 || fail
+cd copy3
+bk alias new $Q STUFF gdb || fail
+test -d gcc || fail
+bk repocheck $Q || fail
+bk alias set $Q DEFAULT STUFF || fail
+test -d gcc && fail
+echo OK
+
+echo $N Show that we can change set HERE to empty ...................$NL
+bk here set $Q || fail
+test `bk comps -h | wc -l` -eq 0 || fail
+echo OK
+
+echo $N And show default can be empty ...............................$NL
+bk alias set $Q DEFAULT || fail
+bk clone $Q . ../copy4 || fail
+cd ../copy4
+cat << EOF > WANT
+DEFAULT
+PRODUCT
+EOF
+bk here > GOT
+cmpfiles WANT GOT
+test `bk comps -h | wc -l` -eq 0 || fail
+echo OK
+
+echo $N Show that a failed update to aliases reverts changes ........$NL
+cd "$HERE/project"
+bk portal $Q -r || fail
+bk gate $Q -r || fail
+bk here set $Q DEFAULT || fail
+bk alias set $Q DEFAULT 2> ERR && fail -f ERR should have failed
+cat <<EOF > WANT
+alias: ./gcc cannot be found at a gate
+alias: unable to remove ./gcc
+alias: ./gdb cannot be found at a gate
+alias: unable to remove ./gdb
+EOF
+cmpfiles ERR WANT
+bk -r check -ac || fail
+echo OK
+
+echo $N Local edits in alias file can be queried ....................$NL
+bk edit $Q BitKeeper/etc/aliases || fail
+(cd gcc; echo @FOO; bk id -S) >> BitKeeper/etc/aliases
+cp BitKeeper/etc/aliases SAVE
+bk alias FOO > GOT || fail
+cat <<EOF > WANT
+./gcc
+EOF
+cmpfiles GOT WANT
+test `bk sfiles -gc` = "BitKeeper/etc/aliases" || fail
+cmpfiles SAVE BitKeeper/etc/aliases
+echo OK
+
+echo $N New aliases are blocked with local edits ....................$NL
+bk alias new BAR ./gcc 2>ERR && fail -f ERR should have failed
+cat <<EOF > WANT
+alias: local edits in BitKeeper/etc/aliases
+EOF
+cmpfiles ERR WANT
+test `bk sfiles -gc` = "BitKeeper/etc/aliases" || fail
+cmpfiles SAVE BitKeeper/etc/aliases
+bk unedit BitKeeper/etc/aliases
+echo OK
+
+echo $N Demo \'bk here -v\' ...........................................$NL
+for h in FOO BAR F3 F4 F5 F6 F7 F8
+do	bk alias new $Q $h
+done
+bk alias add FOO BAR F6 ./gcc
+bk alias add BAR F3 F5
+bk alias add F3 ./gdb F4
+bk alias set F4 ALL
+bk alias add F6 F7 F8
+bk alias add F7 ./gdb
+bk alias add F8 BAR
+bk here set FOO BAR F3
+
+bk here > GOT
+cat <<EOF >WANT
+BAR
+F3
+FOO
+PRODUCT
+EOF
+cmpfiles GOT WANT
+
+bk here -v > GOT
+cat <<EOF >WANT
+BAR:
+	F3
+	F5
+F3:
+	./gdb
+	F4
+FOO:
+	./gcc
+	BAR
+	F6
+PRODUCT
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Demo \'bk here -vv\' ..........................................$NL
+bk here -vv > GOT
+cat <<EOF >WANT
+BAR:
+	F3:
+		./gdb
+		F4
+	F5:
+F3*
+FOO:
+	./gcc
+	BAR*
+	F6:
+		F7
+		F8
+PRODUCT
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Demo \'bk here -vvv\' .........................................$NL
+bk here -vvv > GOT
+cat <<EOF >WANT
+BAR:
+	F3:
+		./gdb
+		F4:
+			ALL
+	F5:
+F3*
+FOO:
+	./gcc
+	BAR*
+	F6:
+		F7:
+			./gdb
+		F8:
+			BAR
+PRODUCT
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Demo \'bk alias -vvvv\' .......................................$NL
+bk alias -vvv > GOT
+cat <<EOF >WANT
+BAR:
+	F3:
+		./gdb
+		F4:
+			ALL
+	F5:
+DEFAULT:
+	ALL
+F3*
+F4*
+F5*
+F6:
+	F7:
+		./gdb
+	F8:
+		BAR*
+F7*
+F8*
+FOO:
+	./gcc
+	BAR*
+	F6*
+EOF
+cmpfiles GOT WANT
+echo OK
+
+echo $N Demo alias expand bug .......................................$NL
+cd "$HERE/project"
+bk portal $Q .
+rm -f WANT
+for c in 1 2 3 4 5 6 7 8
+do	bk setup -C -f f$c || fail
+	echo ./f$c >> WANT
+done
+echo ./gcc >> WANT
+echo ./gdb >> WANT
+bk alias -e \* > OUT || fail
+cmpfiles OUT WANT
+echo OK

@@ -1,0 +1,110 @@
+.so ../bk-macros
+.TH "bk undo" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    ====================== BitKeeper undo ======================
+.SH NAME
+bk undo \- Undo a changeset or set of changesets
+.SH SYNOPSIS
+.B bk undo
+.[B] \-fqSsv
+.[OPTreq] \-a rev
+.[OPTreq] \-r rev
+.SH DESCRIPTION
+The
+.B bk undo
+command can be used to remove any changeset or set of
+changesets.   There are options to select specific changesets or all
+changesets after some point (which is what
+.Q "bk clone \-r"
+uses).
+.LP
+To undo a
+.B bk pull
+use
+.BR "bk unpull" .
+.SH WARNING
+With one exception, the changes removed by an undo cannot be restored.
+Use
+.B bk undo
+with care, if the data was only present in your
+repository, when you undo it, it is gone for good.
+.LP
+If the 
+.Q \-s
+option is not present then
+.B bk undo
+saves a normal \*[BK] patch in
+.nh
+.BR BitKeeper/tmp/undo.patch .
+.hy
+Only the most recent undo is saved there, i.e., the patch is overwritten
+each time 
+.B bk undo
+is run.
+To restore the patch try this:
+.DS
+bk takepatch -vvvaf BitKeeper/tmp/undo.patch
+.DE
+There is a a shorthand,
+.BR "bk repatch" ,
+which is an alias for the above command.
+The
+.B bk repatch
+command can take an optional argument which specifies an alternate
+patch to reapply.
+.SH OPTIONS
+.TP "\\fB\\-\\-force\\-unpopulate \\fP"
+.OPTreq \-a rev
+Remove all changesets which occurred after 
+.ARG rev .
+If 
+.ARG rev
+is what you want to have be top of trunk,
+use this option.
+.tp
+.B \-f
+Force the undo to complete if it can.  Normally, undo will
+prompt with a list of deltas which will be removed.
+.tp
+.B \-\-force\-unpopulate
+If the undo results in a component being removed, undo will first check
+that the component can be found in a gate.
+Use this option to disable the gate check and just remove the component.
+.tp
+.B \-q
+Run quietly; do not list files.
+.tp
+.OPTreq \-r revs
+Remove the list of changesets specified by 
+.ARG revs .
+.ARG revs
+must be of the form r1,r2,r3, etc. and can be either the
+changeset number or the changeset key.  See
+.B bk help terms
+for more information.
+.if \n[NESTED] \{\
+.tp
+.B \-S
+.tp
+.B \-\-standalone
+Just undo the current component.
+In a nested collection, this rolls back just the current component
+and not the entire nested collection.
+\}
+.tp
+.B \-s
+Do not save undone changes as a patch.
+.tp
+.B \-v
+When prompting with the list of changes to be undone be verbose and list
+not only the changes but the deltas in each file in each changeset.
+.SH "SEE ALSO"
+.SA makepatch
+.SA pull
+.SA stripdel
+.SA takepatch
+.SA terms
+.SA unpull
+.\" stuff
+
+.SH CATEGORY
+.B Repository

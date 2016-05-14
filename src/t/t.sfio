@@ -1,0 +1,90 @@
+# Copyright 2003,2006,2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+ 
+CFS=@
+
+echo $N Make sure that sfio is forgiving about readonly dirs ........$NL
+mkdir ro rw
+echo hello world > ro/a
+echo yo momma > ro/b
+echo wears army boots > rw/c
+echo yo poppa likes it > rw/d
+find ro rw -type f | bk sfio -o $Q > SFIO
+chmod 555 ro
+bk sfio -i < SFIO 2>ERR || fail
+grep -q 'ro/a existed but contents match, skipped.' ERR || {
+	echo bad error message
+	cat ERR
+	exit 1
+}
+chmod 777 ro	# So we can clean up
+echo OK
+
+mkdir input
+cd input
+for i in a b c d e
+do	echo $i > $i
+done
+cd ..
+mkdir output
+
+echo $N Test that sfio -o works with stdin ..........................$NL
+cd "$HERE/input"
+find . -type f -print | bk sfio -oq > "$HERE/SFIO"
+cd ../output
+bk sfio -iq < "$HERE/SFIO"
+cd ../input
+for i in *
+do	cmpfiles $i ../output/$i
+done
+echo OK
+
+echo $N Test that sfio -o works with named files ....................$NL
+cd "$HERE/input"
+bk sfio -oq -aa -ab -ac -ad -ae > "$HERE/SFIO" < /dev/null
+cd ../output
+rm -f *
+bk sfio -iq < "$HERE/SFIO"
+cd ../input
+for i in *
+do	cmpfiles $i ../output/$i
+done
+echo OK
+
+echo $N Test that sfio -o works with a file containing a list .......$NL
+cd "$HERE/input"
+find . -type f -print > ../L
+bk sfio -oq -A../L > "$HERE/SFIO" < /dev/null
+cd ../output
+rm -f *
+bk sfio -iq < "$HERE/SFIO"
+cd ../input
+for i in *
+do	cmpfiles $i ../output/$i
+done
+echo OK
+
+echo $N Test that sfio -o works with all of the above ...............$NL
+cd "$HERE/input"
+echo a > ../L
+echo b >> ../L
+echo c | bk sfio -oq -A../L -ad -ae > "$HERE/SFIO"
+cd ../output
+rm -f *
+bk sfio -iq < "$HERE/SFIO"
+cd ../input
+for i in *
+do	cmpfiles $i ../output/$i
+done
+echo OK

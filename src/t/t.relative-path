@@ -1,0 +1,45 @@
+# Copyright 1999-2001,2004-2006 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N checking pathname w/ cset file ..............................$NL
+commercial project
+mkdir -p dir1/dir2
+cd dir1
+echo 5678 > dir2/path
+bk ci $Q -i dir2//..//.//dir2//path
+P=`bk prs -h -d':DPN:' dir2/path`
+if [ X$P != X"dir1/dir2/path" ]; then echo Failed; exit 1; fi
+echo OK
+cd ..
+if [ "$PLATFORM" != "WIN32" ]
+then
+echo $N checking pathname w/ symlink directory ......................$NL
+mkdir src
+touch src/foo
+ln -s src symlink
+bk ci $Q -i symlink/foo
+P=`bk prs -r1.1 -h -d':DPN:' symlink/foo`
+if [ X$P != X"src/foo" ]; then echo Failed; exit 1; fi
+bk co $Q -l src/foo
+bk delta $Q -fysym-path symlink/foo
+P=`bk prs -r1.2 -h -d':DPN:' symlink/foo`
+if [ X$P != X"src/foo" ]; then echo Failed; exit 1; fi
+bk co $Q -l symlink/foo
+echo "new-stuff" > symlink/foo
+bk delta $Q -ysym-path "`pwd`/symlink/foo"
+P=`bk prs -r1.3 -h -d':DPN:' symlink/foo`
+if [ X$P != X"src/foo" ]; then echo Failed; exit 1; fi
+echo OK
+fi
+

@@ -1,0 +1,158 @@
+.so ../bk-macros
+.TH "bk setup" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.\"    ====================== BitKeeper setup ======================
+.SH NAME
+bk setup \- create a new \*(BK package
+.SH SYNOPSIS
+.B bk setup
+.ie \n[NESTED] .[B] \-CfpP
+.el .[B] \-fp
+.[OPTreq] \-F key\fB=\fIval
+.[OPTreq] \-c config_file
+.[ARG] directory
+.SH DESCRIPTION
+There is a graphical version of this command,
+.BR "bk setuptool" .
+.LP
+To set up a \*(BK package, you need to create and populate an initial tree.
+If the
+.ARG directory
+argument is supplied, the 
+.B bk setup 
+command will create a mostly empty package tree containing a
+few files and directories that are used by \*(BK. Otherwise, a new
+\*(BK package will be created in place.
+.LP
+A system wide default config template file may be created in either
+.BR "\`bk\ dotbk\`/etc/config.template" ,
+.BR /etc/BitKeeper/etc/config.template ,
+or
+.BR "\`bk\ bin\`/etc/config.template" .
+If any of these files is detected when 
+.B bk setup
+is run, without the
+.Q \-c
+option, the keys in it will be used as the defaults in the
+.B BitKeeper/etc/config
+file automatically.
+The first file found is used.
+.SH OPTIONS
+.TP \-c\*<config_file\*>
+.if \n[NESTED] \{\
+.B \-C
+When run inside a product, setup will create a component.
+With -C, do not commit this new component to the product.
+Use this option when you wish to create many components
+and have only one commit.  The new component will be left
+in the pending state.  The -C option can not be used with -P.
+In all other cases (outside a product and with no -P), the
+-C option will be ignored.
+.tp
+.\}
+.OPTreq \-c config_file
+Use 
+.ARG config_file
+as the configuration file to setup the repository.
+.tp
+.B \-\-compat
+Create the package using a backwards compatible (and slower) format.
+.tp
+.B \-f
+Don't ask for confirmation.
+.tp
+.OPTreq \-F key\fB=\fIval
+Override default values for the specified field.
+Typically used in combination with a config template.
+.tp
+.if \n[NESTED] \{\
+.B \-P
+The repository being created is a product repository, i.e., will have
+component repositories.
+.tp
+.\}
+.B \-p
+print the field names to stdout (used by setuptool).
+.SH EXAMPLES
+.LP
+When creating a repository called "mypackage", you type
+the following command:
+.DS
+$ bk setup ~/mypackage
+.DE
+The following shows the directory structure of a new package.
+.TP 16
+.B mypackage/
+.RS 8
+.TP 18
+.B .bk/
+Directory for storing BitKeeper metadata.
+.tp
+.B ChangeSet
+Index of all changes to the repository.
+.tp
+.B BitKeeper/
+Directory where administrative files are kept.
+.RE
+.RS 16
+.TP 10
+.B etc/
+Config files, in the future, policy files.
+.tp
+.B log/
+Mail and command logs, parent pointer.
+.tp
+.B deleted/
+Deleted files are archived here (like CVS Attic).
+.tp
+.B tmp/
+Scratch area.
+.tp
+.B readers/
+Transient directory for reader locks.
+.tp
+.B writer/
+Transient directory for writer lock.
+.tp
+.B triggers/
+Executable trigger programs stored here.
+.RE
+.LP
+Once the repository is created, you should make a hierarchy to store
+your source files. For example, you could create the following tree:
+.TP
+.B mypackage/
+.RS 8
+.TP 18
+.B src/
+source code
+.tp
+.B man/
+manual pages
+.tp
+.B doc/
+user guides, papers, docs...
+.RE
+.LP
+At this point, if you are creating a new package from scratch, 
+cd to
+.B ~/mypackage/src
+and start creating files.  See 
+.B bk help Basics-Overview
+and
+.B bk help Howto-setup
+for more info.
+.LP
+If you have an existing set of files that you want to add to the
+repository, see 
+.BR "bk import" .
+.SH "SEE ALSO"
+.SA Howto
+.SA Howto-setup
+.SA attach
+.SA config-etc
+.SA import
+.SA setuptool
+.SH CATEGORY
+.B Nested
+.br
+.B Repository

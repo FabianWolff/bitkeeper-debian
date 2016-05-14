@@ -1,0 +1,178 @@
+# Copyright 2008-2010,2013-2015 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+echo $N Create initial repository and clone .........................$NL
+nested server
+bk $Q bam server $Q .
+bk clone $Q ../server ../clone || fail
+# clone shouldn't have BAM data yet
+test -d ../clone/BitKeeper/BAM && fail
+echo OK
+
+echo $N Create some binary data and check BAM .......................$NL
+cd gdb
+BK="`bk bin`/bk"
+test $PLATFORM = WIN32 && BK=${BK}.exe
+DATA="$HERE"/data
+perl -e 'sysread(STDIN, $buf, 81920);
+syswrite(STDOUT, $buf, 81920);' < $BK > "$DATA"
+cp "$DATA" data
+bk new $Q data || fail
+RK=`bk -R prs -hnd:SYNCROOT: -r+ ChangeSet | sed 's/|/-/g'`
+test -d ../BitKeeper/BAM/$RK || fail
+bk commit -S $Q -ybam
+cd ..
+bk commit $Q -ybam
+echo OK
+
+echo $N Clone ensemble with BAM data ................................$NL
+cd ..
+bk clone $Q server clone2 || fail
+echo OK
+
+echo $N Show that BAM clean works in a component ....................$NL
+cd clone2/gdb
+bk bam server -rq || fail
+echo foo > foo
+bk new $Q -b foo || fail
+FILE1=`bk prs -r+ -hnd:BAMFILE: foo`
+FILE2=`bk prs -r+ -hnd:BAMFILE: data`
+bk stripdel $Q -r.. foo || fail
+test -f ../$FILE1 -a -f ../$FILE2 || fail
+bk bam clean $Q || fail
+test ! -f ../$FILE1 || fail
+test -f ../$FILE2 || fail
+echo OK
+
+
+echo $N Create some binary data and check BAM .......................$NL
+cd "$HERE"/clone
+bk pull $Q || fail
+test -d BitKeeper/BAM && {
+	echo should not have bam dir
+	find BitKeeper/BAM
+	exit 1
+}
+echo OK
+
+echo $N Create a new component with BAM data ........................$NL
+bk portal $Q .
+bk setup -f bam_comp || fail
+cd bam_comp
+RK=`bk -R prs -hnd:SYNCROOT: -r+ ChangeSet | sed 's/|/-/g'`
+echo junk > file1
+bk new $Q -b file1 || fail
+bk commit -S $Q -ybam2 || fail
+bk -P commit $Q -ybam2 || fail
+echo OK
+
+echo $N Pull repo with new BAM component ............................$NL
+cd "$HERE"/clone2
+bk pull $Q ../clone || fail
+echo OK
+
+echo $N Check that data from new component was pushed to server .....$NL
+# server should have bam data for bam_comp
+test -d ../server/BitKeeper/BAM/$RK || fail
+# but shouldn't have bam_comp itself
+test -d ../server/bam_comp && fail
+echo OK
+
+echo $N Clone of repo with new BAM component ........................$NL
+cd ..
+bk clone $Q clone clone3 || fail
+echo OK
+
+echo $N Switching server will populate bam data in component ........$NL
+cd "$HERE"
+commercial junk
+cd ..
+bk clone $Q clone clone-bam-switch || fail
+cd clone-bam-switch
+bk bam server $Q ../junk || fail
+bk repocheck $Q || fail
+cd ..
+echo OK
+
+echo $N Pushing a updates to non-BAM components with a BAM product ..$NL
+cd clone3
+echo hi > prod_bam
+bk new $Q -b prod_bam || fail
+bk commit -S $Q -yprod || fail
+bk push $Q || fail
+cd gcc
+touch hi > nonbam
+bk new $Q nonbam || fail
+bk commit -S $Q -ynonbam || fail
+bk -P commit $Q -yprod_gcc || fail
+bk -P push $Q || fail
+echo OK
+
+echo $N Try an rclone ...............................................$NL
+cd "$HERE"
+bk bkd -q -d -aPORT -ikill || fail
+P=`cat PORT`
+bk clone $Q clone3 bk://localhost:$P/clone4 || {
+	echo rclone failed
+	bk _kill bk://localhost:$P
+	exit 1
+}
+bk _kill bk://localhost:$P || fail
+echo OK
+
+echo $N Try a push via HTTP with BAM data............................$NL
+cd "$HERE"
+bk clone $Q server clone5
+cd clone5
+bk $Q bam server $Q .
+echo junk > file1
+bk new $Q -b file1 || fail
+bk commit $Q -ybam2 || fail
+cd "$HERE"
+bk bkd -q -d -aPORT -ikill || fail
+P=`cat PORT`
+trap "bk _kill bk://localhost:$P" 0
+cd clone5
+bk push $Q http://localhost:$P/server 2>&1 > OUT || fail -f OUT
+echo OK
+
+echo $N Pull with missing bam server ................................$NL
+cd ../clone
+bk bam server $Q -fr || fail
+cd gcc
+echo 4 > file3
+bk new -b $Q file3 || fail
+cd ../gdb
+echo 4 > file3
+bk new -b $Q file3 || fail
+bk commit $Q -y3 || fail
+cd ../..
+bk clone $Q clone clone.copy
+cd clone3
+bk here check -@../clone.copy
+bk bam server $Q ../clone4 || fail
+rm -rf ../clone4
+bk pull $Q ../clone 2>ERR && fail -f ERR should fail
+bk repocheck $Q || fail
+find . -name RESYNC > OUT
+touch WANT
+cmpfiles OUT WANT
+cat <<EOF > WANT
+##### file://$HERE/clone4 #####
+Repository doesn't exist.
+havekeys: server error
+BAM fetch failed, aborting pull.
+EOF
+cmpfiles ERR WANT
+echo OK

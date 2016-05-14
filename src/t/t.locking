@@ -1,0 +1,514 @@
+# Copyright 2000-2010,2013-2014 BitMover, Inc
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Create a repository 
+echo $N Create initial repository ...................................$NL
+commercial project
+if [ ! -d BitKeeper/etc ]; then echo failed to make BitKeeper/etc; exit 1; fi
+if bk _test ! -f SCCS/s.ChangeSet; then echo failed to make ChangeSet; exit 1; fi
+P=`bk pending | wc -l`
+if [ $P -ne 0 ]; then echo files are pending; bk pending; exit 1; fi
+echo OK
+
+echo $N Test lock of bad directory ..................................$NL
+bk lock -r bad_directory 2>ERR && fail -f ERR should fail
+grep -q "lock: no such directory: bad_directory" ERR || fail -f ERR
+echo OK
+
+echo $N Create some data ............................................$NL
+echo 1 > A
+echo 2 > B
+bk ci $Q -i A B
+if bk _test ! -f SCCS/s.A; then echo failed to create history; exit 1; fi
+bk commit $S -y"This is a \"Change Set\""
+echo OK
+
+# XXX - what is this testing?
+echo $N Check edit with existing stale read lock ....................$NL
+L=`bk lock -rt`
+bk edit $Q A 2> /dev/null
+if [ ! -w A ]; then echo failed to get writable file; exit 1; fi
+bk clean A
+bk _kill $L
+R=`ls BitKeeper/readers | wc -l`
+if [ -d BitKeeper/readers -a $R -gt 0 ]
+then	echo failed to clean up read lock; ls -l BitKeeper/readers; exit 1
+fi
+echo OK
+
+echo $N Check that an existing stale read lock is discarded .........$NL
+# I'm counting on 2^31-1 being an unsigned that is not a pid
+if [ "`uname -s`" = SCO_SV ]
+then	PID=32767	# SCO wraps at 30000, use 2^15-1 to avoid sign bit
+else	PID=2147483647
+fi
+HOST=`bk gethost -r`
+touch BitKeeper/readers/"${PID}@${HOST}.lock"
+bk lock -l > LOCKERS 2>&1
+grep -q 'No active lock in repository' LOCKERS || {
+	echo failed
+	cat LOCKERS
+	ls -l BitKeeper/readers
+	exit 1
+}
+mkdir -p BitKeeper/readers
+R=`ls BitKeeper/readers | wc -l`
+if [ -d BitKeeper/readers -a $R -gt 0 ]
+then	echo failed to clean up read lock; ls -l BitKeeper/readers; exit 1
+fi
+echo OK
+
+echo $N Check edit with existing stale write lock ...................$NL
+L=`bk lock -wt`
+bk edit $Q A 2> /dev/null
+if [ ! -w A ]; then echo failed to get writable file; exit 1; fi
+bk _kill $L
+echo OK
+
+echo $N Check edit with existing valid read lock ....................$NL
+bk clean A
+L=`bk lock -rt`
+mv BitKeeper/readers/* BitKeeper/readers/1234@DO_NOT_USE_THIS_NAME.lock
+bk edit $Q A
+writable A || { echo failed to lock A; exit 1; }
+echo OK
+
+echo $N Make sure delta fails with existing read lock ...............$NL
+bk delta $Q -yXXX A 2> OUT
+test -w A || {
+	echo failed to fail delta
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure clean works with existing read lock ...............$NL
+bk clean $Q A 
+if [ -w A ]; then echo failed to clean; exit 1; fi
+echo OK
+
+echo $N Check edit with existing valid write lock ...................$NL
+bk _kill $L
+bk unlock -r
+bk lock -U
+rm -rf BitKeeper/writer
+mkdir BitKeeper/writer
+echo 1234 nowhere.nowhere 2147480000 > BitKeeper/writer/1234@nowhere.nowhere.lock
+ln BitKeeper/writer/1234@nowhere.nowhere.lock BitKeeper/writer/lock
+bk edit $Q A
+writable A || { echo failed to lock A; exit 1; }
+test -f BitKeeper/writer/lock || {
+	echo write lock is gone
+	exit 1
+}
+test -f BitKeeper/writer/1234@nowhere.nowhere.lock || {
+	echo BitKeeper/writer/1234@nowhere.nowhere.lock is gone
+	exit 1
+}
+echo OK
+
+echo $N Make sure delta fails with existing write lock ..............$NL
+bk lock -l > LOCKS 2>&1
+bk delta $Q -yXXX A 2> OUT
+test -w A || {
+	echo failed to fail delta
+	echo LOCKS:
+	cat LOCKS
+	echo DELTA OUTPUT
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure clone fails with existing write lock in source ....$NL
+cd "$HERE"
+bk clone $Q project clone 2>/dev/null
+if [ -d clone ]; then echo clone failed to clean up; exit 1; fi
+echo OK
+
+echo $N Make sure clone fails with existing write lock in source \#2 .$NL
+cd "$HERE/project"
+bk bkd -d -aPORT -ikill 2>/dev/null || fail
+P=`cat PORT`
+cd "$HERE"
+bk clone -q bk://localhost:$P clone 2> clone.out
+echo "ERROR-Can't get read lock on the repository." > ref
+cmp -s clone.out ref || {
+	bk _kill bk://localhost:$P || fail
+	echo Failed
+	diff clone.out ref
+	exit 1
+}
+if [ -d clone ]; then echo clone failed to clean up; exit 1; fi
+bk _kill bk://localhost:$P || fail
+echo OK
+
+echo $N Make sure clone works with existing read lock in source .....$NL
+cd "$HERE/project"
+bk unlock -w
+bk lock -U
+L=`bk lock -rt`
+mv BitKeeper/readers/* BitKeeper/readers/1234@DO_NOT_USE_THIS_NAME.lock
+cd "$HERE"
+bk clone $Q project clone 2>/dev/null
+EXIT=$?
+if [ $EXIT != 0 ]; then echo failed with exit $EXIT; exit 1; fi
+if bk _test ! -d clone -o ! -f clone/SCCS/s.A; then echo clone failed; exit 1; fi
+if [ ! -f clone/BitKeeper/log/parent ]; then echo clone failed to set parent; exit 1; fi
+echo OK
+
+echo $N Make sure clone works with existing read lock in source \#2 ..$NL
+cd "$HERE"
+#bk clone $Q bk://localhost:$P clone2 2>/dev/null
+bk clone $Q project clone2
+EXIT=$?
+if [ $EXIT != 0 ]; then echo failed with exit $EXIT; exit 1; fi
+if bk _test ! -d clone2 -o ! -f clone2/SCCS/s.A; then echo clone2 failed; exit 1; fi
+if [ ! -f clone2/BitKeeper/log/parent ]; then echo clone2 failed to set parent; exit 1; fi
+echo OK
+
+echo $N Make sure pull fails with global write lock .................$NL
+cd "$HERE/project"
+bk _kill $L
+bk unlock -r
+bk lock -U
+ls > C
+bk new $Q C
+bk commit $Q -ywhatever
+touch "$HERE/write_lock"
+cd "$HERE/clone"
+BK_WRITE_LOCK="$HERE/write_lock" bk pull -c0 $Q >/dev/null 2>&1
+if [ $? != 1 ]; then echo pull failed to exit with error; exit 1; fi
+echo OK
+
+echo $N Make sure pull fails with existing write lock in source .....$NL
+cd "$HERE/project"
+ls > CC
+bk new $Q CC
+bk commit $Q -ywhatever
+L=`bk lock -wt`
+cd "$HERE/clone"
+bk pull -c0 $Q 2>/dev/null
+if [ $? != 1 ]; then echo pull failed to exit with error; exit 1; fi
+echo OK
+
+echo $N Make sure pull works with existing read lock in source ......$NL
+cd "$HERE/project"
+bk _kill $L
+bk lock -U
+L=`bk lock -rt`
+mv BitKeeper/readers/* BitKeeper/readers/1234@DO_NOT_USE_THIS_NAME.lock
+cd "$HERE/clone"
+bk pull $Q -R 2>/dev/null
+if [ ! -d RESYNC ]; then echo pull failed; exit 1; fi
+bk resolve $Q || fail
+echo OK
+
+echo $N Make sure pull works with existing read lock in source \#2 ...$NL
+cd "$HERE/clone2"
+bk pull -R  > XXX 2>&1
+if [ ! -d RESYNC ]; then echo pull failed; cat XXX; exit 1; fi
+echo OK
+
+echo $N Show that pulling again gives correct message ...............$NL
+bk pull $Q 2>ERR && fail -f ERR
+cat <<EOF > WANT
+$HERE/clone2
+Entire repository is locked by:
+	RESYNC directory.
+
+	Usually the RESYNC directory indicates a push/pull in progress.
+	Use bk resolve/bk abort as appropriate.
+Unable to lock repository for update.
+EOF
+cmpfiles ERR WANT
+bk resolve $Q
+echo OK
+
+echo $N Make sure push fails with existing read lock in dest ........$NL
+cd "$HERE/clone"
+ls > D
+bk new $Q D
+bk commit $Q -ywhatever
+bk push -c0 $Q 2>ERR
+if [ $? != 2 ]; then echo push failed to exit with an error; exit 1; fi
+echo OK
+
+echo $N Make sure push fails with global read lock ..................$NL
+cd "$HERE/project"
+bk _kill $L
+bk unlock -r
+bk lock -U
+cd "$HERE/clone"
+touch "$HERE/read_lock"
+BK_READ_LOCK="$HERE/read_lock" bk push -c0 > OUT 2>&1 && {
+	echo push failed to exit with an error
+	cat OUT
+	kill $LOCKPID
+	exit 1
+}
+grep -q 'ERROR-Unable to lock repository for update.' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure push fails with global write lock .................$NL
+cd "$HERE/clone"
+BK_WRITE_LOCK="$HERE/write_lock" bk push -c0 > OUT 2>&1 && {
+	echo push failed to exit with an error
+	cat OUT
+	kill $LOCKPID
+	exit 1
+}
+grep -q 'Global write lock .*/write_lock' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure push fails with existing write lock in dest .......$NL
+L=`cd "$HERE/project" ; bk lock -wt`
+cd "$HERE/clone"
+bk push -c0 > OUT 2>&1 && {
+	echo push failed to exit with an error
+	cat OUT
+	bk _kill $L
+	exit 1
+}
+grep -q 'ERROR-Unable to lock repository for update.' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+cd "$HERE/project"
+bk _kill $L
+bk lock -U
+echo OK
+
+echo $N Make sure push succeeds with no locks in destination ........$NL
+cd "$HERE/clone"
+bk push $Q
+if [ $? != 0 ]; then echo push exited with an error; exit 1; fi
+cd "$HERE/project"
+bk pull "$HERE/clone" > OUT 2>&1
+grep -q 'Nothing to pull' OUT || {
+	echo failed - bad status message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure commit respects global read lock ..................$NL
+bk co $Q -l D
+date > D
+bk ci $Q -ynew_styff D
+BK_READ_LOCK="$HERE/read_lock" bk commit $Q -y"should-failed" > commit.out 2>&1
+if [ $? -eq 0 ]; then echo failed; exit 1; fi
+grep -q 'Unable to lock repository for update.' commit.out || {
+	echo unexpected error message
+	cat commit.out
+	exit 1
+}
+BK_READ_LOCK="$HERE/read_lock" bk lock -l > OUT 2>&1
+grep -q 'Global read lock .*/read_lock' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure commit respects global write lock .................$NL
+bk co $Q -l D
+date > D
+bk ci $Q -ynew_styff D
+BK_WRITE_LOCK="$HERE/write_lock" bk commit $Q -y"should-failed" > commit.out 2>&1
+if [ $? -eq 0 ]; then echo failed; exit 1; fi
+grep -q 'Unable to lock repository for update.' commit.out || {
+	echo unexpected error message
+	cat commit.out
+	exit 1
+}
+BK_WRITE_LOCK="$HERE/write_lock" bk lock -l > OUT 2>&1
+grep -q 'Global write lock .*/write_lock' OUT || {
+	echo bad error message
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Make sure commit respects repository lock ...................$NL
+bk co $Q -l D
+date > D
+bk ci $Q -ynew_styff D
+mkdir -p "$HERE/project/RESYNC/stuff"
+bk commit $Q -y"should-failed" > commit.out 2>&1 && {
+	echo failed
+	cat commit.out
+	exit 1
+}
+grep -q 'Unable to lock repository for update.' commit.out || {
+	echo unexpected error message
+	cat commit.out
+	exit 1
+}
+rm -rf "$HERE/project/RESYNC"
+bk lock -U
+echo OK
+
+echo $N Make sure repo write lock will fix dir permissions if it can.$NL
+cd "$HERE/project/BitKeeper"
+test -d "$HERE/project/BitKeeper/writer" && {
+	echo failed to clean up writer directory
+	ps -xf
+	ls -l writer
+	exit 1
+}
+mkdir writer
+chmod 0555 writer
+test -w writer && {
+	echo chmod failed
+	exit 1
+}
+L=`bk lock -wt`
+test -w writer || {
+	echo failed to fix permissions
+	exit 1
+}
+bk _kill $L
+test -d writer && {
+	echo failed to clean up writer directory
+	exit 1
+}
+echo OK
+
+echo $N Make sure repo read lock will fix dir permissions if it can..$NL
+cd "$HERE/project/BitKeeper"
+R=`ls "$HERE/project/BitKeeper/readers" | wc -l`
+test $R = 0 || {
+	echo failed to clean up readers directory
+	ps -xf
+	ls -l readers
+	exit 1
+}
+mkdir -p readers
+chmod 0555 readers
+test -w readers && {
+	echo chmod failed
+	exit 1
+}
+L=`bk lock -rt`
+test -w readers || {
+	echo failed to fix permissions
+	exit 1
+}
+bk _kill $L
+R=`ls readers | wc -l`
+test $R = 0 || {
+	echo failed to clean up readers directory
+	exit 1
+}
+echo OK
+
+echo $N Stale chk: repository_lockers cleans lock and uniq file .....$NL
+cd "$HERE/project/BitKeeper"
+test -d "$HERE/project/BitKeeper/writer" && {
+	echo failed to clean up writer directory
+	ps -xf
+	ls -l writer
+	exit 1
+}
+mkdir writer
+# I'm counting on 2^31-1 being an unsigned that is not a pid and
+# 2^32 - 1 being a time_t in the future.  Fix this when time_t > 32 bits.
+if [ "`uname -s`" = SCO_SV ]
+then	PID=32767	# SCO wraps at 30000, use 2^15-1 to avoid sign bit
+else	PID=2147483647
+fi
+TIME=4294967295
+HOST=`bk gethost -r`
+echo "${PID} ${HOST} ${TIME}" > writer/"${PID}@${HOST}.lock" 
+if [ "$PLATFORM" = "WIN32" ]
+then	cp writer/"${PID}@${HOST}.lock" writer/lock
+else	ln writer/"${PID}@${HOST}.lock" writer/lock
+fi
+tar cf ../writer.tar writer
+bk lock -l 2> OUT || fail
+grep -q "No active lock in repository" OUT || fail
+test -d writer && fail
+echo OK
+
+echo $N Stale chk: repository_locked cleans lock and uniq file ......$NL
+rm -fr writer
+tar xf ../writer.tar
+bk lock -lq || fail
+test -f writer/lock && fail
+test -d writer && fail
+# clean up
+rm -fr writer ../writer.tar
+echo OK
+
+echo $N Make sure sccs lock will fix directory permissions if it can.$NL
+cd "$HERE/project"
+mkdir nowrite
+cd nowrite
+chmod 0555 .
+test -w . && {
+	echo chmod failed
+	exit 1
+}
+URL=`bk lock -t -flockfile`
+test -w . || {
+	echo failed to fix permissions
+	exit 1
+}
+# make sure file is in this directory and not repo root
+test -f lockfile || {
+	echo failed to fix permissions
+	exit 1
+}
+bk _kill $URL
+test -f lockfile && {
+	echo failed to clean up lock
+	exit 1
+}
+echo OK
+
+echo $N Parallel lock tests .........................................$NL
+for i in 1 2 3 4
+do	bk _locktest LOCK 100 &
+done > OUT 2>&1
+wait
+grep -q O_EXCL OUT && {
+	cat OUT
+	exit 1
+}
+echo OK
+
+echo $N Check that lock command fails outside a repository ..........$NL
+cd "$HERE"
+bk lock -l 2>ERR
+test $? -eq 2 || {
+	echo failed
+	exit 1
+}
+echo OK
+
+echo $N Check that unlock command warns if outside a repository .....$NL
+cd "$HERE"
+bk unlock -r 2> ERR && fail -f ERR failed to fail
+grep -q "Not in a repository" ERR || fail -f ERR
+echo OK

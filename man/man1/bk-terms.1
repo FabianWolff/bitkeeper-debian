@@ -1,0 +1,194 @@
+.so ../bk-macros
+.TH "bk terms" "\*[BKVER]" %E% "\*(BC" "\*(UM"
+.SH NAME
+bk terms \- definitions of \*(BK terms
+.SH DESCRIPTION
+.LP
+.SS "\*(BK definitions:"
+.TP
+.B package
+This term is used when a distinction needs to be drawn between
+two different repositories which do not contain the same data,
+i.e. one contains a compiler and the other contains a debugger.
+To distinguish between them,
+refer to the compiler package or the debugger package.
+One way to think about it is that a package
+is a logical concept, somewhat like an object, while a repository
+is an instance of that object.  Another way that people sometimes
+distinguish between packages is to talk about them having different
+root keys (each package has an internal identifier called the 
+root key).  
+.tp
+.B repository
+A repository (also known as a work space, a clone,
+or an instance of a package)
+is where you do your work.
+A repository is an instance of a package i.e.
+there is one package, but there can be many instances of that package.
+Unlike other systems, such as CVS, every user gets their own
+repository, complete with revision history.
+.tp
+.B sfile
+A file containing the revision history, e.g.,
+.BR SCCS/s.foo.c .
+.tp
+.B gfile
+A file that is checked out, e.g.,
+.BR foo.c .
+.tp
+.B tag, symbol
+A symbolic name (or tag) which is given to a particular
+revision of one or more files.  e.g., \*(lqAlpha1\*(rq.
+.tp
+.B delta
+A delta (also known as a revision or version)
+is a specific version of a file, or one change to a
+file, depending on context.  
+When we mean the specific version of a file, we are talking
+about the entire file as of that version.
+When we mean the changes made in a specific delta, we are
+talking about the differences contained in that delta.
+.tp
+.B rev argument
+Many commands take file revision numbers as arguments, usually
+to the
+.Q \-r
+option.  On the command line anytime a revision number is expected,
+the delta key can be used instead.  Or after an @ sign, a changeset
+revision, tag, or changeset key can be used.  So
+.Q \-r@1.4
+finds the version number as of changeset revision 1.4. So the
+following are all legal:
+.DS
+-r1.23
+-r3dcc5f35PWiRWg8wiP7Dehy51Pk7DA
+-r'amy@bitkeeper.com|man/man1/bk-terms.1|20020714011327|59990'
+-r@1.233.2
+-r@bk-3.0-pre3
+-r@'lm@disks.bitkeeper.com|ChangeSet|20020912140445|17593'
+.DE
+.tp
+.B ChangeSet
+The file used to record the repositories' history of changes.
+.tp
+.B cset, changeset
+A particular change to a repository consisting of one or
+more changes to one or more files.
+.tp
+.B changeset number
+Revision number for a changeset.  These numbers fluctuate, 
+but stabilize, over time.  If you want an immutable, unique reference
+for a changeset, use the changeset key.
+.tp
+.B key
+A unique, unchanging identifier for a version of a file which may be
+used anywhere a normal revision number and/or symbolic tag is used.
+A particular key may be extracted with the following, the first form
+produces a longer key which is human readable, the second form produces
+a shorter key which is not human readable.
+.DS
+bk -R log -hr<rev> -nd:KEY: ChangeSet
+bk -R log -hr<rev> -nd:MD5KEY: ChangeSet
+.DE
+.tp
+.B package identity
+Each \*(BK package has a unique identity.
+All instances (repositories) of the package have the same package identity.
+.tp
+.B repository identity
+Each repository has a unique identifier which is different across all
+repositories, regardless of the package.  
+.tp
+.B pending
+Deltas which have been checked into a file but not yet
+committed to a changeset.
+.tp
+.B patch
+Formally, this is one or more changesets wrapped up
+for transmission to someone else.  It is similar to
+what you may be used to thinking of as a patch
+(a list of all the changes between two versions of
+an entire package) but carries more information: who
+made the changes, when, and why.
+.tp
+.B Trunk
+Main line source base.  In \*(BK revtool, the trunk is the
+.IR X .\c
+.I Y
+in the graph, branches are
+.IR X .\c
+.IR Y .\c
+.IR Q .\c
+.IR Z ,
+which always get merged into the trunk.
+.tp
+.B Tip, Top of Trunk (TOT)
+The latest revision on the trunk.
+.tp
+.B graph difference
+The graph difference between revision
+.ARG B
+and revision
+.ARG A
+(represented by the notation
+.ARGc A
+.Bc .\|.\|
+.ARG B )
+is the set of changes in
+.ARG B 's
+history that are not in
+.ARG A 's
+history.
+.\".if n \{\
+.DS
+     /----> 1.1.1.1  ---->  1.1.1.2 -----\\
+    /                                     \\
+   /                                       \\
+1.1 ----> 1.2 ----------------------------> 1.3 ----> 1.4
+   \\                                                 /
+    \\                                               /
+     \\-----------> 1.1.2.1 ------------------------/
+.DE
+.\".\}
+.\".if t \{\
+.\".PS
+.\"A:	box "1.1"
+.\"	move to A + .75i,0i
+.\"B:	box "1.2"
+.\"	move to A + 1i,.75i
+.\"C:	box "1.1.1.1"
+.\"	move to A + 1.75i,-.75i
+.\"D:	box "1.1.2.1"
+.\"	move to C + .75i,0i
+.\"E:	box "1.1.1.2"
+.\"	move to B + 2.25i,0i
+.\"F:	box "1.3"
+.\"	move to F + .75i,0i
+.\"G:	box "1.4"
+.\"	arrow from A.e to B.w
+.\"	arrow from B.e to F.w
+.\"	arrow from F.e to G.w
+.\"	arrow from A.ne to C.w
+.\"	arrow from C.e to E.w
+.\"	arrow from E.e to F.nw
+.\"	arrow from A.se to D.w
+.\"	arrow from D.e to G.sw
+.\".PE
+.\".\}
+.IP
+For example, in the graph above,
+.B 1.2.\|.1.4
+represents the list 1.1.1.1, 1.1.1.2, 1.1.2.1, 1.3, 1.4;
+.B 1.1.2.1.\|.1.1.1.2
+means 1.1.1.1, 1.1.1.2; and
+.B 1.1.1.2.\|.1.1.2.1
+consists only of 1.1.2.1.
+.DS
+.SH NOTES
+We attempt to list all of the \*(BK definitions here, but send us a
+message at
+.B support@bitkeeper.com
+if you have suggestions for definitions
+we may have missed.
+.SH CATEGORY
+.B Overview
