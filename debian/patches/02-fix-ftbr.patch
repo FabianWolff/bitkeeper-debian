@@ -6,17 +6,6 @@ Forwarded: no
 Last-Update: 2016-05-12
 ---
 This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
---- a/src/libc/lz4/lz4demo.c
-+++ b/src/libc/lz4/lz4demo.c
-@@ -76,7 +76,7 @@
- //****************************
- #define COMPRESSOR_NAME "Compression CLI using LZ4 algorithm"
- #define COMPRESSOR_VERSION ""
--#define COMPILED __DATE__
-+#define COMPILED DEBIAN_BUILD_DATE
- #define AUTHOR "Yann Collet"
- #define EXTENSION ".lz4"
- #define WELCOME_MESSAGE "*** %s %s, by %s (%s) ***\n", COMPRESSOR_NAME, COMPRESSOR_VERSION, AUTHOR, COMPILED
 --- a/src/tomcrypt/src/misc/crypt/crypt.c
 +++ b/src/tomcrypt/src/misc/crypt/crypt.c
 @@ -18,7 +18,7 @@
