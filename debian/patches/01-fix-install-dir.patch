@@ -19,7 +19,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  	INSTALL=install
  	RESOURCE=
  endif
-@@ -560,13 +556,8 @@
+@@ -553,13 +549,8 @@
  	@$(MAKE) -Cgui Q=$(Q) nowrap
  
  install: installdir
@@ -37,16 +37,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  	rm -rf $(IMGDIR) || exit 1
 --- a/src/gethelp.c
 +++ b/src/gethelp.c
-@@ -39,6 +39,8 @@
- 	return (gethelp(file, av[optind], av[optind+1], 0, stdout));
- }
- 
-+char *bk_searchFile(char *base);
-+
- /*
-  * Usage: gethelp("name", arg, prefix, out)
-  */
-@@ -51,13 +53,16 @@
+@@ -51,13 +51,16 @@
  	char	*t;
  
  	unless (helptxt) {
@@ -69,7 +60,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  	 * Take the first one that matches.
 --- a/src/bk.c
 +++ b/src/bk.c
-@@ -978,7 +978,7 @@
+@@ -980,7 +980,7 @@
  
  	    case CMD_SHELL:		/* Handle shell scripts */
  		argv[0] = shell();
@@ -78,7 +69,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  		argv[1] = cmd_path;
  		for (i = 2, j = 1; av[j]; i++, j++) {
  			if (i >= (MAXARGS-10)) {
-@@ -1003,12 +1003,6 @@
+@@ -1005,12 +1005,6 @@
  		return (spawn_cmd(_P_WAIT, argv));
  
  	    case CMD_BK_SH:
@@ -91,7 +82,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  		/*
  		 * If we get here, it is a
  		 * a) bk shell function
-@@ -1017,7 +1011,7 @@
+@@ -1019,7 +1013,7 @@
  		 * XXX This is slow because we are going thru the shell
  		 */
  		argv[0] = shell();
@@ -100,7 +91,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  		argv[1] = cmd_path;
  		for (i = 2, j = 0; av[j]; i++, j++) {
  			if (i >= (MAXARGS-10)) {
-@@ -1682,13 +1676,13 @@
+@@ -1684,13 +1678,13 @@
  	char	tclcmd[MAXPATH];
  	char	cmd[MAXPATH];
  
@@ -116,7 +107,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  
  	argv[i++] = tclcmd;
  	argv[i++] = "--L";
-@@ -1751,12 +1745,10 @@
+@@ -1753,12 +1747,10 @@
  			    "%s/gui/bin/BitKeeper.app/Contents/MacOS/BitKeeper",
  			    bin);
  		} else {
@@ -132,7 +123,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  			} else {
  				free(path);
  				path = 0;
-@@ -1783,7 +1775,7 @@
+@@ -1785,7 +1777,7 @@
  	if (strchr(script, '/')) {
  		strcpy(cmd_path, script);
  	} else {
@@ -148,7 +139,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  	pid_t	pid;
  
 -	sprintf(cmd, "%s/gui/bin/tclsh", bin);
-+	sprintf(cmd, "/usr/bin/tclsh", bin);
++	sprintf(cmd, "/usr/bin/tclsh");
  	unless(executable(cmd)) {
  		fprintf(stderr, "Cannot find the Tcl interpreter.\n");
  		exit(1);
@@ -323,12 +314,16 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  }
 --- a/src/libcommit.c
 +++ b/src/libcommit.c
-@@ -113,7 +113,12 @@
- 	char	buf[MAXLINE], pattern[MAXLINE];
+@@ -110,10 +110,15 @@
+ 	int	found = 0;
+ 	int	first = 1;
+ 	int	n;
+-	char	buf[MAXLINE], pattern[MAXLINE];
++	char	buf[MAXLINE], pattern[MAXLINE], *xbuf;
  
  	unless (msg_name) return (0);
 -	sprintf(buf, "%s/bkmsg.txt", bin);
-+	char *xbuf = bk_searchFile("bkmsg.txt");
++	xbuf = bk_searchFile("bkmsg.txt");
 +	if (xbuf != NULL)
 +	{
 +		strncpy(buf, xbuf, MAXLINE);

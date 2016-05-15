@@ -57,11 +57,20 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  
 -CFLAGS	= $(CC_DEBUG)
 -CPPFLAGS= -Ilibc -Itommath -Itomcrypt/src/headers -Igui/tcltk/pcre/local/include
-+CFLAGS	= $(CC_DEBUG) -fPIC
-+CPPFLAGS= -Ilibc -Itommath -Itomcrypt/src/headers
++CFLAGS	= $(CC_DEBUG) `dpkg-buildflags --get CFLAGS` -fPIC
++CPPFLAGS= -Ilibc -Itommath -Itomcrypt/src/headers `dpkg-buildflags --get CPPFLAGS`
  # Override this if you don't have it.
  RANLIB	= ranlib
  
+@@ -473,7 +473,7 @@
+ 
+ $(BK): $(LIBS) bk.o $(RESOURCE) $(OBJ)
+ 	$(if $(Q),@echo LINKING $(BK),)
+-	$(Q)$(LD) $(LDFLAGS) -o $@ bk.o $(OBJ) $(RESOURCE) $(LIBS) $(PCRELIB) $(XLIBS)
++	$(Q)$(LD) $(LDFLAGS) -o $@ bk.o $(OBJ) $(RESOURCE) $(LIBS) $(PCRELIB) $(XLIBS) `dpkg-buildflags --get LDFLAGS`
+ 
+ # Windows only rule, BKGUI should be blank on other platforms
+ $(BKGUI): bkg.o $(RESOURCE)
 @@ -493,14 +493,7 @@
  
  # has to run before bkhelp.txt but after GUI
@@ -614,7 +623,7 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
 +		fprintf(stderr,
 +			"bk: The gui version of bk requires a variant of Tcl/Tk that is not currently\n"
 +			"bk: available in Debian. Please use the command line interface instead.\n"
-+			"bk: (Note: This also applies if you tried to execute an L script)");
++			"bk: (Note: This also applies if you tried to execute an L script)\n");
 +		return 1;
  
  	    case CMD_SHELL:		/* Handle shell scripts */
