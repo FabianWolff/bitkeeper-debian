@@ -1,0 +1,169 @@
+Description: Adjust linked libraries
+Author: Fabian Wolff <fabi.wolff@arcor.de>
+Forwarded: no
+Last-Update: 2016-05-15
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/src/libc/Makefile
++++ b/src/libc/Makefile
+@@ -20,7 +20,7 @@
+ 
+ include fslayer/Makefile
+ include hash/Makefile
+-include lz4/Makefile
++# include lz4/Makefile
+ include mdbm/Makefile
+ include string/Makefile
+ include stdio/Makefile
+@@ -31,15 +31,15 @@
+ include win32/Makefile
+ XCPPFLAGS=-Wno-redundant-decls
+ endif
+-include zlib/Makefile
++# include zlib/Makefile
+ 
+ OBJS = $(FSLAYER_OBJS) $(HASH_OBJS) $(MDBM_OBJS) \
+-	$(STRING_OBJS) $(STDIO_OBJS) $(LZ4_OBJS) \
+-	$(TCP_OBJS) $(UDP_OBJS) $(UTILS_OBJS) $(WIN32_OBJS) $(ZLIB_OBJS)
++	$(STRING_OBJS) $(STDIO_OBJS) \
++	$(TCP_OBJS) $(UDP_OBJS) $(UTILS_OBJS) $(WIN32_OBJS)
+ SRCS = $(OBJS:%.o=%.c)
+ HDRS = $(FSLAYER_HDRS) $(HASH_HDRS) $(MDBM_HDRS) \
+-	$(STRING_HDRS) $(STDIO_HDRS) $(LZ4_HDRS) \
+-	$(TCP_HDRS) $(UDP_HDRS) $(UTILS_HDRS) $(WIN32_HDRS) $(ZLIB_HDRS)
++	$(STRING_HDRS) $(STDIO_HDRS) \
++	$(TCP_HDRS) $(UDP_HDRS) $(UTILS_HDRS) $(WIN32_HDRS)
+ 
+ CC = gcc
+ CFLAGS = -fno-builtin -g -O2 -Wall -Wno-parentheses -Wno-char-subscripts -Wno-format-y2k -Wstrict-prototypes -Wchar-subscripts -Wredundant-decls -Wextra -Wno-sign-compare -Wno-unused-parameter -Wdeclaration-after-statement -Wmissing-prototypes
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -297,18 +297,18 @@
+ 	b64wrap unb64wrap gzip_b64wrap ungzip_b64wrap
+ PSCR	= t/doit t/guitest
+ PROGS	= libc/mtst$(EXE)
+-LIBS	= libc/libc.a tomcrypt/libtomcrypt.a tommath/libtommath.a
+-PCRELIB = gui/tcltk/pcre/local/lib/libpcre.a
++LIBS	= libc/libc.a tomcrypt/libtomcrypt.a tommath/libtommath.a -lz -llz4
++PCRELIB = -lpcre
+ DATA	= bkmsg.txt bkhelp.txt \
+ 	../doc/bk_refcard.ps ../doc/bk_refcard.pdf ../RELEASE-NOTES \
+ 	dspec-changes dspec-changes-vv dspec-changes-h dspec-changes-hv \
+ 	dspec-changes-3.2 dspec-changes-4.0 dspec-prs dspec-log
+ CONTRIB = gui/ide/emacs/vc-bk.el
+-ALL	= PCRE $(LIBS) $(BINS) $(SCRIPTS) $(PSCR) $(XTRA) \
++ALL	= $(LIBS) $(BINS) $(SCRIPTS) $(PSCR) $(XTRA) \
+ 	$(PROGS) L-clean GUI L-doc $(DATA)
+ 
+-CFLAGS	= $(CC_DEBUG)
+-CPPFLAGS= -Ilibc -Itommath -Itomcrypt/src/headers -Igui/tcltk/pcre/local/include
++CFLAGS	= $(CC_DEBUG) -fPIC
++CPPFLAGS= -Ilibc -Itommath -Itomcrypt/src/headers
+ # Override this if you don't have it.
+ RANLIB	= ranlib
+ 
+@@ -712,8 +712,7 @@
+ 
+ sccs.h: PCRE
+ .PHONY: PCRE
+-PCRE:
+-	$(MAKE) Q=$(Q) -Cgui/tcltk pcre
++PCRE: ;
+ 
+ $(OBJ) bk.o: $(HDRS)
+ 
+--- a/src/libc/utils/crc32c.c
++++ b/src/libc/utils/crc32c.c
+@@ -1248,6 +1248,7 @@
+ 	u32 ecx;
+ 	u32 edx;
+ #ifdef __PIC__
++#ifndef __LP64__
+ 	// PIC: Need to save and restore ebx See:
+ 	// http://sam.zoy.org/blog/2007-04-13-shlib-with-non-pic-code-have-inline-assembly-and-pic-mix-well
+ 	asm("pushl %%ebx\n\t" /* save %ebx */
+@@ -1256,7 +1257,16 @@
+             "popl %%ebx"
+ 	    : "=a"(eax), [ebx] "=r"(ebx), "=c"(ecx), "=d"(edx)
+ 	    : "a" (functionInput)
+-            : "cc");
++	    : "cc");
++#else
++	asm("pushq %%rbx\n\t" /* save %ebx */
++            "cpuid\n\t"
++            "movl %%ebx, %[ebx]\n\t" /* save what cpuid just put in %ebx */
++            "popq %%rbx"
++	    : "=a"(eax), [ebx] "=r"(ebx), "=c"(ecx), "=d"(edx)
++	    : "a" (functionInput)
++	    : "cc");
++#endif
+ #else
+ 	asm("cpuid"
+ 	    : "=a" (eax), "=b" (ebx), "=c" (ecx), "=d" (edx)
+--- a/src/gnu/Makefile
++++ b/src/gnu/Makefile
+@@ -1,57 +1,7 @@
+-_OS=`cat os`
+-DIRS=patch diffutils
+-EXE=`sh exe`
+-PATCH_BIN=patch/$(_OS)/patch$(EXE)
+-DIFF_BINS= diffutils/$(_OS)/diff$(EXE) diffutils/$(_OS)/diff3$(EXE) \
+-	diffutils/$(_OS)/sdiff$(EXE)  diffutils/$(_OS)/cmp$(EXE)
+-BINS=$(PATCH_BIN) $(DIFF_BINS)
+-CONFIG=--cache-file=../../config.cache --quiet
+-
+-# Override Solaris make.rules
+-.SCCS_GET:
+-	$(Q)bk get -q $@
+-
+-all: os exe
+-	$(Q)PATH="..:../..:$(PATH)"; export PATH; \
+-	OS=$(_OS); \
+-	for i in $(DIRS); \
+-	do	test -d $$i/$$OS || mkdir $$i/$$OS; \
+-		( \
+-		echo $$i; \
+-		unset CFLAGS; \
+-		cd $$i; \
+-		bk get -Sq; \
+-		$(MAKE) -f fixorder.mk; \
+-		cd $$OS; test -f Makefile || sh ../configure $(CONFIG); \
+-		$(MAKE) Q=$(Q) \
+-		); \
+-	done
+-	$(Q)rm -rf bin
+-	$(Q)mkdir bin
+-	$(Q)cp $(DIFF_BINS) bin
+-	$(Q)cp $(PATCH_BIN) bin/mend$(EXE)
+-
+-install: all
+-	$(Q)if [ X$(BINDIR) = X ]; then echo Must set BINDIR; exit 1; fi
+-	$(Q)cp -f $(DIFF_BINS) $(BINDIR)
+-	$(Q)cp -f $(PATCH_BIN) $(BINDIR)/mend$(EXE)
+-
+-os: ../utils/bk_version
+-	$(Q)(cd ../utils && ./bk_version) > _os
+-	$(Q)echo BIN-`cat _os` > os
+-	$(Q)rm -f _os
+-
+-# win32, can not clean the current Makefile when we are
+-# running this make file
+-.PHONY: clean
+-clean: os
+-	$(if $(Q),@echo Cleaning gnu,)
+-	-$(Q)OS=$(_OS); \
+-	for i in $(DIRS); \
+-	do	(cd $$i && rm -rf BIN-* ); \
+-	done
+-	-$(Q)rm -rf bin
+-	$(Q)rm -f os config.cache
+-
+-clobber: clean
+-	-$(Q)bk -r. clean
++.SCCS_GET: ;
++all: ;
++install: ;
++os: ;
++.PHONY: ;
++clean: ;
++clobber: ;

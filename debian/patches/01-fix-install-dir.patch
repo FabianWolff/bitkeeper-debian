@@ -1,0 +1,1080 @@
+Description: Adjust installation paths
+Author: Fabian Wolff <fabi.wolff@arcor.de>
+Forwarded: no
+Last-Update: 2016-05-12
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -108,11 +108,7 @@
+ 	XTRA=gnu
+ 	# You can set this to anywhere you like and do a 
+ 	# build production" and you'll have an installed BitKeeper.
+-	ifeq (,$(HAS_BK))
+-		BINDIR := /usr/local/bitkeeper
+-	else
+-		BINDIR := $(shell $(HAS_BK) bin)
+-	endif
++	BINDIR := ../debian/tmp
+ 	INSTALL=install
+ 	RESOURCE=
+ endif
+@@ -560,13 +556,8 @@
+ 	@$(MAKE) -Cgui Q=$(Q) nowrap
+ 
+ install: installdir
+-	tmp/bitkeeper/bk _install -d -f $(BINDIR)
+-	@echo BitKeeper is installed in $(BINDIR)
+-	@echo We suggest you run:
+-	@echo
+-	@echo sudo $(BINDIR)/bk links /usr/local/bin
+-	@echo
+-	@echo to create the bk symlink.
++	mkdir -p ../debian/tmp/
++	cp -r tmp/bitkeeper/* ../debian/tmp/
+ 
+ installdir: utils/registry.tcl
+ 	rm -rf $(IMGDIR) || exit 1
+--- a/src/gethelp.c
++++ b/src/gethelp.c
+@@ -39,6 +39,8 @@
+ 	return (gethelp(file, av[optind], av[optind+1], 0, stdout));
+ }
+ 
++char *bk_searchFile(char *base);
++
+ /*
+  * Usage: gethelp("name", arg, prefix, out)
+  */
+@@ -51,13 +53,16 @@
+ 	char	*t;
+ 
+ 	unless (helptxt) {
+-		sprintf(buf, "%s/bkhelp.txt", bin);
+-		helptxt = buf;
++		helptxt = "";
+ 	}
+ 	f = fopen(helptxt, "rt");
+ 	unless (f) {
+-		fprintf(stderr, "Unable to locate help file %s\n", helptxt);
+-		exit(1);
++		helptxt = bk_searchFile("bkhelp.txt");
++		f = fopen(helptxt, "rt");
++                unless (f) {
++			fprintf(stderr, "Unable to locate help file %s\n", helptxt);
++			exit(1);
++		}
+ 	}
+ 	/*
+ 	 * Take the first one that matches.
+--- a/src/bk.c
++++ b/src/bk.c
+@@ -978,7 +978,7 @@
+ 
+ 	    case CMD_SHELL:		/* Handle shell scripts */
+ 		argv[0] = shell();
+-		sprintf(cmd_path, "%s/%s", bin, prog);
++		sprintf(cmd_path, "/usr/bin/bk_%s", prog);
+ 		argv[1] = cmd_path;
+ 		for (i = 2, j = 1; av[j]; i++, j++) {
+ 			if (i >= (MAXARGS-10)) {
+@@ -1003,12 +1003,6 @@
+ 		return (spawn_cmd(_P_WAIT, argv));
+ 
+ 	    case CMD_BK_SH:
+-		/* Handle GUI test */
+-		if (streq(prog, "guitest")) {
+-			sprintf(cmd_path, "%s/t/guitest", bin);
+-			return (launch_wish(cmd_path, av+1));
+-		}
+-
+ 		/*
+ 		 * If we get here, it is a
+ 		 * a) bk shell function
+@@ -1017,7 +1011,7 @@
+ 		 * XXX This is slow because we are going thru the shell
+ 		 */
+ 		argv[0] = shell();
+-		sprintf(cmd_path, "%s/bk.script", bin);
++		sprintf(cmd_path, "/usr/bin/bk.script");
+ 		argv[1] = cmd_path;
+ 		for (i = 2, j = 0; av[j]; i++, j++) {
+ 			if (i >= (MAXARGS-10)) {
+@@ -1682,13 +1676,13 @@
+ 	char	tclcmd[MAXPATH];
+ 	char	cmd[MAXPATH];
+ 
+-	sprintf(tclcmd, "%s/gui/bin/tclsh", bin);
++	sprintf(tclcmd, "/usr/bin/tclsh");
+ 	unless(executable(tclcmd)) {
+ 		fprintf(stderr, "Cannot find the L interpreter.\n");
+ 		exit(1);
+ 	}
+ 
+-	sprintf(cmd, "%s/lscripts/%s.l", bin, script);
++	sprintf(cmd, "/usr/share/bitkeeper/lscripts/%s.l", script);
+ 
+ 	argv[i++] = tclcmd;
+ 	argv[i++] = "--L";
+@@ -1751,12 +1745,10 @@
+ 			    "%s/gui/bin/BitKeeper.app/Contents/MacOS/BitKeeper",
+ 			    bin);
+ 		} else {
+-			path = aprintf("%s/gui/bin/bkgui", bin);
++			path = aprintf("/usr/bin/bkgui");
+ 			if (executable(path)) {
+-				safe_putenv("TCL_LIBRARY=%s/gui/lib/tcl8.5",
+-				    bin);
+-				safe_putenv("TK_LIBRARY=%s/gui/lib/tk8.5",
+-				    bin);
++				safe_putenv("TCL_LIBRARY=/usr/share/tcltk/tcl8.6");
++				safe_putenv("TK_LIBRARY=/usr/share/tcltk/tk8.6");
+ 			} else {
+ 				free(path);
+ 				path = 0;
+@@ -1783,7 +1775,7 @@
+ 	if (strchr(script, '/')) {
+ 		strcpy(cmd_path, script);
+ 	} else {
+-                sprintf(cmd_path, "%s/gui/lib/%s", bin, script);
++                sprintf(cmd_path, "/usr/share/bitkeeper/gui/lib/%s", script);
+ 	}
+ 	argv[++ac] = cmd_path;
+ 	unless (exists(cmd_path)) {
+--- a/src/tclsh.c
++++ b/src/tclsh.c
+@@ -31,7 +31,7 @@
+ 	int	ret;
+ 	pid_t	pid;
+ 
+-	sprintf(cmd, "%s/gui/bin/tclsh", bin);
++	sprintf(cmd, "/usr/bin/tclsh", bin);
+ 	unless(executable(cmd)) {
+ 		fprintf(stderr, "Cannot find the Tcl interpreter.\n");
+ 		exit(1);
+--- a/src/gui/csettool.tcl
++++ b/src/gui/csettool.tcl
+@@ -459,9 +459,9 @@
+ 	    createDiffWidgets .diffs
+ 
+ 	set prevImage [image create photo \
+-			   -file $env(BK_BIN)/gui/images/previous.gif]
++			   -file /usr/share/bitkeeper/gui/images/previous.gif]
+ 	set nextImage [image create photo \
+-			   -file $env(BK_BIN)/gui/images/next.gif]
++			   -file /usr/share/bitkeeper/gui/images/next.gif]
+ 
+ 	ttk::frame .menu
+ 	    ttk::button .menu.prevCset -text "<< Cset" -command prevCset
+--- a/src/gui/difftool.tcl
++++ b/src/gui/difftool.tcl
+@@ -39,9 +39,9 @@
+ 	createDiffWidgets .diffs
+ 
+ 	set prevImage [image create photo \
+-			   -file $env(BK_BIN)/gui/images/previous.gif]
++			   -file /usr/share/bitkeeper/gui/images/previous.gif]
+ 	set nextImage [image create photo \
+-			   -file $env(BK_BIN)/gui/images/next.gif]
++			   -file /usr/share/bitkeeper/gui/images/next.gif]
+ 	ttk::frame .menu
+ 	    ttk::button .menu.prev -image $prevImage -state disabled -command {
+ 		searchreset
+--- a/src/gui/fm3tool.tcl
++++ b/src/gui/fm3tool.tcl
+@@ -258,9 +258,9 @@
+ 	search_init $w $s
+ 
+ 	set prevImage [image create photo \
+-			   -file $env(BK_BIN)/gui/images/previous.gif]
++			   -file /usr/share/bitkeeper/gui/images/previous.gif]
+ 	set nextImage [image create photo \
+-			   -file $env(BK_BIN)/gui/images/next.gif]
++			   -file /usr/share/bitkeeper/gui/images/next.gif]
+ 
+ 	ttk::label $search(plabel) -textvariable search(prompt)
+ 
+@@ -1340,9 +1340,9 @@
+ 	ttk::panedwindow .panes -orient vertical
+ 
+ 	set prevImage [image create photo \
+-			   -file $env(BK_BIN)/gui/images/previous.gif]
++			   -file /usr/share/bitkeeper/gui/images/previous.gif]
+ 	set nextImage [image create photo \
+-			   -file $env(BK_BIN)/gui/images/next.gif]
++			   -file /usr/share/bitkeeper/gui/images/next.gif]
+ 	ttk::frame .menu
+ 	    set m .menu.diffs.m
+ 	    ttk::menubutton .menu.diffs -text "Goto" -menu $m
+--- a/src/gui/msgtool.tcl
++++ b/src/gui/msgtool.tcl
+@@ -162,7 +162,7 @@
+ 	set widgets(no) $widgets(buttonFrame).no
+ 
+ 	## Bk Logo
+-	set image "$env(BK_BIN)/gui/images/bklogo.gif"
++	set image "/usr/share/bitkeeper/gui/images/bklogo.gif"
+ 	if {[file exists $image]} {
+ 		set bklogo [image create photo -file $image]
+ 		ttk::label $widgets(logo) -image $bklogo \
+--- a/src/gui/revtool.tcl
++++ b/src/gui/revtool.tcl
+@@ -1844,7 +1844,7 @@
+ 		set gc(histfile) [file join $gc(bkdir) ".bkhistory"]
+ 	}
+ 
+-	image create photo iconClose -file $::env(BK_BIN)/gui/images/close.png
++	image create photo iconClose -file /usr/share/bitkeeper/gui/images/close.png
+ 
+ 	ttk::frame .menus
+ 	    ttk::button .menus.quit -text "Quit" -command done
+--- a/src/gui/search.tcl
++++ b/src/gui/search.tcl
+@@ -342,9 +342,9 @@
+ 	search_init $w $s
+ 
+ 	set prevImage [image create photo \
+-			   -file $env(BK_BIN)/gui/images/previous.gif]
++			   -file /usr/share/bitkeeper/gui/images/previous.gif]
+ 	set nextImage [image create photo \
+-			   -file $env(BK_BIN)/gui/images/next.gif]
++			   -file /usr/share/bitkeeper/gui/images/next.gif]
+ 	ttk::label $search(plabel) -width 11 -textvariable search(prompt)
+ 
+ 	# XXX: Make into a pulldown-menu! like is sccstool
+--- a/src/gui/setuptool.tcl
++++ b/src/gui/setuptool.tcl
+@@ -320,7 +320,7 @@
+ 
+ 	::tkwizard::tkwizard . -title "BK Setup Assistant" -sequential 1 
+ 
+-	set image "$env(BK_BIN)/gui/images/bklogo.gif"
++	set image "/usr/share/bitkeeper/gui/images/bklogo.gif"
+ 	if {[file exists $image]} {
+ 		set bklogo [image create photo -file $image]
+ 		. configure -icon $bklogo
+--- a/src/uninstall.c
++++ b/src/uninstall.c
+@@ -15,61 +15,12 @@
+  */
+ 
+ #include "sccs.h"
+-
+-#define	PROMPT_TITLE	"BitKeeper Uninstaller"
+-#define	PROMPT_MSG	"Do you want to uninstall BitKeeper?"
+-
+-private	int	uninstall_ok(void);
++#include <stdio.h>
+ 
+ int
+ uninstall_main(int ac, char **av)
+ {
+-	int	c, prompt = 1, upgrade = 0;
+-	char	*buf, *path;
+-
+-	while ((c = getopt(ac, av, "fu", 0)) != -1) {
+-		switch (c) {
+-		    case 'u':	upgrade = 1;		/* fall trhough */
+-		    case 'f':	prompt = 0; break;	/* force */
+-		    default: bk_badArg(c, av);
+-		}
+-	}
+-	path = av[optind];
+-	unless (path) path = bin;
+-
+-	if (prompt && !uninstall_ok()) return 0;
+-
+-	/* Sanity check: make sure it's a BK install dir, and it's not
+-	 * a source tree. It would suck removing a tree with uncommitted
+-	 * work
+-	 */
+-	buf = aprintf("%s/bkmsg.txt", path);
+-	unless (exists(buf)) {
+-		fprintf(stderr, "%s: Not a BitKeeper installation\n", buf);
+-		free(buf);
+-		return (1);
+-	}
+-	free(buf);
+-	buf = aprintf("%s/SCCS/s.bk.c", path);
+-	if (exists(buf)) {
+-		fprintf(stderr, "%s: Looks like a BK source tree, "
+-		    "not deleting\n", buf);
+-		free(buf);
+-		return (1);
+-	}
+-	free(buf);
+-	return (uninstall(path, upgrade));
+-}
+-
+-private	int
+-uninstall_ok(void)
+-{
+-	int ret;
+-
+-	ret = sys("bk", "prompt", "-nNo", "-yYes", "-t",
+-	    PROMPT_TITLE, PROMPT_MSG, SYS);
+-	if (WIFEXITED(ret) && (WEXITSTATUS(ret) == 1)) {
+-		return (0);
+-	}
+-	return (1);
++    fprintf (stderr, "bk: This BitKeeper installation is part of Debian.\n"
++             "bk: If you want to uninstall it, use tools like apt-get(8).\n");
++    return 1;
+ }
+--- a/src/libcommit.c
++++ b/src/libcommit.c
+@@ -113,7 +113,12 @@
+ 	char	buf[MAXLINE], pattern[MAXLINE];
+ 
+ 	unless (msg_name) return (0);
+-	sprintf(buf, "%s/bkmsg.txt", bin);
++	char *xbuf = bk_searchFile("bkmsg.txt");
++	if (xbuf != NULL)
++	{
++		strncpy(buf, xbuf, MAXLINE);
++		free (xbuf);
++	} else buf [0] = '\0';
+ 	unless (f = fopen(buf, "rt")) {
+ 		fprintf(stderr, "Unable to open %s\n", buf);
+ 		exit(1);
+--- a/src/port/platforminit.c
++++ b/src/port/platforminit.c
+@@ -34,7 +34,7 @@
+ 	int	flags = SILENT;
+ 	int	got_tilda = 0;
+ 	mode_t	m;
+-	char    *paths[] = {"", "/gnu/bin", "/gui/bin", 0};
++	char    *paths[] = {"/usr/bin", 0};
+ 	char	*badvars[] = {"CDPATH", "",
+ 			      "IFS", " \t\n",
+ 			      "ENV", "",
+@@ -128,96 +128,7 @@
+ 	 * points to the path.
+ 	 * Otherwise, set the bin dir to whereever we found the program.
+ 	 */
+-	if (IsFullPath(av[0]) && executable(av[0])) {
+-		verbose((stderr, "USING fullpath '%s'\n", av[0]));
+-		strcpy(buf, av[0]);
+-	} else {
+-		/*
+-		 * Partially specified paths are respected
+-		 */
+-		verbose((stderr, "av[0]='%s'\n", av[0]));
+-		if (t = strchr(av[0], '/')) {
+-			verbose((stderr, "PARTIAL '%s'\n", av[0]));
+-			strcpy(buf, av[0]);
+-#ifdef	WIN32
+-		} else if (executable(av[0])) {
+-			char	*b;
+-			/*
+-			 * windows always acts like it has '.' on PATH
+-			 *
+-			 * the cwd contains an executable bk.exe,
+-			 * test if we have set BK_BIN (meaning we are
+-			 * likely a child bk process) then make sure
+-			 * that we are running the correct bk binary.
+-			 * Re-spawn if not.
+-			 */
+-			if ((b = getenv("BK_BIN")) && *b) {
+-				sprintf(buf, "%s/bk", b);
+-				localName2bkName(buf, buf);
+-				for (t = buf; *t; t++) *t = tolower(*t);
+-				unless (streq(buf, av[0])) {
+-					av[0] = strdup(buf);
+-					exit(bk_spawnvp(P_WAIT, buf, av));
+-				}
+-			}
+-			verbose((stderr, "WIN32 dotpath '%s'\n", av[0]));
+-			strcpy(buf, av[0]);
+-#endif
+-		} else {
+-			s = p;
+-			verbose((stderr, "SEARCH '%s'\n", s));
+-			while (1) {
+-				if (t = strchr(s, PATH_DELIM)) *t = 0;
+-				if (s[0] == '~') got_tilda = 1;
+-				sprintf(buf, "%s/%s", s, av[0]);
+-				if (t) *t = PATH_DELIM;
+-				if (executable(buf)) break;
+-				if (exists(buf)) {
+-					verbose((stderr,
+-					    "Warning: found %s\n"
+-					    "\tbut executable(...) returns 0\n",
+-					    buf));
+-				}
+-				unless (t) {
+-					verbose((stderr,
+-					    "Can't find bk on your PATH.\n"));
+-					if (got_tilda) {
+-						fprintf(stderr, 
+-						    "Please expand ~ when "
+-						    "setting your path.\n");
+-					}
+-					return;
+-				}
+-				s = t + 1;
+-			}
+-		}
+-		unless (IsFullPath(buf)) {
+-			strcpy(buf2, buf);
+-			strcpy(buf, proj_cwd());
+-			strcat(buf, "/");
+-			strcat(buf, buf2);
+-		}
+-		verbose((stderr, "USING PATH '%s'\n", buf));
+-	}
+-	if ((n = readlink(buf, buf2, sizeof(buf2))) != -1) {
+-		buf2[n] = 0;
+-		verbose((stderr, "LINK '%s'->'%s'\n", buf, buf2));
+-		if  (IsFullPath(buf2)) {
+-			strcpy(buf, buf2);
+-		} else {
+-			fprintf(stderr,
+-			    "Error, link \"%s->%s\" must be a full path name\n",
+-			    buf, buf2);
+-			exit (1);
+-		}
+-	}
+-
+-	/* Now 'buf' contains the full pathname to the bk executable */
+-	t = strrchr(buf, '/');
+-	*t = 0;
+-
+-	localName2bkName(buf, buf);
+-	cleanPath(buf, buf);	/* sanitize pathname */
++	strcpy(buf, "/usr/bin");
+ 	bin = buf; /* buf is static */
+ 
+ 	/* save original path before the toplevel bk */
+@@ -233,12 +144,6 @@
+ 	uniq = mdbm_mem();
+ 	newpath = 0;
+ 
+-	for (n = 0; paths[n]; n++) {
+-		sprintf(buf2, "%s%s", bin, paths[n]);
+-		unless (mdbm_store_str(uniq, buf2, "", MDBM_INSERT)) {
+-			newpath = addLine(newpath, strdup(buf2));
+-		}
+-	}
+ 	/*
+ 	 * The regressions set this variable when they want to
+ 	 * limit which programs can be run from within bk.
+@@ -252,22 +157,8 @@
+ 	delim[0] = PATH_DELIM;
+ 	delim[1] = 0;
+ 
+-	/* process dirs in existing PATH */
+-	while (*p) {
+-		t = p + strcspn(p, delim);
+-		if (*t) *t++ = 0;
+-		unless (mdbm_store_str(uniq, p, "", MDBM_INSERT)) {
+-			newpath = addLine(newpath, strdup(p));
+-		}
+-		p = t;
+-	}
+-	mdbm_close(uniq);
+-
+-	p = joinLines(delim, newpath);
+-	freeLines(newpath, free);
+-	safe_putenv("PATH=%s", p);
+-	verbose((stderr, "set PATH='%s'\n", p));
+-	free(p);
++	if (!p)
++		free(p);
+ 	safe_putenv("BK_BIN=%s", bin);
+ 	verbose((stderr, "set BK_BIN='%s'\n", bin));
+ 
+--- a/src/unwrap.c
++++ b/src/unwrap.c
+@@ -42,7 +42,7 @@
+ 				fprintf(stderr,  "cannot extract wrapper\n");
+ 				exit(1);
+ 			}
+-			sprintf(wrap_path, "%s/un%swrap", bin, wrap);
++			sprintf(wrap_path, "/usr/bin/un%swrap", wrap);
+ 			if (executable(wrap_path)) {
+ 				char	*av[2] = {wrap_path, 0};
+ 
+--- a/src/which.c
++++ b/src/which.c
+@@ -34,9 +34,8 @@
+ 	unless (av[optind] && !av[optind+1]) usage();
+ 	exe = av[optind];
+ 	if (internal) {
+-		assert(bin);
+ 		if (cmd = cmd_lookup(exe, strlen(exe))) {
+-			printf("%s/bk %s\n", bin, exe);
++			printf("/usr/bin/bk %s\n", exe);
+ 			return (0);
+ 		}
+ 	}
+--- a/src/trigger.c
++++ b/src/trigger.c
+@@ -541,7 +541,7 @@
+ 			dirs[i] = strdup(getDotBk());
+ 		} else if (streq(dirs[i], "$BK_BIN")) {
+ 			free(dirs[i]);
+-			dirs[i] = strdup(bin);
++			dirs[i] = strdup("/usr/bin/bk");
+ 		} else if (streq(dirs[i], "$PRODUCT")) {
+ 			free(dirs[i]);
+ 			if (proj_isComponent(0) && (proj = proj_product(0))) {
+--- a/src/upgrade.c
++++ b/src/upgrade.c
+@@ -19,399 +19,12 @@
+ #include "bkd.h"
+ #include "cfg.h"
+ 
+-/*
+- * TODO
+- *  - test http proxy password (changed base64 code)
+- *
+- *  - There should be a check for upgrades item in the Windows startup
+- *    menu.
+- *
+- *  - change the installer to also take a -i option.
+- */
+-
+-#define	UPGRADEBASE	"http://www.bitkeeper.org/downloads/latest"
+-#define	UPGRADETRIAL	UPGRADEBASE
+-
+-private	int	noperms(char *target);
+-private	int	upgrade_fetch(char *name, char *file);
+-
+-private	char	*urlbase = 0;
+-private	int	flags = 0;
+-
+ int
+ upgrade_main(int ac, char **av)
+ {
+-	int	c, i;
+-	int	fetchonly = 0;
+-	int	install = 1;
+-	int	show_latest = 0;
+-	int	force = 0;
+-	int	obsolete = 0;
+-	char	*oldversion;
+-	char	*indexfn, *index;
+-	char	*p, *e;
+-	char	*platform = 0, *version = 0;
+-	char	**platforms, **bininstaller = 0;
+-	char	**data = 0;
+-	int	len;
+-	FILE	*f;
+-	int	rc = 2;
+-	char	*bundle = 0;
+-	mode_t	myumask;
+-	static longopt	lopts[] = {
+-		{"show-latest", 300 },
+-		{ 0, 0 }
+-	};
+-	char	buf[MAXLINE];
+-
+-	while ((c = getopt(ac, av, "a|cdfinq", lopts)) != -1) {
+-		switch (c) {
+-		    case 'a':
+-		    	unless (platform = optarg) {
+-				platform = "?";
+-				install = 0;
+-				flags |= SILENT;
+-			}
+-			break;
+-		    case 'c': install = 0; break;	/* check only */
+-		    case 'f': force = 1; break;		/* force */
+-		    case 'i': install = 1; break;	/* now default, noop */
+-		    case 'd':				/* download only */
+-		    case 'n':				// obsolete, for compat
+-			install = 0; fetchonly = 1; break;
+-		    case 'q': flags |= SILENT; break;
+-		    case 300: // --show-latest
+-			show_latest = 1;
+-			fetchonly = 1;
+-			install = 0;
+-			flags |= SILENT;
+-			break;
+-		    default: bk_badArg(c, av);
+-		}
+-	}
+-	if (av[optind]) {
+-		if (av[optind+1]) usage();
+-		urlbase = av[optind];
+-
+-		if (platform && streq(platform, "?") && !strchr(urlbase,'/')) {
+-			fprintf(stderr, "upgrade: did you mean to say -a%s\n",
+-			    urlbase);
+-			exit(1);
+-		}
+-	} else if (p = cfg_str(0, CFG_UPGRADE_URL)) {
+-		urlbase = p;
+-	} else if (test_release) {
+-		urlbase = UPGRADETRIAL;
+-	} else {
+-		urlbase = UPGRADEBASE;
+-	}
+-	if (streq(bk_platform, "powerpc-macosx") &&
+-	    (!platform || streq(platform, "x86-macosx"))) {
+-		/*
+-		 * Check to see if they are running a powerpc bk on an
+-		 * intel mac under rosetta.
+-		 */
+-		if ((p = backtick("uname -p", 0)) && streq(p, "i386")) {
+-			bk_platform = "x86-macosx";
+-		}
+-	}
+-	if (platform) {
+-		if (install && !streq(platform, bk_platform)) {
+-			notice("upgrade-install-other-platform", 0, "-e");
+-			goto out;
+-		}
+-	} else if (p = getenv("BK_UPGRADE_PLATFORM")) {
+-		/*
+-		 * This is mainly useful for development machines that
+-		 * are using a platform that we don't actually release
+-		 * to customers.
+-		 */
+-		platform = p;
+-	} else {
+-		platform = bk_platform;
+-	}
+-	if (macosx()) {
+-		/* figure out if we're in a bundle or not */
+-		bundle = fullname(bin, 0);
+-		if (p = strstr(bundle, "BitKeeper.app")) {
+-			/* we know the app name, we want the dir where
+-			 * it goes */
+-			*(p+13) = 0; /* NULL at end of BitKeeper.app */
+-		} else {
+-			bundle = 0;
+-		}
+-	}
+-	if (win32() && (p = getenv("OSTYPE"))
+-	    && streq(p, "msys") && (fetchonly || install)
+-	    && !getenv("BK_REGRESSION")) {
+-		notice("upgrade-nomsys", 0, "-e");
+-		goto out;
+-	}
+-	if (!macosx() && install && noperms(bin)) {
+-		notice("upgrade-badperms", bin, "-e");
+-		goto out;
+-	}
+-	indexfn = bktmp(0);
+-	if (upgrade_fetch("INDEX", indexfn)) {
+-		fprintf(stderr, "upgrade: unable to fetch INDEX\n");
+-		free(indexfn);
+-		goto out;
+-	}
+-	index = loadfile(indexfn, &len);
+-	unlink(indexfn);
+-	free(indexfn);
+-	indexfn = 0;
+-	p = index + len - 1;
+-	*p = 0;
+-	while (p[-1] != '\n') --p;
+-	strcpy(buf, p);	/* hmac */
+-	*p = 0;
+-	p = hashstr(index, strlen(index));
+-	unless (streq(p, buf)) {
+-		fprintf(stderr, "upgrade: INDEX corrupted\n");
+-		free(index);
+-		goto out;
+-	}
+-	/* format:
+-	 * 1 filename
+-	 * 2 md5sum
+-	 * 3 version
+-	 * 4 utc
+-	 * 5 platform
+-	 * 6 unused
+-	 * -- new fields ALWAYS go at the end! --
+-	 */
+-	platforms = allocLines(20);
+-	p = index;
+-	while (*p) {
+-		if (e = strchr(p, '\n')) *e++ = 0;
+-		if (p[0] == '#') {
+-			/* comments */
+-		} else if (strneq(p, "old ", 4)) {
+-			if (streq(p + 4, bk_vers)) obsolete = 1;
+-		} else if (!data) {
+-			data = splitLine(p, ",", 0);
+-			if (nLines(data) < 6) goto next;
+-			if (platforms) { /* remember platforms */
+-				platforms =
+-				    addLine(platforms, strdup(data[5]));
+-			}
+-			if (show_latest) {
+-				// bk_ver,bk_utc
+-				printf("%s,%s\n", data[3], data[4]);
+-				rc = 0;
+-				goto out;
+-			}
+-			unless (version) version = strdup(data[3]);
+-			if (streq(data[5], platform)) {
+-				/* found this platform */
+-				if (macosx()) {
+-					/* if we hit a .bin, skip it. we
+-					 * want the .pkg */
+-					p = strrchr(data[1], '.');
+-					if (streq(p , ".bin")) {
+-						/* we want to replicate data */
+-						p = joinLines(",", data);
+-						bininstaller = splitLine(p,
+-						    ",", 0);
+-						free(p);
+-						goto next;
+-					}
+-				}
+-				freeLines(platforms, free);
+-				platforms = 0;
+-			} else {
+-next:				freeLines(data, free);
+-				data = 0;
+-			}
+-		}
+-		p = e;
+-	}
+-	free(index);
+-	index = 0;
+-	if (show_latest) goto out;
+-
+-	if (platforms) {	/* didn't find this platform */
+-		uniqLines(platforms, free);
+-		if (streq(platform, "?")) {
+-			printf("Available architectures for %s:\n", version);
+-			EACH(platforms) printf("  %s\n", platforms[i]);
+-			rc = 0;
+-		} else if (bininstaller) {
+-			if (fetchonly || !bundle) {
+-				/* it's ok to just fetch the old installer or
+-				 * to use an old installer on an old install */
+-				freeLines(data, free);
+-				data = bininstaller;
+-				goto proceed;
+-			}
+-			notice("upgrade-pre-bundle", bundle, "-e");
+-			rc = 1;
+-		} else {
+-			fprintf(stderr,
+-			    "No upgrade for the arch %s found. "
+-			    "Available architectures for %s:\n",
+-			    platform, version);
+-			EACH(platforms) fprintf(stderr, "  %s\n", platforms[i]);
+-			rc = 2;
+-		}
+-		freeLines(platforms, free);
+-		goto out;
+-	}
+-proceed:
+-	/*
+-	 * Look to see if we already have the current version
+-	 * installed.  We compare UTC to catch releases that get
+-	 * tagged more than once. (like bk-3.2.3)
+-	 */
+-	if (data && getenv("BK_REGRESSION")) {
+-		/* control matches for regressions */
+-		data[4] = strdup(getenv("BK_UPGRADE_FORCEMATCH") ? bk_utc : "");
+-	}
+-	if (data && streq(data[4], bk_utc) && !fetchonly) {
+-		freeLines(data, free);
+-		data = 0;
+-	}
+-	unless (data) {
+-		printf("upgrade: no new version of bitkeeper found\n");
+-		rc = 1;
+-		goto out;
+-	}
+-	if (!obsolete && !force) {
+-		fprintf(stderr,
+-"upgrade: A new version of BitKeeper is available (%s), but this\n"
+-"version of BitKeeper (%s) is not marked as being obsoleted by the\n"
+-"latest version so the upgrade is cancelled.  Rerun with the -f (force)\n"
+-"option to force the upgrade\n", data[3], bk_vers);
+-		goto out;
+-	}
+-	oldversion = bk_vers;
+-	bk_vers = data[3];
+-
+-	bk_vers = oldversion;
+-	unless (fetchonly || install) {
+-		printf("BitKeeper version %s is available for download.\n",
+-		    data[3]);
+-		printf("Run\n"
+-		    "\tbk upgrade\t# to download and install the new bk\n"
+-		    "\tbk upgrade -d\t# to download bk without installing\n");
+-		rc = 0;
+-		goto out;
+-	}
+-
+-	if (upgrade_fetch(data[1], data[1])) {
+-		fprintf(stderr, "upgrade: unable to fetch %s\n", data[1]);
+-		goto out;
+-	}
+-
+-	/* find checksum of the file we just fetched */
+-	f = fopen(data[1], "r");
+-	p = hashstream(fileno(f));
+-	assert(p);
+-	rewind(f);
+-	unless (streq(p, data[2])) {
+-		fprintf(stderr, "upgrade: file %s fails to match checksum\n",
+-		    data[1]);
+-		fclose(f);
+-		free(p);
+-		goto out;
+-	}
+-	fclose(f);
+-	free(p);
+-
+-	myumask = umask(0);
+-	umask(myumask);
+-	chmod(data[1], 0555 & ~myumask);
+-
+-	if (fetchonly) {
+-		printf("New version of bk fetched: %s\n", data[1]);
+-		rc = 0;
+-		goto out;
+-	}
+-	putenv("BK_NOLINKS=1");	/* XXX -u already does this */
+-#ifdef WIN32
+-	if (runas(data[1], "-u", 0)) {
+-		fprintf(stderr, "upgrade: install failed\n");
+-		goto out;
+-	}
+-#else
+-	if (macosx()) {
+-		sprintf(buf, "/usr/bin/open -W %s", data[1]);
+-	} else {
+-		sprintf(buf, "./%s -u", data[1]);
+-	}
+-	if (system(buf)) {
+-		fprintf(stderr, "upgrade: install failed\n");
+-		goto out;
+-	}
+-#endif
+-	unlink(data[1]);
+-	rc = 0;
+- out:
+-	if (version) free(version);
+-	if (bundle) free(bundle);
+-	if (data) freeLines(data, free);
+-	return (rc);
+-}
+-
+-/*
+- * verify that the current user can replace all files at target
+- */
+-private	int
+-noperms(char *target)
+-{
+-	struct	stat sb, sbdir;
+-	char	*test_file;
+-	int	rc = 1;
+-
+-	/*
+-	 * Assumes subdirs are ok.
+-	 */
+-	sbdir.st_mode = 0;
+-	unless (test_file = aprintf("%s/upgrade_test.tmp", target)) return (1);
+-	if (touch(test_file, 0644)) {
+-		/* can't create file in dir, try change dir perms */
+-		if (lstat(target, &sbdir)) goto out;
+-		if (chmod(target, 0775)) goto out;
+-		if (touch(test_file, 0644)) goto out;
+-	}
+-	if (lstat(test_file, &sb)) goto out;
+-	if (unlink(test_file)) goto out;
+-	rc = 0;
+-out:
+-	if (sbdir.st_mode) chmod(target, sbdir.st_mode); /* restore perms */
+-	free(test_file);
+-	return (rc);
+-}
+-
+-/*
+- * Fetch filename from web using http.  If size is non-zero then a progress
+- * bar will be printed unless flags&SILENT.
+- * If localdir is set, then files will be copied from there instead.
+- * Returns non-zero on error.
+- */
+-private	int
+-upgrade_fetch(char *name, char *file)
+-{
+-	remote	*r;
+-	int	rc = 1;
+-	char	buf[MAXPATH];
+-
+-	unlink(file);
+-	concat_path(buf, urlbase, name);
+-	unless (strneq(buf, "http://", 7)) {
+-		/* urlbase might contain a local pathname */
+-		return (fileCopy(buf, file));
+-	}
+-	verbose((stderr, "Fetching %s\n", buf));
+-	r = remote_parse(buf, 0);
+-	if (http_connect(r)) goto out;
+-	r->progressbar = 1;
+-	if (getenv("BK_NOTTY") || (flags & SILENT)) r->progressbar = 0;
+-	rc = http_fetch(r, file);
+-out:
+-	remote_free(r);
+-	return (rc);
++    fprintf(stderr, "bk: This BitKeeper installation is part of Debian.\n"
++            "bk: If you want to upgrade it, use tools like apt-get(8).\n");
++    return 1;
+ }
+ 
+ /*
+@@ -423,34 +36,8 @@
+ int
+ upgrade_latestVersion(char *new_vers, char *new_utc)
+ {
+-	FILE	*f;
+-	char	*t, *p;
+-	int	rc = -1;
+-	char	buf[MAXPATH], new[MAXPATH];
+-
+-	*new_vers = *new_utc = 0;
+-	concat_path(buf, getDotBk(), "latest-bkver");
+-	sprintf(new, "%s.tmp", buf);
+-	if (time(0) - mtime(buf) > DAY) {
+-		if (sysio(0, new, DEVNULL_WR,
+-			"bk", "upgrade", "--show-latest", SYS)) {
+-			unlink(new);
+-			return (-1);
+-		}
+-		if (rename(new, buf)) perror(new);
+-	}
+-	if (f = fopen(buf, "r")) {
+-		if ((t = fgetline(f)) && (p = strchr(t, ','))) {
+-			*p++ = 0;
+-			assert(strlen(t) < 32);
+-			assert(strlen(p) < 16);
+-			strcpy(new_vers, t);
+-			strcpy(new_utc, p);
+-			rc = 0;
+-		}
+-		fclose(f);
+-	}
+-	return (rc);
++    // We are not interested in automatic upgrades
++    return 0;
+ }
+ 
+ /*
+@@ -459,88 +46,5 @@
+ void
+ upgrade_maybeNag(char *out)
+ {
+-	FILE	*f;
+-	char	*t, *new_age, *bk_age;
+-	int	same, i;
+-	time_t	now = time(0);
+-	char	*av[] = {
+-		"bk", "prompt", "-io", 0, 0
+-	};
+-	int	ac = 3;	/* first 0 above */
+-	char	new_vers[65];
+-	char	new_utc[16];
+-	char	buf[MAXLINE];
+-
+-	/*
+-	 * bk help may go through here twice, if we are in a GUI, skip
+-	 * this the first time.
+-	 */
+-	if (out && getenv("BK_GUI")) return;
+-
+-
+-	/*
+-	 * Give people a way to give customers to disable this
+-	 */
+-	if (getenv("BK_NEVER_NAG")) return;
+-	if (cfg_bool(0, CFG_UPGRADE_NONAG)) return;
+-
+-	/* a new bk is out */
+-	if (upgrade_latestVersion(new_vers, new_utc)) return;
+-	if (getenv("_BK_ALWAYS_NAG")) goto donag;
+-	if (strcmp(new_utc, bk_utc) <= 0) return;
+-
+-	/*
+-	 * Wait for the new bk to be out for a while, unless we are a
+-	 * beta version.
+-	 */
+-	if (!strstr(bk_vers, "-beta-") &&
+-	    ((now - sccs_date2time(bk_utc, 0)) > MONTH) &&
+-	    ((now - sccs_date2time(new_utc, 0)) < MONTH)) {
+-		return;
+-	}
+-
+-	/* We can only nag once a month */
+-	concat_path(buf, getDotBk(), "latest-bkver.nag");
+-	if ((now - mtime(buf)) < MONTH) {
+-		/* make sure we nagged for the same thing */
+-		t = loadfile(buf, 0);
+-		sprintf(buf, "%s,%s\n", bk_utc, new_utc);
+-		same = streq(buf, t);
+-		free(t);
+-		if (same) return;
+-	}
+-
+-	/* looks like we need to nag */
+-
+-	/* remember that we did */
+-	concat_path(buf, getDotBk(), "latest-bkver.nag");
+-	Fprintf(buf, "%s,%s\n", bk_utc, new_utc);
+-
+-
+-donag:	/* okay, nag */
+-
+-	/* age uses a staic buffer */
+-	new_age = strdup(age(now - sccs_date2time(new_utc, 0), " "));
+-	bk_age = strdup(age(now - sccs_date2time(bk_utc, 0), " "));
+-	av[ac] = aprintf("BitKeeper %s (%s) is out, it was released %s ago.\n"
+-	    "You are running version %s (%s) released %s ago.\n\n"
+-	    "If you want to upgrade, please run bk upgrade.\n"
+-	    "Or set upgrade_nonag:yes config to not see these messages",
+-	    new_vers, new_utc, new_age,
+-	    bk_vers, bk_utc, bk_age);
+-	if (out) {
+-		if (f = fopen(out, "w")) {
+-			fprintf(f, "%s\n", av[ac]);
+-			for (i = 0; i < 79; ++i) fputc('=', f);
+-			fputc('\n', f);
+-			fclose(f);
+-		}
+-	} else {
+-		putenv("BK_NEVER_NAG=1");
+-		spawnvp(_P_DETACH, av[0], av);
+-	}
+-	free(av[ac]);
+-	free(new_age);
+-	free(bk_age);
+-	return;
++    return;
+ }
+--- a/src/gui/Makefile
++++ b/src/gui/Makefile
+@@ -57,7 +57,6 @@
+ images: FORCE
+ 	$(Q)rm -rf images
+ 	$(Q)test -d images || mkdir images
+-	$(Q)$(BK) -rimgsrc co -S
+ 	$(Q)cp -rp imgsrc/* images
+ 	$(Q)test "X$(ICONS)" = X || cp $(ICONS) images
+ 	$(Q)chmod 664 images/*.gif
+--- a/doc/nested/Makefile
++++ b/doc/nested/Makefile
+@@ -1,13 +1,3 @@
+ HTML=html	# default to be replaced when makefile is called
+ 
+-../www/nested.html: nested.doc ../www/template.html ../bin/pod2html.l
+-	../../src/bk tclsh ../bin/pod2html.l \
+-		--title="BitKeeper Nested Overview" \
+-	    --template=../www/template.html -- nested.doc > ../www/nested.html
+-
+-install: ../www/nested.html
+-	-test -d "$(HTML)/images" || mkdir -p "$(HTML)/images"
+-	-bk co -q ../www/images
+-	cp ../www/images/*.gif ../www/images/*.jpg "$(HTML)/images"
+-	cp ../www/nested.html "$(HTML)"
+-
++install: ;

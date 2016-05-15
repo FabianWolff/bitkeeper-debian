@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+
+# Uncomment this to turn on verbose mode
+# export DH_VERBOSE = 1
+
+%:
+	dh $@ --parallel
+
+override_dh_auto_configure: ;
+
+override_dh_install:
+	mv debian/tmp/applypatch debian/tmp/bk_applypatch
+	mv debian/tmp/import debian/tmp/bk_import
+	dh_install

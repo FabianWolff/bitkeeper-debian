@@ -1,0 +1,35 @@
+Source: bitkeeper
+Maintainer: Fabian Wolff <fabi.wolff@arcor.de>
+Section: vcs
+Priority: optional
+Build-Depends: debhelper (>= 9),
+               gperf,
+               bison,
+               flex,
+               libxft2-dev,
+               dh-autoreconf,
+               liblz4-dev,
+               zlib1g-dev,
+               libpcre3-dev
+Standards-Version: 3.9.8
+Homepage: https://www.bitkeeper.org
+
+Package: bitkeeper
+Architecture: any
+Multi-Arch: foreign
+Depends: ${misc:Depends},
+         ${shlibs:Depends}
+Description: fast and scalable distributed version control system
+ BitKeeper is a previously proprietary distributed revision control
+ system famous for having hosted the Linux kernel before git was
+ created.
+ .
+ Its main strengths include:
+  - scalability from tiny to huge projects, specifically with support
+    for very large repositories, while maintaining good performance
+  - ability to work well with large binary assets
+  - simple, intuitive interface
+  - safety mechanisms that can prevent and/or fix common filesystem
+    and hardware failures, but also human mistakes
+  - time-savers such as a better auto-merge than most competing
+    systems

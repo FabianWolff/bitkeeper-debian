@@ -1,0 +1,5 @@
+bitkeeper (7.2ce-1) UNRELEASED; urgency=medium
+
+  * Initial release. (Closes: #824057)
+
+ -- Fabian Wolff <fabi.wolff@arcor.de>  Thu, 12 May 2016 18:26:39 +0200

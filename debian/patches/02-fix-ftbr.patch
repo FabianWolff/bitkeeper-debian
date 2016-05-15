@@ -1,0 +1,41 @@
+Description: Improve reproducibility
+ Improve the reproducibility of the package by replacing __DATE__
+ and __TIME__ with deterministic timestamps.
+Author: Fabian Wolff <fabi.wolff@arcor.de>
+Forwarded: no
+Last-Update: 2016-05-12
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/src/libc/lz4/lz4demo.c
++++ b/src/libc/lz4/lz4demo.c
+@@ -76,7 +76,7 @@
+ //****************************
+ #define COMPRESSOR_NAME "Compression CLI using LZ4 algorithm"
+ #define COMPRESSOR_VERSION ""
+-#define COMPILED __DATE__
++#define COMPILED DEBIAN_BUILD_DATE
+ #define AUTHOR "Yann Collet"
+ #define EXTENSION ".lz4"
+ #define WELCOME_MESSAGE "*** %s %s, by %s (%s) ***\n", COMPRESSOR_NAME, COMPRESSOR_VERSION, AUTHOR, COMPILED
+--- a/src/tomcrypt/src/misc/crypt/crypt.c
++++ b/src/tomcrypt/src/misc/crypt/crypt.c
+@@ -18,7 +18,7 @@
+ const char *crypt_build_settings =
+    "LibTomCrypt " SCRYPT " (Tom St Denis, tomstdenis@gmail.com)\n"
+    "LibTomCrypt is public domain software.\n"
+-   "Built on " __DATE__ " at " __TIME__ "\n\n\n"
++   "Built on " DEBIAN_BUILD_DATE " at " DEBIAN_BUILD_DATE "\n\n\n"
+    "Endianess: "
+ #if defined(ENDIAN_NEUTRAL)
+    "neutral\n"
+--- a/src/tomcrypt/Makefile
++++ b/src/tomcrypt/Makefile
+@@ -1,5 +1,7 @@
+ CC=gcc
+-CPPFLAGS=-Isrc/headers -I../tommath -DLTC_SOURCE -DLTC_NO_ROLC
++DEB_BUILD_DATE=`date -u -d "@$(SOURCE_DATE_EPOCH)" +%Y-%m-%d`
++DEB_BUILD_TIME=`date -u -d "@$(SOURCE_DATE_EPOCH)" +%T`
++CPPFLAGS=-Isrc/headers -I../tommath -DLTC_SOURCE -DLTC_NO_ROLC -DDEBIAN_BUILD_DATE="\"$(DEB_BUILD_DATE)\"" -DDEBIAN_BUILD_TIME="\"$(DEB_BUILD_TIME)\""
+ CFLAGS=-g -O3 -Wall -Wno-parentheses -Wno-char-subscripts -Wno-format-y2k -Wstrict-prototypes
+ AR=ar rc
+ RANLIB=ranlib
