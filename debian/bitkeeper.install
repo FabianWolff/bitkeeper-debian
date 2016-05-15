@@ -9,12 +9,6 @@ ungzip_b64wrap usr/bin/
 ungzip_uuwrap usr/bin/
 unuuwrap usr/bin/
 uuwrap usr/bin/
-gui/bin/bkgui usr/bin/
-lscripts/ usr/share/bitkeeper/
-gui/images/ usr/share/bitkeeper/gui/
-gui/lib/*tool usr/share/bitkeeper/gui/lib/
-gui/lib/*form usr/share/bitkeeper/gui/lib/
-gui/lib/BWidget1.8/ usr/share/bitkeeper/gui/lib/
 dspec-* etc/BitKeeper/etc/
 bkhelp.txt etc/BitKeeper/etc/
 bkmsg.txt etc/BitKeeper/etc/

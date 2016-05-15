@@ -62,7 +62,23 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  # Override this if you don't have it.
  RANLIB	= ranlib
  
-@@ -712,8 +712,7 @@
+@@ -493,14 +493,7 @@
+ 
+ # has to run before bkhelp.txt but after GUI
+ L-doc L-docs: GUI FORCE
+-	@test -f gui/share/doc/L/little.man || { \
+-		echo Failed to build gui/share/doc/L/little.man; \
+-		exit 1; \
+-	}
+-	@if [ -s gui/share/doc/L/little.man ]; \
+-	then	cp gui/share/doc/L/little.man ../man/man1/bk-little.1; \
+-	else	cp ../man/man1/bk-little.1.pfmt ../man/man1/bk-little.1; \
+-	fi; \
++	cp ../man/man1/bk-little.1.pfmt ../man/man1/bk-little.1;
+ 	chmod +w ../man/man1/bk-little.1
+ 
+ bkhelp.txt: $(BK) L-docs FORCE
+@@ -712,8 +705,7 @@
  
  sccs.h: PCRE
  .PHONY: PCRE
@@ -582,3 +598,24 @@ This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
  
  private	int	make_keypair(int bits, char *secret, char *public);
  private	int	signdata(rsa_key *secret);
+--- a/src/bk.c
++++ b/src/bk.c
+@@ -970,11 +970,13 @@
+ 		} else {
+ 			return (cmd->fcn(ac, av));
+ 		}
+-	    case CMD_GUI:		/* Handle Gui script */
+-		return (launch_wish(cmd->name, av+1));
+-
+-	    case CMD_LSCRIPT:		/* Handle L scripts */
+-		return (launch_L(cmd->name, av+1));
++	    case CMD_GUI: /* falls through */
++	    case CMD_LSCRIPT:
++		fprintf(stderr,
++			"bk: The gui version of bk requires a variant of Tcl/Tk that is not currently\n"
++			"bk: available in Debian. Please use the command line interface instead.\n"
++			"bk: (Note: This also applies if you tried to execute an L script)");
++		return 1;
+ 
+ 	    case CMD_SHELL:		/* Handle shell scripts */
+ 		argv[0] = shell();
