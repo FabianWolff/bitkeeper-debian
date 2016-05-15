@@ -1,4 +1,4 @@
-bitkeeper (7.2ce-1) UNRELEASED; urgency=medium
+bitkeeper (7.2ce+dfsg-1) UNRELEASED; urgency=medium
 
   * Initial release. (Closes: #824057)
 
